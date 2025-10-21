@@ -2,6 +2,7 @@
 #include <metal_raytracing>
 
 using namespace metal;
+using namespace metal::raytracing;
 
 struct CameraUniforms {
     float4x4 viewMatrix;
@@ -22,6 +23,8 @@ struct DirectionalLightUniform {
 struct FrameUniforms {
     CameraUniforms camera;
     DirectionalLightUniform light;
+    uint2 resolution;
+    uint2 paddingResolution;
     uint frameIndex;
     uint maxBounces;
     uint sampleCount;
@@ -106,8 +109,8 @@ void rayGenMain(uint2 threadPosition [[thread_position_in_grid]],
                 const device GeometryInfoGPU *geometryInfo [[buffer(2)]],
                 const device InstanceInfoGPU *instanceInfo [[buffer(3)]],
                 texture2d<float, access::write> renderTarget [[texture(0)]],
-                raytracing::acceleration_structure scene [[acceleration_structure(0)]]) {
-    uint2 resolution = uint2(uniforms.resolution.x, uniforms.resolution.y);
+                instance_acceleration_structure scene [[acceleration_structure(0)]]) {
+    uint2 resolution = uniforms.resolution;
     if (threadPosition.x >= resolution.x || threadPosition.y >= resolution.y) {
         return;
     }
@@ -115,17 +118,17 @@ void rayGenMain(uint2 threadPosition [[thread_position_in_grid]],
     RayPayload payload = makeInitialPayload();
     float3 origin = uniforms.camera.cameraPosition;
     float3 direction = sampleCameraDirection(threadPosition, resolution, uniforms.camera, uniforms.frameIndex);
-    raytracing::ray ray(origin, direction, 0.001, 10000.0);
+    ray ray(origin, direction, 0.001, 10000.0);
 
-    raytracing::trace_ray(scene,
-                          ray,
-                          payload,
-                          kRayMask,
-                          raytracing::ray_flags::none,
-                          /*max_level*/ uniforms.maxBounces,
-                          /*closest_hit_function*/ 0,
-                          /*any_hit_function*/ 0,
-                          /*miss_function*/ 0);
+    trace_ray(scene,
+              ray,
+              payload,
+              kRayMask,
+              ray_flags::none,
+              /*max_level*/ uniforms.maxBounces,
+              /*closest_hit_function*/ 0,
+              /*any_hit_function*/ 0,
+              /*miss_function*/ 0);
 
     renderTarget.write(float4(payload.radiance, 1.0), threadPosition);
 }
@@ -145,7 +148,7 @@ void closestHitShader(RayPayload &payload [[payload]],
                       const device MaterialGPU *materials [[buffer(1)]],
                       const device GeometryInfoGPU *geometryInfo [[buffer(2)]],
                       const device InstanceInfoGPU *instanceInfo [[buffer(3)]],
-                      intersection_data<raytracing::triangle_data> intersection [[intersection_data]],
+                      intersection_data<triangle_data> intersection [[intersection_data]],
                       uint primitiveIndex [[primitive_id]],
                       uint instanceIndex [[instance_id]]) {
     if (payload.active == 0) {
