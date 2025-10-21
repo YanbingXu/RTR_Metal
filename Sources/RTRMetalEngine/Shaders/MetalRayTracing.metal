@@ -2,7 +2,6 @@
 #include <metal_raytracing>
 
 using namespace metal;
-using namespace metal::raytracing;
 
 struct CameraUniforms {
     float4x4 viewMatrix;
@@ -69,6 +68,7 @@ struct RayAttributes {
 };
 
 constant uint kRayMask = 0xFF;
+constant float kPi = 3.14159265358979323846;
 
 float3 sampleCameraDirection(uint2 pixel, uint2 resolution, constant CameraUniforms &camera, uint frameIndex) {
     float2 ndc = ((float2(pixel) + 0.5) / float2(resolution)) * 2.0 - 1.0;
@@ -90,9 +90,14 @@ RayPayload makeInitialPayload() {
     return payload;
 }
 
-float3 shadeDirectional(float3 normal, float3 viewDir, constant MaterialGPU &material, float3 lightDir, float3 lightColor, float intensity) {
+float3 shadeDirectional(float3 normal,
+                        float3 viewDir,
+                        constant MaterialGPU &material,
+                        float3 lightDir,
+                        float3 lightColor,
+                        float intensity) {
     float NdotL = saturate(dot(normal, -lightDir));
-    float3 diffuse = material.albedo / M_PI;
+    float3 diffuse = material.albedo * (1.0f / kPi);
     float3 specular = float3(0.0);
     float3 halfVec = normalize(-lightDir + viewDir);
     float NdotH = saturate(dot(normal, halfVec));
@@ -109,7 +114,7 @@ void rayGenMain(uint2 threadPosition [[thread_position_in_grid]],
                 const device GeometryInfoGPU *geometryInfo [[buffer(2)]],
                 const device InstanceInfoGPU *instanceInfo [[buffer(3)]],
                 texture2d<float, access::write> renderTarget [[texture(0)]],
-                instance_acceleration_structure scene [[acceleration_structure(0)]]) {
+                metal::raytracing::acceleration_structure<metal::raytracing::instance> scene [[acceleration_structure(0)]]) {
     uint2 resolution = uniforms.resolution;
     if (threadPosition.x >= resolution.x || threadPosition.y >= resolution.y) {
         return;
@@ -118,23 +123,23 @@ void rayGenMain(uint2 threadPosition [[thread_position_in_grid]],
     RayPayload payload = makeInitialPayload();
     float3 origin = uniforms.camera.cameraPosition;
     float3 direction = sampleCameraDirection(threadPosition, resolution, uniforms.camera, uniforms.frameIndex);
-    ray ray(origin, direction, 0.001, 10000.0);
+    metal::raytracing::ray ray(origin, direction, 0.001, 10000.0);
 
-    trace_ray(scene,
-              ray,
-              payload,
-              kRayMask,
-              ray_flags::none,
-              /*max_level*/ uniforms.maxBounces,
-              /*closest_hit_function*/ 0,
-              /*any_hit_function*/ 0,
-              /*miss_function*/ 0);
+    metal::raytracing::trace_ray(scene,
+                                 ray,
+                                 payload,
+                                 kRayMask,
+                                 metal::raytracing::ray_flags::none,
+                                 /*max_level*/ uniforms.maxBounces,
+                                 /*closest_hit_function*/ 0,
+                                 /*any_hit_function*/ 0,
+                                 /*miss_function*/ 0);
 
     renderTarget.write(float4(payload.radiance, 1.0), threadPosition);
 }
 
 [[visible]]
-void missShader(RayPayload &payload [[payload]]) {
+void missShader(thread RayPayload &payload [[payload]]) {
     if (payload.active == 0) {
         return;
     }
@@ -143,12 +148,12 @@ void missShader(RayPayload &payload [[payload]]) {
 }
 
 [[visible]]
-void closestHitShader(RayPayload &payload [[payload]],
+void closestHitShader(thread RayPayload &payload [[payload]],
                       constant FrameUniforms &uniforms [[buffer(0)]],
                       const device MaterialGPU *materials [[buffer(1)]],
                       const device GeometryInfoGPU *geometryInfo [[buffer(2)]],
                       const device InstanceInfoGPU *instanceInfo [[buffer(3)]],
-                      intersection_data<triangle_data> intersection [[intersection_data]],
+                      metal::raytracing::intersection_data<metal::raytracing::triangle_data> intersection [[intersection_data]],
                       uint primitiveIndex [[primitive_id]],
                       uint instanceIndex [[instance_id]]) {
     if (payload.active == 0) {
