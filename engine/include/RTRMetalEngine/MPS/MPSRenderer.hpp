@@ -1,8 +1,11 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "RTRMetalEngine/MPS/MPSPathTracer.hpp"
+#include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
+#include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 
 namespace rtr::scene {
 class Scene;
@@ -21,6 +24,9 @@ public:
 
 private:
     MetalContext& context_;
+    BufferAllocator bufferAllocator_;
+    GeometryStore geometryStore_;
+    std::vector<std::size_t> uploadedMeshIndices_;
     MPSPathTracer pathTracer_;
 };
 

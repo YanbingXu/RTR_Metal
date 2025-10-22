@@ -85,3 +85,41 @@ TEST(MPSSceneConverterTests, FallsBackToMeshesWhenNoInstancesAndAppliesDefaultCo
     expectVectorNear(sceneData.colors[1], simd_make_float3(0.16f, 0.7f, 0.12f));
     expectVectorNear(sceneData.colors[2], simd_make_float3(0.16f, 0.14f, 0.6f));
 }
+
+TEST(MPSSceneConverterTests, MultipleInstancesAppendWithOffsetIndices) {
+    rtr::scene::Scene scene;
+    rtr::scene::SceneBuilder builder(scene);
+
+    const std::array<simd_float3, 3> triA = {
+        simd_make_float3(-0.2f, 0.0f, 0.0f),
+        simd_make_float3(0.0f, 0.3f, 0.0f),
+        simd_make_float3(0.2f, 0.0f, 0.0f),
+    };
+    const std::array<std::uint32_t, 3> triIndices = {0U, 1U, 2U};
+    auto meshA = builder.addTriangleMesh(triA, triIndices);
+
+    const std::array<simd_float3, 3> triB = {
+        simd_make_float3(-0.1f, -0.5f, 0.0f),
+        simd_make_float3(0.1f, -0.5f, 0.0f),
+        simd_make_float3(0.0f, -0.2f, 0.0f),
+    };
+    auto meshB = builder.addTriangleMesh(triB, triIndices);
+
+    auto matA = builder.addDefaultMaterial();
+    scene.addInstance(meshA, matA, matrix_identity_float4x4);
+    scene.addInstance(meshB, matA, matrix_identity_float4x4);
+
+    const auto sceneData = buildSceneData(scene);
+    ASSERT_EQ(sceneData.positions.size(), 6U);
+    ASSERT_EQ(sceneData.indices.size(), 6U);
+
+    EXPECT_EQ(sceneData.indices[0], 0U);
+    EXPECT_EQ(sceneData.indices[1], 1U);
+    EXPECT_EQ(sceneData.indices[2], 2U);
+    EXPECT_EQ(sceneData.indices[3], 3U);
+    EXPECT_EQ(sceneData.indices[4], 4U);
+    EXPECT_EQ(sceneData.indices[5], 5U);
+
+    expectVectorNear(sceneData.positions[0], triA[0]);
+    expectVectorNear(sceneData.positions[3], triB[0]);
+}

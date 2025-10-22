@@ -12,11 +12,13 @@
 #include <fstream>
 #include <limits>
 #include <span>
+#include <string>
 #include <simd/simd.h>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/MPS/MPSPathTracer.hpp"
 #include "RTRMetalEngine/MPS/MPSSceneConverter.hpp"
+#include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Scene/Scene.hpp"
 #include "RTRMetalEngine/Scene/SceneBuilder.hpp"
 
@@ -37,22 +39,39 @@ bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t 
 }  // namespace
 
 MPSRenderer::MPSRenderer(MetalContext& context)
-    : context_(context) {}
+    : context_(context), bufferAllocator_(context), geometryStore_(bufferAllocator_) {}
 
 bool MPSRenderer::initialize() {
     scene::Scene scene;
     scene::SceneBuilder builder(scene);
-
-    const std::array<simd_float3, 3> positions = {
-        simd_make_float3(-0.5f, -0.5f, 0.0f),
-        simd_make_float3(0.5f, -0.5f, 0.0f),
-        simd_make_float3(0.0f, 0.5f, 0.0f),
+    const std::array<simd_float3, 6> floorPositions = {
+        simd_make_float3(-1.0f, -0.3f, -1.0f),
+        simd_make_float3(1.0f, -0.3f, -1.0f),
+        simd_make_float3(1.0f, -0.3f, 1.0f),
+        simd_make_float3(-1.0f, -0.3f, -1.0f),
+        simd_make_float3(1.0f, -0.3f, 1.0f),
+        simd_make_float3(-1.0f, -0.3f, 1.0f),
     };
-    const std::array<std::uint32_t, 3> indices = {0, 1, 2};
+    const std::array<std::uint32_t, 6> floorIndices = {0U, 1U, 2U, 3U, 4U, 5U};
+    auto floorMesh = builder.addTriangleMesh(floorPositions, floorIndices);
 
-    auto meshHandle = builder.addTriangleMesh(positions, indices);
-    auto materialHandle = builder.addDefaultMaterial();
-    scene.addInstance(meshHandle, materialHandle, matrix_identity_float4x4);
+    scene::Material floorMaterial{};
+    floorMaterial.albedo = {0.85f, 0.85f, 0.85f};
+    auto floorMaterialHandle = scene.addMaterial(floorMaterial);
+    scene.addInstance(floorMesh, floorMaterialHandle, matrix_identity_float4x4);
+
+    const std::array<simd_float3, 3> prismPositions = {
+        simd_make_float3(-0.35f, -0.1f, 0.25f),
+        simd_make_float3(0.35f, -0.1f, -0.05f),
+        simd_make_float3(0.0f, 0.45f, 0.35f),
+    };
+    const std::array<std::uint32_t, 3> prismIndices = {0U, 1U, 2U};
+    auto prismMesh = builder.addTriangleMesh(prismPositions, prismIndices);
+
+    scene::Material prismMaterial{};
+    prismMaterial.albedo = {0.9f, 0.45f, 0.25f};
+    auto prismMaterialHandle = scene.addMaterial(prismMaterial);
+    scene.addInstance(prismMesh, prismMaterialHandle, matrix_identity_float4x4);
 
     return initialize(scene);
 }
@@ -61,6 +80,18 @@ bool MPSRenderer::initialize(const scene::Scene& scene) {
     if (!pathTracer_.initialize(context_)) {
         core::Logger::warn("MPSRenderer", "Failed to initialize MPS path tracer device state");
         return false;
+    }
+
+    uploadedMeshIndices_.clear();
+    uploadedMeshIndices_.reserve(scene.meshes().size());
+    for (std::size_t meshIndex = 0; meshIndex < scene.meshes().size(); ++meshIndex) {
+        const std::string label = "mps_mesh_" + std::to_string(meshIndex);
+        auto uploadIndex = geometryStore_.uploadMesh(scene.meshes()[meshIndex], label);
+        if (uploadIndex.has_value()) {
+            uploadedMeshIndices_.push_back(*uploadIndex);
+        } else {
+            core::Logger::warn("MPSRenderer", "Geometry upload failed for %s", label.c_str());
+        }
     }
 
     const MPSSceneData sceneData = buildSceneData(scene);
