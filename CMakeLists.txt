@@ -51,7 +51,10 @@ add_library(RTRMetalEngine STATIC
     engine/src/Core/placeholder.cpp
     engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/MetalContext.mm
-    engine/src/Rendering/Renderer.cpp)
+    engine/src/Rendering/Renderer.cpp
+    engine/src/Scene/Mesh.cpp
+    engine/src/Scene/Scene.cpp
+    engine/src/Scene/SceneBuilder.cpp)
 
 # Placeholder source to satisfy library creation until core module fills out
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/Core/placeholder.cpp)
@@ -101,7 +104,9 @@ if(RTR_BUILD_TESTS)
         tests/src/core/EngineConfigTests.cpp
         tests/src/core/LoggerTests.cpp
         tests/src/core/MathTests.cpp
-        tests/src/rendering/BufferAllocatorTests.cpp)
+        tests/src/rendering/BufferAllocatorTests.cpp
+        tests/src/scene/SceneTests.cpp
+        tests/src/scene/SceneBuilderTests.cpp)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)
     add_dependencies(RTRMetalTests RTRMetalShaders)

@@ -33,13 +33,11 @@ Metal GPU + Shaders
 - **BufferAllocator** – High-level GPU buffer creation entry point. It currently short-circuits when Metal is unavailable, while still providing the API surface (`BufferHandle`) required by upcoming resource managers.
 - **Renderer** – Façade exposed to applications. Wires configuration, context creation, and staging for per-frame work. Presently emits stub frame logs; later stages will attach the full ray tracing loop here.
 
-### Scene & Resource Systems (`engine/Scene` – forthcoming)
+### Scene & Resource Systems (`engine/Scene`)
 
-Planned modules (to be implemented in later stages):
-
-- Geometry loaders that consume CPU mesh data and invoke `BufferAllocator`.
-- Material/texture registries encapsulating GPU descriptor layouts.
-- Acceleration-structure builders (BLAS/TLAS) coupled with the math helpers already in place.
+- **Mesh / Material / Scene** – Immutable CPU-side descriptions with bounding-box computation and instance tracking. These feed future GPU upload paths and TLAS assembly.
+- **SceneBuilder** – Convenience façade for constructing meshes from raw position/index arrays and registering default materials; tests validate mesh insertion and error handling.
+- Upcoming work will extend these types with GPU upload hooks, material textures, and acceleration-structure builders leveraging the math helpers already in place.
 
 ### Shaders (`shaders/`)
 

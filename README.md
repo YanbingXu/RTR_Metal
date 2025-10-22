@@ -13,6 +13,7 @@ Remaining stages cover the ray tracing pipeline and AppKit sample per [`IMPLEMEN
 
 - `CMakeLists.txt` – Root build definition (library, sample, shaders, tests).
 - `engine/` – Engine headers (`include/RTRMetalEngine/...`) and sources (`src/...`) split into `Core`, `Rendering`, and `Scene` bundles.
+- `config/engine.ini` – Sample configuration loaded by the CLI demo via `ConfigLoader`.
 - `sample/` – Temporary console sample that exercises the renderer facade.
 - `tests/` – Executables registered with CTest for deterministic regression coverage.
 - `shaders/` – Metal shader sources compiled into `RTRShaders.metallib` at build time.
@@ -43,6 +44,8 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 - Tests: `cd build && ctest --output-on-failure`
 
 Both binaries currently emit console output only; rendering integration arrives in later stages.
+
+> Tip: Adjust `config/engine.ini` to point at custom shader libraries or change the reported application name when embedding the engine elsewhere.
 
 ## Documentation
 
