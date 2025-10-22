@@ -54,15 +54,11 @@ public:
     }
 
     bool uploadScene(std::span<const vector_float3> positions,
-                     std::span<const uint32_t> indices,
-                     std::span<const vector_float3> colors) {
+                     std::span<const uint32_t> indices) {
         if (!hasDevice() || intersector_ == nil) {
             return false;
         }
         if (positions.empty() || indices.empty() || indices.size() % 3 != 0) {
-            return false;
-        }
-        if (!colors.empty() && colors.size() != positions.size()) {
             return false;
         }
 
@@ -82,14 +78,6 @@ public:
             return false;
         }
 
-        vertices_.assign(positions.begin(), positions.end());
-        indices_.assign(indices.begin(), indices.end());
-        if (!colors.empty()) {
-            colors_.assign(colors.begin(), colors.end());
-        } else {
-            colors_.assign(vertices_.size(), (vector_float3){1.0f, 1.0f, 1.0f});
-        }
-
         accelerationStructure_ = [[MPSTriangleAccelerationStructure alloc] initWithDevice:device_];
         if (accelerationStructure_ == nil) {
             resetSceneResources();
@@ -107,9 +95,6 @@ public:
     }
 
     void resetSceneResources() {
-        vertices_.clear();
-        indices_.clear();
-        colors_.clear();
         @autoreleasepool {
             accelerationStructure_ = nil;
             vertexBuffer_ = nil;
@@ -123,9 +108,6 @@ public:
     MPSRayIntersector* intersector_ = nil;
     id<MTLBuffer> vertexBuffer_ = nil;
     id<MTLBuffer> indexBuffer_ = nil;
-    std::vector<vector_float3> vertices_;
-    std::vector<uint32_t> indices_;
-    std::vector<vector_float3> colors_;
 };
 
 MPSPathTracer::MPSPathTracer() = default;
@@ -182,16 +164,15 @@ bool MPSPathTracer::initialize(MetalContext& context) {
 #endif
 }
 
-bool MPSPathTracer::uploadTriangleScene(std::span<const vector_float3> positions,
-                                        std::span<const uint32_t> indices,
-                                        std::span<const vector_float3> colors) {
+bool MPSPathTracer::uploadScene(std::span<const vector_float3> positions,
+                                std::span<const uint32_t> indices) {
 #if TARGET_OS_OSX
     if (!impl_ || !impl_->hasDevice()) {
         core::Logger::warn("MPSPathTracer", "Cannot upload scene before initialization");
         return false;
     }
 
-    if (!impl_->uploadScene(positions, indices, colors)) {
+    if (!impl_->uploadScene(positions, indices)) {
         core::Logger::error("MPSPathTracer", "Failed to upload scene data to MPS path tracer");
         return false;
     }
@@ -217,21 +198,6 @@ void* MPSPathTracer::commandQueueHandle() const noexcept { return impl_ ? (__bri
 void* MPSPathTracer::accelerationStructureHandle() const noexcept { return impl_ ? (__bridge void*)impl_->accelerationStructure_ : nullptr; }
 
 void* MPSPathTracer::intersectorHandle() const noexcept { return impl_ ? (__bridge void*)impl_->intersector_ : nullptr; }
-
-const std::vector<vector_float3>& MPSPathTracer::vertexPositions() const noexcept {
-    static const std::vector<vector_float3> kEmpty;
-    return impl_ ? impl_->vertices_ : kEmpty;
-}
-
-const std::vector<uint32_t>& MPSPathTracer::indices() const noexcept {
-    static const std::vector<uint32_t> kEmpty;
-    return impl_ ? impl_->indices_ : kEmpty;
-}
-
-const std::vector<vector_float3>& MPSPathTracer::vertexColors() const noexcept {
-    static const std::vector<vector_float3> kEmpty;
-    return impl_ ? impl_->colors_ : kEmpty;
-}
 
 }  // namespace rtr::rendering
 

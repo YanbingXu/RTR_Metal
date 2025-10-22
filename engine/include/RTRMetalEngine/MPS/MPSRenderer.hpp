@@ -7,6 +7,8 @@
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 
+#include <simd/simd.h>
+
 namespace rtr::scene {
 class Scene;
 }
@@ -26,8 +28,10 @@ private:
     MetalContext& context_;
     BufferAllocator bufferAllocator_;
     GeometryStore geometryStore_;
-    std::vector<std::size_t> uploadedMeshIndices_;
     MPSPathTracer pathTracer_;
+    std::vector<vector_float3> cpuScenePositions_;
+    std::vector<uint32_t> cpuSceneIndices_;
+    std::vector<vector_float3> cpuSceneColors_;
 };
 
 }  // namespace rtr::rendering

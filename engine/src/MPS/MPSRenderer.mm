@@ -82,18 +82,6 @@ bool MPSRenderer::initialize(const scene::Scene& scene) {
         return false;
     }
 
-    uploadedMeshIndices_.clear();
-    uploadedMeshIndices_.reserve(scene.meshes().size());
-    for (std::size_t meshIndex = 0; meshIndex < scene.meshes().size(); ++meshIndex) {
-        const std::string label = "mps_mesh_" + std::to_string(meshIndex);
-        auto uploadIndex = geometryStore_.uploadMesh(scene.meshes()[meshIndex], label);
-        if (uploadIndex.has_value()) {
-            uploadedMeshIndices_.push_back(*uploadIndex);
-        } else {
-            core::Logger::warn("MPSRenderer", "Geometry upload failed for %s", label.c_str());
-        }
-    }
-
     const MPSSceneData sceneData = buildSceneData(scene);
     if (sceneData.positions.empty() || sceneData.indices.empty()) {
         core::Logger::warn("MPSRenderer", "Scene conversion produced no geometry");
@@ -102,15 +90,18 @@ bool MPSRenderer::initialize(const scene::Scene& scene) {
 
     const std::span<const vector_float3> positionSpan(sceneData.positions.data(), sceneData.positions.size());
     const std::span<const uint32_t> indexSpan(sceneData.indices.data(), sceneData.indices.size());
-    const std::span<const vector_float3> colorSpan(sceneData.colors.data(), sceneData.colors.size());
 
-    if (!pathTracer_.uploadTriangleScene(positionSpan, indexSpan, colorSpan)) {
+    if (!pathTracer_.uploadScene(positionSpan, indexSpan)) {
         core::Logger::error("MPSRenderer", "Failed to upload scene geometry to MPS path tracer");
         return false;
     }
 
+    cpuScenePositions_ = sceneData.positions;
+    cpuSceneIndices_ = sceneData.indices;
+    cpuSceneColors_ = sceneData.colors;
+
     core::Logger::info("MPSRenderer", "Loaded scene with %zu vertices and %zu triangles",
-                       sceneData.positions.size(), sceneData.indices.size() / 3);
+                       cpuScenePositions_.size(), cpuSceneIndices_.size() / 3);
     return true;
 }
 
@@ -182,9 +173,9 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
     [commandBuffer waitUntilCompleted];
 
     auto* intersections = reinterpret_cast<MPSIntersectionDistancePrimitiveIndexCoordinates*>([intersectionBuffer contents]);
-    const auto& vertices = pathTracer_.vertexPositions();
-    const auto& indices = pathTracer_.indices();
-    const auto& colors = pathTracer_.vertexColors();
+    const auto& vertices = cpuScenePositions_;
+    const auto& indices = cpuSceneIndices_;
+    const auto& colors = cpuSceneColors_;
 
     vector_float3 lightDir = simd_normalize((vector_float3){0.2f, 0.8f, 0.6f});
     std::vector<uint8_t> pixels(pixelCount * 3);
