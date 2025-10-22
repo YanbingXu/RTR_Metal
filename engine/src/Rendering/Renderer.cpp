@@ -1,6 +1,7 @@
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
 
 #include "RTRMetalEngine/Core/Logger.hpp"
+#include "RTRMetalEngine/Rendering/AccelerationStructureBuilder.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
@@ -12,12 +13,16 @@ namespace rtr::rendering {
 
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
-        : config(std::move(cfg)), context(), bufferAllocator(context), geometryStore(bufferAllocator) {
+        : config(std::move(cfg)), context(), bufferAllocator(context), geometryStore(bufferAllocator),
+          asBuilder(context) {
         if (!context.isValid()) {
             core::Logger::error("Renderer", "Metal context initialization failed");
         } else {
             core::Logger::info("Renderer", "Renderer configured for %s", config.applicationName.c_str());
             context.logDeviceInfo();
+            if (!asBuilder.isRayTracingSupported()) {
+                core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
+            }
         }
     }
 
@@ -33,6 +38,7 @@ struct Renderer::Impl {
     MetalContext context;
     BufferAllocator bufferAllocator;
     GeometryStore geometryStore;
+    AccelerationStructureBuilder asBuilder;
 };
 
 Renderer::Renderer(core::EngineConfig config)

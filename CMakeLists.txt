@@ -49,6 +49,7 @@ add_library(RTRMetalEngine STATIC
     engine/src/Core/Math.cpp
     engine/src/Core/Logger.cpp
     engine/src/Core/placeholder.cpp
+    engine/src/Rendering/AccelerationStructureBuilder.mm
     engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/GeometryStore.cpp
     engine/src/Rendering/MetalContext.mm
@@ -80,6 +81,7 @@ target_link_libraries(RTRMetalEngine
 set_source_files_properties(
     engine/src/Rendering/MetalContext.mm
     engine/src/Rendering/BufferAllocator.mm
+    engine/src/Rendering/AccelerationStructureBuilder.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # Sample application -------------------------------------------------------
@@ -107,6 +109,7 @@ if(RTR_BUILD_TESTS)
         tests/src/core/MathTests.cpp
         tests/src/rendering/BufferAllocatorTests.cpp
         tests/src/rendering/GeometryStoreTests.cpp
+        tests/src/rendering/AccelerationStructureBuilderTests.cpp
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp)
     target_link_libraries(RTRMetalTests
