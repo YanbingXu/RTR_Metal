@@ -5,7 +5,7 @@ RTR Metal is being rebuilt as a C++20 + Metal hardware ray tracing engine that t
 ## Stage Status
 
 - ✅ **Stage 1** – CMake scaffold, shader build integration, sample + test binaries
-- 🚧 **Stage 2** – Core math utilities, Metal context bootstrap, and logging system (initial slices landed)
+- 🚧 **Stage 2** – Core math utilities, configuration loader, logging system, Metal context bootstrap, and buffer allocator scaffolding
 
 Remaining stages cover the ray tracing pipeline and AppKit sample per [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 

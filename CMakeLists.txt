@@ -44,9 +44,12 @@ add_custom_target(RTRMetalShaders ALL DEPENDS ${RTR_METALLIB})
 
 # Library ------------------------------------------------------------------
 add_library(RTRMetalEngine STATIC
+    engine/src/Core/ConfigLoader.cpp
+    engine/src/Core/FileSystem.cpp
     engine/src/Core/Math.cpp
     engine/src/Core/Logger.cpp
     engine/src/Core/placeholder.cpp
+    engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/MetalContext.mm
     engine/src/Rendering/Renderer.cpp)
 
@@ -70,8 +73,10 @@ target_link_libraries(RTRMetalEngine
         ${RTR_METAL_FRAMEWORK}
         ${RTR_FOUNDATION_FRAMEWORK})
 
-set_source_files_properties(engine/src/Rendering/MetalContext.mm PROPERTIES
-    COMPILE_FLAGS "-fobjc-arc")
+set_source_files_properties(
+    engine/src/Rendering/MetalContext.mm
+    engine/src/Rendering/BufferAllocator.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # Sample application -------------------------------------------------------
 if(RTR_BUILD_SAMPLE)
@@ -92,9 +97,11 @@ if(RTR_BUILD_TESTS)
     FetchContent_MakeAvailable(googletest)
 
     add_executable(RTRMetalTests
+        tests/src/core/ConfigLoaderTests.cpp
         tests/src/core/EngineConfigTests.cpp
         tests/src/core/LoggerTests.cpp
-        tests/src/core/MathTests.cpp)
+        tests/src/core/MathTests.cpp
+        tests/src/rendering/BufferAllocatorTests.cpp)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)
     add_dependencies(RTRMetalTests RTRMetalShaders)
