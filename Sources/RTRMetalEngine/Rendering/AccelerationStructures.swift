@@ -76,7 +76,8 @@ public final class AccelerationStructureBuilder {
         geometryDescriptor.triangleCount = mesh.indices.count / 3
         geometryDescriptor.intersectionFunctionTableOffset = 0
 
-        let blasDescriptor = MTLAccelerationStructureDescriptor.accelerationStructureDescriptor(with: [geometryDescriptor])
+        let blasDescriptor = MTLPrimitiveAccelerationStructureDescriptor()
+        blasDescriptor.geometryDescriptors = [geometryDescriptor]
         blasDescriptor.usage = .preferFastBuild
 
         let sizes = context.device.accelerationStructureSizes(descriptor: blasDescriptor)
@@ -104,23 +105,20 @@ public final class AccelerationStructureBuilder {
     private func buildTLAS(instances: [InstanceGPUResources]) throws -> MTLAccelerationStructure {
         let instanceDescriptor = MTLInstanceAccelerationStructureDescriptor()
         instanceDescriptor.instanceCount = instances.count
-        instanceDescriptor.accelerationStructures = instances.map { $0.geometry.blas }
+        instanceDescriptor.instancedAccelerationStructures = instances.map { $0.geometry.blas }
+        instanceDescriptor.instanceDescriptorType = .userID
 
-        guard let instanceBuffer = context.device.makeBuffer(length: MemoryLayout<MTLAccelerationStructureInstanceDescriptor>.stride * instances.count, options: .storageModeManaged) else {
+        let descriptorStride = MemoryLayout<MTLAccelerationStructureUserIDInstanceDescriptor>.stride
+        guard let instanceBuffer = context.device.makeBuffer(length: descriptorStride * instances.count, options: .storageModeManaged) else {
             throw RendererError.resourceCreationFailed("Failed to allocate TLAS instance buffer")
         }
+        instanceDescriptor.instanceDescriptorStride = descriptorStride
 
-        let descriptorPointer = instanceBuffer.contents().bindMemory(to: MTLAccelerationStructureInstanceDescriptor.self, capacity: instances.count)
+        let descriptorPointer = instanceBuffer.contents().bindMemory(to: MTLAccelerationStructureUserIDInstanceDescriptor.self, capacity: instances.count)
         for (index, instance) in instances.enumerated() {
-            var desc = MTLAccelerationStructureInstanceDescriptor()
+            var desc = MTLAccelerationStructureUserIDInstanceDescriptor()
             let transform = instance.transform
-            desc.transformationMatrix = MTLPackedFloat4x3(
-                columns: (
-                    vector_float4(transform.columns.0.x, transform.columns.0.y, transform.columns.0.z, transform.columns.0.w),
-                    vector_float4(transform.columns.1.x, transform.columns.1.y, transform.columns.1.z, transform.columns.1.w),
-                    vector_float4(transform.columns.2.x, transform.columns.2.y, transform.columns.2.z, transform.columns.2.w)
-                )
-            )
+            desc.transformationMatrix = makePackedTransform(from: transform)
             desc.options = .opaque
             desc.mask = 0xFF
             desc.intersectionFunctionTableOffset = 0
@@ -194,6 +192,14 @@ public final class AccelerationStructureBuilder {
         }
         buffer.didModifyRange(0..<buffer.length)
         return buffer
+    }
+
+    private func makePackedTransform(from matrix: simd_float4x4) -> MTLPackedFloat4x3 {
+        let column0 = MTLPackedFloat3Make(matrix.columns.0.x, matrix.columns.0.y, matrix.columns.0.z)
+        let column1 = MTLPackedFloat3Make(matrix.columns.1.x, matrix.columns.1.y, matrix.columns.1.z)
+        let column2 = MTLPackedFloat3Make(matrix.columns.2.x, matrix.columns.2.y, matrix.columns.2.z)
+        let column3 = MTLPackedFloat3Make(matrix.columns.3.x, matrix.columns.3.y, matrix.columns.3.z)
+        return MTLPackedFloat4x3(columns: (column0, column1, column2, column3))
     }
 }
 
