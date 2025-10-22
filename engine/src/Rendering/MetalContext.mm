@@ -17,6 +17,7 @@ public:
     const std::string& deviceName() const noexcept { return deviceName_; }
     bool supportsRayTracing() const noexcept { return supportsRayTracing_; }
     id<MTLDevice> device() const noexcept { return device_; }
+    id<MTLCommandQueue> commandQueue() const noexcept { return commandQueue_; }
 
     void logDeviceInfo() const;
 
@@ -90,6 +91,13 @@ void* MetalContext::rawDeviceHandle() const noexcept {
         return nullptr;
     }
     return (__bridge void*)impl_->device();
+}
+
+void* MetalContext::rawCommandQueue() const noexcept {
+    if (!impl_ || !impl_->isValid()) {
+        return nullptr;
+    }
+    return (__bridge void*)impl_->commandQueue();
 }
 
 }  // namespace rtr::rendering

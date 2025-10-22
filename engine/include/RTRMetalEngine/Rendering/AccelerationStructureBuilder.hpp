@@ -3,6 +3,7 @@
 #include <optional>
 #include <string>
 
+#include "RTRMetalEngine/Rendering/AccelerationStructure.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 
@@ -22,6 +23,10 @@ public:
 
     std::optional<BottomLevelBuildInfo> queryBottomLevelSizes(const MeshBuffers& meshBuffers,
                                                               const std::string& label) const;
+
+    std::optional<AccelerationStructure> buildBottomLevel(const MeshBuffers& meshBuffers,
+                                                         const std::string& label,
+                                                         void* commandQueueHandle) const;
 
 private:
     MetalContext& context_;

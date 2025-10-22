@@ -22,12 +22,14 @@ public:
     void logDeviceInfo() const;
 
     [[nodiscard]] void* rawDeviceHandle() const noexcept;
+    [[nodiscard]] void* rawCommandQueue() const noexcept;
 
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
 
     friend class BufferAllocator;
+    friend class AccelerationStructureBuilder;
 };
 
 }  // namespace rtr::rendering

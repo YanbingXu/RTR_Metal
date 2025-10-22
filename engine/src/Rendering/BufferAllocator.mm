@@ -37,6 +37,11 @@ void* BufferHandle::nativeHandle() const noexcept {
     return impl_ && impl_->buffer_ ? (__bridge void*)impl_->buffer_ : nullptr;
 }
 
+void BufferHandle::adopt(void* bufferHandle, std::size_t length) {
+    id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)bufferHandle;
+    impl_ = std::make_unique<Impl>(buffer, length);
+}
+
 BufferAllocator::BufferAllocator(MetalContext& context)
     : context_(context) {}
 

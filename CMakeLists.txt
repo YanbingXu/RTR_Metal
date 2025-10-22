@@ -25,19 +25,31 @@ set(RTR_METAL_MODULE_CACHE ${RTR_SHADER_OUTPUT_DIR}/metal_module_cache)
 file(MAKE_DIRECTORY ${RTR_METAL_MODULE_CACHE})
 
 set(RTR_METAL_SOURCES
-    ${RTR_SHADER_DIR}/RTRShaders.metal)
+    ${RTR_SHADER_DIR}/RTRShaders.metal
+    ${RTR_SHADER_DIR}/RTRRayTracing.metal)
 
 set(RTR_METALLIB ${RTR_SHADER_OUTPUT_DIR}/RTRShaders.metallib)
-set(RTR_METALAIR ${RTR_SHADER_OUTPUT_DIR}/RTRShaders.air)
+
+set(RTR_METAL_AIRS)
+foreach(SOURCE_FILE ${RTR_METAL_SOURCES})
+    get_filename_component(SOURCE_NAME ${SOURCE_FILE} NAME_WE)
+    set(AIR_FILE ${RTR_SHADER_OUTPUT_DIR}/${SOURCE_NAME}.air)
+    list(APPEND RTR_METAL_AIRS ${AIR_FILE})
+    add_custom_command(
+        OUTPUT ${AIR_FILE}
+        COMMAND xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=${RTR_METAL_MODULE_CACHE}
+                -c ${SOURCE_FILE} -o ${AIR_FILE}
+        DEPENDS ${SOURCE_FILE}
+        WORKING_DIRECTORY ${RTR_SHADER_DIR}
+        COMMENT "Compiling ${SOURCE_NAME}.metal"
+        VERBATIM)
+endforeach()
 
 add_custom_command(
     OUTPUT ${RTR_METALLIB}
-    COMMAND xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=${RTR_METAL_MODULE_CACHE}
-            -c ${RTR_METAL_SOURCES} -o ${RTR_METALAIR}
-    COMMAND xcrun --sdk macosx metallib ${RTR_METALAIR} -o ${RTR_METALLIB}
-    DEPENDS ${RTR_METAL_SOURCES}
-    WORKING_DIRECTORY ${RTR_SHADER_DIR}
-    COMMENT "Compiling Metal shaders into ${RTR_METALLIB}"
+    COMMAND xcrun --sdk macosx metallib ${RTR_METAL_AIRS} -o ${RTR_METALLIB}
+    DEPENDS ${RTR_METAL_AIRS}
+    COMMENT "Linking Metal shaders into ${RTR_METALLIB}"
     VERBATIM)
 
 add_custom_target(RTRMetalShaders ALL DEPENDS ${RTR_METALLIB})
@@ -49,6 +61,7 @@ add_library(RTRMetalEngine STATIC
     engine/src/Core/Math.cpp
     engine/src/Core/Logger.cpp
     engine/src/Core/placeholder.cpp
+    engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
     engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/GeometryStore.cpp
@@ -81,6 +94,7 @@ target_link_libraries(RTRMetalEngine
 set_source_files_properties(
     engine/src/Rendering/MetalContext.mm
     engine/src/Rendering/BufferAllocator.mm
+    engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 

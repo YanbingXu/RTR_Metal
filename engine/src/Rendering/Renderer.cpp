@@ -1,13 +1,19 @@
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
 
 #include "RTRMetalEngine/Core/Logger.hpp"
+#include "RTRMetalEngine/Rendering/AccelerationStructure.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructureBuilder.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 
+#include <array>
 #include <iostream>
 #include <utility>
+#include <vector>
+
+#include "RTRMetalEngine/Scene/Scene.hpp"
+#include "RTRMetalEngine/Scene/SceneBuilder.hpp"
 
 namespace rtr::rendering {
 
@@ -22,6 +28,8 @@ struct Renderer::Impl {
             context.logDeviceInfo();
             if (!asBuilder.isRayTracingSupported()) {
                 core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
+            } else {
+                buildDiagnosticAccelerationStructure();
             }
         }
     }
@@ -39,6 +47,41 @@ struct Renderer::Impl {
     BufferAllocator bufferAllocator;
     GeometryStore geometryStore;
     AccelerationStructureBuilder asBuilder;
+    std::vector<AccelerationStructure> bottomLevelStructures;
+
+    void buildDiagnosticAccelerationStructure() {
+        std::array<simd_float3, 3> positions = {
+            simd_make_float3(0.0F, 0.0F, 0.0F),
+            simd_make_float3(0.5F, 0.0F, 0.0F),
+            simd_make_float3(0.0F, 0.5F, 0.0F)};
+        std::array<std::uint32_t, 3> indices = {0, 1, 2};
+
+        scene::Scene scene;
+        scene::SceneBuilder builder(scene);
+        auto meshHandle = builder.addTriangleMesh(positions, indices);
+        if (!meshHandle.isValid()) {
+            core::Logger::error("Renderer", "Failed to create diagnostic mesh");
+            return;
+        }
+        builder.addDefaultMaterial();
+        scene.addInstance(meshHandle, scene::MaterialHandle{0}, matrix_identity_float4x4);
+
+        const auto uploadIndex = geometryStore.uploadMesh(scene.meshes()[meshHandle.index], "diagnostic_triangle");
+        if (!uploadIndex.has_value()) {
+            core::Logger::warn("Renderer", "Geometry upload failed; skipping diagnostic AS build");
+            return;
+        }
+
+        void* queueHandle = context.rawCommandQueue();
+        const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
+        auto blas = asBuilder.buildBottomLevel(meshBuffers, "diagnostic_triangle", queueHandle);
+        if (blas.has_value()) {
+            core::Logger::info("Renderer", "Built diagnostic BLAS (%zu bytes)", blas->sizeInBytes());
+            bottomLevelStructures.push_back(std::move(*blas));
+        } else {
+            core::Logger::warn("Renderer", "Diagnostic BLAS build skipped");
+        }
+    }
 };
 
 Renderer::Renderer(core::EngineConfig config)

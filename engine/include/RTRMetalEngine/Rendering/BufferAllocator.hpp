@@ -20,6 +20,7 @@ public:
     [[nodiscard]] bool isValid() const noexcept;
     [[nodiscard]] std::size_t length() const noexcept;
     [[nodiscard]] void* nativeHandle() const noexcept;
+    void adopt(void* bufferHandle, std::size_t length);
 
 private:
     class Impl;
