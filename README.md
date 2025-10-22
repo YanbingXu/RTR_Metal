@@ -16,6 +16,7 @@ Remaining stages cover the ray tracing pipeline and AppKit sample per [`IMPLEMEN
 - `engine/` – Engine headers (`include/RTRMetalEngine/...`) and sources (`src/...`) split into `Core`, `Rendering`, and `Scene` bundles.
 - `config/engine.ini` – Sample configuration loaded by the CLI demo via `ConfigLoader`.
 - `sample/` – Temporary console sample that exercises the renderer facade.
+- `sample/src/mps_main.mm` – MPS demo entry point (build with `RTR_BUILD_MPS_SAMPLE=ON`).
 - `tests/` – Executables registered with CTest for deterministic regression coverage.
 - `shaders/` – Metal shader sources compiled into `RTRShaders.metallib` at build time.
 - `docs/` – Architecture notes and development guidelines.
@@ -42,9 +43,12 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 ## Running
 
 - Sample: `./build/RTRMetalSample`
+- MPS Sample: `./build/RTRMetalMPSSample`
 - Tests: `cd build && ctest --output-on-failure`
 
 Both binaries currently emit console output only; rendering integration arrives in later stages.
+
+> `RTRMetalMPSSample` 会在当前工作目录输出 `mps_output.ppm`（若设备支持 MPS ray tracing），便于快速检查渲染结果。
 
 > Tip: Adjust `config/engine.ini` to point at custom shader libraries or change the reported application name when embedding the engine elsewhere.
 

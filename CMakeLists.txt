@@ -9,6 +9,8 @@ include(FetchContent)
 
 # Build options
 option(RTR_BUILD_SAMPLE "Build RTR sample application" ON)
+option(RTR_BUILD_MPS_SAMPLE "Build MPS sample application" ON)
+option(RTR_ENABLE_MPS "Enable MPS path tracing backend" ON)
 option(RTR_BUILD_TESTS "Build RTR unit tests" ON)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -68,6 +70,9 @@ add_library(RTRMetalEngine STATIC
     engine/src/Rendering/GeometryStore.cpp
     engine/src/Rendering/MetalContext.mm
     engine/src/Rendering/Renderer.cpp
+    engine/src/MPS/MPSPathTracer.mm
+    engine/src/MPS/MPSRenderer.mm
+    engine/src/MPS/MPSSceneConverter.cpp
     engine/src/Scene/Mesh.cpp
     engine/src/Scene/Scene.cpp
     engine/src/Scene/SceneBuilder.cpp)
@@ -86,11 +91,13 @@ target_compile_features(RTRMetalEngine PUBLIC cxx_std_20)
 
 find_library(RTR_METAL_FRAMEWORK Metal REQUIRED)
 find_library(RTR_FOUNDATION_FRAMEWORK Foundation REQUIRED)
+find_library(RTR_MPS_FRAMEWORK MetalPerformanceShaders REQUIRED)
 
 target_link_libraries(RTRMetalEngine
     PUBLIC
         ${RTR_METAL_FRAMEWORK}
-        ${RTR_FOUNDATION_FRAMEWORK})
+        ${RTR_FOUNDATION_FRAMEWORK}
+        ${RTR_MPS_FRAMEWORK})
 
 set_source_files_properties(
     engine/src/Rendering/MetalContext.mm
@@ -98,6 +105,8 @@ set_source_files_properties(
     engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
     engine/src/Rendering/RayTracingPipeline.mm
+    engine/src/MPS/MPSPathTracer.mm
+    engine/src/MPS/MPSRenderer.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # Sample application -------------------------------------------------------
@@ -106,6 +115,12 @@ if(RTR_BUILD_SAMPLE)
     target_link_libraries(RTRMetalSample PRIVATE RTRMetalEngine)
     add_dependencies(RTRMetalSample RTRMetalShaders)
     target_compile_features(RTRMetalSample PRIVATE cxx_std_20)
+endif()
+
+if(RTR_BUILD_MPS_SAMPLE)
+    add_executable(RTRMetalMPSSample sample/src/mps_main.mm)
+    target_link_libraries(RTRMetalMPSSample PRIVATE RTRMetalEngine)
+    add_dependencies(RTRMetalMPSSample RTRMetalShaders)
 endif()
 
 # Tests --------------------------------------------------------------------
@@ -127,7 +142,8 @@ if(RTR_BUILD_TESTS)
         tests/src/rendering/GeometryStoreTests.cpp
         tests/src/rendering/AccelerationStructureBuilderTests.cpp
         tests/src/scene/SceneTests.cpp
-        tests/src/scene/SceneBuilderTests.cpp)
+        tests/src/scene/SceneBuilderTests.cpp
+        tests/src/mps/MPSSceneConverterTests.cpp)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)
     add_dependencies(RTRMetalTests RTRMetalShaders)
