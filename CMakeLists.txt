@@ -63,6 +63,7 @@ add_library(RTRMetalEngine STATIC
     engine/src/Core/placeholder.cpp
     engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
+    engine/src/Rendering/RayTracingPipeline.mm
     engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/GeometryStore.cpp
     engine/src/Rendering/MetalContext.mm
@@ -96,6 +97,7 @@ set_source_files_properties(
     engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
+    engine/src/Rendering/RayTracingPipeline.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # Sample application -------------------------------------------------------

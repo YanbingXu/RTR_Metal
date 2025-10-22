@@ -6,6 +6,7 @@
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
+#include "RTRMetalEngine/Rendering/RayTracingPipeline.hpp"
 
 #include <array>
 #include <iostream>
@@ -29,6 +30,9 @@ struct Renderer::Impl {
             if (!asBuilder.isRayTracingSupported()) {
                 core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
             } else {
+                if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
+                    core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
+                }
                 buildDiagnosticAccelerationStructure();
             }
         }
@@ -47,6 +51,7 @@ struct Renderer::Impl {
     BufferAllocator bufferAllocator;
     GeometryStore geometryStore;
     AccelerationStructureBuilder asBuilder;
+    RayTracingPipeline rayTracingPipeline;
     std::vector<AccelerationStructure> bottomLevelStructures;
 
     void buildDiagnosticAccelerationStructure() {
