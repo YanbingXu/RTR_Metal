@@ -1,4 +1,5 @@
 #import <Metal/Metal.h>
+#import <Foundation/Foundation.h>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
@@ -32,12 +33,16 @@ bool BufferHandle::isValid() const noexcept { return impl_ && impl_->buffer_ != 
 
 std::size_t BufferHandle::length() const noexcept { return impl_ ? impl_->length_ : 0; }
 
+void* BufferHandle::nativeHandle() const noexcept {
+    return impl_ && impl_->buffer_ ? (__bridge void*)impl_->buffer_ : nullptr;
+}
+
 BufferAllocator::BufferAllocator(MetalContext& context)
     : context_(context) {}
 
 bool BufferAllocator::isDeviceAvailable() const noexcept { return context_.isValid(); }
 
-BufferHandle BufferAllocator::createBuffer(std::size_t length, const void* initialData) noexcept {
+BufferHandle BufferAllocator::createBuffer(std::size_t length, const void* initialData, const char* label) noexcept {
     if (length == 0) {
         core::Logger::warn("BufferAllocator", "Cannot create buffer of zero length");
         return BufferHandle{};
@@ -60,6 +65,13 @@ BufferHandle BufferAllocator::createBuffer(std::size_t length, const void* initi
         if (!buffer) {
             core::Logger::error("BufferAllocator", "Failed to create Metal buffer of length %zu", length);
             return BufferHandle{};
+        }
+
+        if (label && label[0] != '\0') {
+            NSString* nsLabel = [[NSString alloc] initWithUTF8String:label];
+            if (nsLabel) {
+                [buffer setLabel:nsLabel];
+            }
         }
 
         if (initialData) {

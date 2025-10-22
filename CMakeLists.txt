@@ -50,6 +50,7 @@ add_library(RTRMetalEngine STATIC
     engine/src/Core/Logger.cpp
     engine/src/Core/placeholder.cpp
     engine/src/Rendering/BufferAllocator.mm
+    engine/src/Rendering/GeometryStore.cpp
     engine/src/Rendering/MetalContext.mm
     engine/src/Rendering/Renderer.cpp
     engine/src/Scene/Mesh.cpp
@@ -105,6 +106,7 @@ if(RTR_BUILD_TESTS)
         tests/src/core/LoggerTests.cpp
         tests/src/core/MathTests.cpp
         tests/src/rendering/BufferAllocatorTests.cpp
+        tests/src/rendering/GeometryStoreTests.cpp
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp)
     target_link_libraries(RTRMetalTests

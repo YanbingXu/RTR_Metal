@@ -1,6 +1,8 @@
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
 
 #include "RTRMetalEngine/Core/Logger.hpp"
+#include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
+#include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 
 #include <iostream>
@@ -10,7 +12,7 @@ namespace rtr::rendering {
 
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
-        : config(std::move(cfg)), context() {
+        : config(std::move(cfg)), context(), bufferAllocator(context), geometryStore(bufferAllocator) {
         if (!context.isValid()) {
             core::Logger::error("Renderer", "Metal context initialization failed");
         } else {
@@ -29,6 +31,8 @@ struct Renderer::Impl {
 
     core::EngineConfig config;
     MetalContext context;
+    BufferAllocator bufferAllocator;
+    GeometryStore geometryStore;
 };
 
 Renderer::Renderer(core::EngineConfig config)

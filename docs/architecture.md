@@ -37,6 +37,7 @@ Metal GPU + Shaders
 
 - **Mesh / Material / Scene** – Immutable CPU-side descriptions with bounding-box computation and instance tracking. These feed future GPU upload paths and TLAS assembly.
 - **SceneBuilder** – Convenience façade for constructing meshes from raw position/index arrays and registering default materials; tests validate mesh insertion and error handling.
+- **GeometryStore** – Uploads mesh vertex/index data to GPU buffers through `BufferAllocator`, preparing inputs for upcoming BLAS/TLAS builders.
 - Upcoming work will extend these types with GPU upload hooks, material textures, and acceleration-structure builders leveraging the math helpers already in place.
 
 ### Shaders (`shaders/`)

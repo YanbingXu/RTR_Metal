@@ -19,6 +19,7 @@ public:
 
     [[nodiscard]] bool isValid() const noexcept;
     [[nodiscard]] std::size_t length() const noexcept;
+    [[nodiscard]] void* nativeHandle() const noexcept;
 
 private:
     class Impl;
@@ -34,7 +35,9 @@ public:
     explicit BufferAllocator(MetalContext& context);
 
     [[nodiscard]] bool isDeviceAvailable() const noexcept;
-    [[nodiscard]] BufferHandle createBuffer(std::size_t length, const void* initialData = nullptr) noexcept;
+    [[nodiscard]] BufferHandle createBuffer(std::size_t length,
+                                           const void* initialData = nullptr,
+                                           const char* label = nullptr) noexcept;
 
 private:
     MetalContext& context_;
