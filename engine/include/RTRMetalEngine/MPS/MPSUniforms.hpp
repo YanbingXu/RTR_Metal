@@ -6,21 +6,16 @@
 
 namespace rtr::rendering {
 
-struct MPSCameraUniforms {
-    simd_float3 eye{0.0f, 0.0f, 0.0f};
-    float padding0 = 0.0f;
-    simd_float3 forward{0.0f, 0.0f, -1.0f};
-    float padding1 = 0.0f;
-    simd_float3 right{1.0f, 0.0f, 0.0f};
-    float padding2 = 0.0f;
-    simd_float3 up{0.0f, 1.0f, 0.0f};
-    float padding3 = 0.0f;
+struct alignas(16) MPSCameraUniforms {
+    simd_float4 eye{0.0f, 0.0f, 0.0f, 1.0f};
+    simd_float4 forward{0.0f, 0.0f, -1.0f, 0.0f};
+    simd_float4 right{1.0f, 0.0f, 0.0f, 0.0f};
+    simd_float4 up{0.0f, 1.0f, 0.0f, 0.0f};
     simd_float2 imagePlaneHalfExtents{1.0f, 1.0f};
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    std::uint32_t padding[2] = {0, 0};
 };
-
-static_assert(sizeof(MPSCameraUniforms) % 16 == 0, "MPSCameraUniforms must be 16-byte aligned");
 
 struct MPSIntersectionData {
     float distance = 0.0f;
@@ -28,5 +23,15 @@ struct MPSIntersectionData {
     simd_float2 barycentric{0.0f, 0.0f};
     float padding = 0.0f;
 };
+
+struct MPSSceneLimits {
+    std::uint32_t vertexCount = 0;
+    std::uint32_t indexCount = 0;
+    std::uint32_t colorCount = 0;
+    std::uint32_t primitiveCount = 0;
+};
+
+static_assert(sizeof(MPSCameraUniforms) % 16 == 0, "MPSCameraUniforms must be 16-byte aligned");
+static_assert(sizeof(MPSSceneLimits) % 16 == 0, "MPSSceneLimits must be 16-byte aligned");
 
 }  // namespace rtr::rendering

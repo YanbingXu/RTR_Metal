@@ -6,10 +6,14 @@
 
 #include "RTRMetalEngine/MPS/MPSRenderer.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cfloat>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <limits>
 #include <span>
@@ -39,6 +43,107 @@ bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t 
     return static_cast<bool>(file);
 }
 
+bool parseEnvBool(const char* value, bool defaultValue) {
+    if (!value) {
+        return defaultValue;
+    }
+
+    std::string lowered(value);
+    std::transform(lowered.begin(), lowered.end(), lowered.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (lowered == "0" || lowered == "false" || lowered == "off") {
+        return false;
+    }
+    if (lowered == "1" || lowered == "true" || lowered == "on") {
+        return true;
+    }
+    return defaultValue;
+}
+
+bool shouldEnableGPUShadingByDefault() {
+    const char* envValue = std::getenv("RTR_MPS_GPU_SHADING");
+    return parseEnvBool(envValue, true);
+}
+
+std::vector<MPSPackedFloat3> packVectorFloat3(const std::vector<vector_float3>& input) {
+    std::vector<MPSPackedFloat3> packed;
+    packed.reserve(input.size());
+    for (const auto& value : input) {
+        packed.emplace_back(value);
+    }
+    return packed;
+}
+
+id<MTLLibrary> loadMetalLibrary(id<MTLDevice> device) {
+    if (!device) {
+        return nil;
+    }
+
+    @autoreleasepool {
+        id<MTLLibrary> library = [device newDefaultLibrary];
+        if (library) {
+            return library;
+        }
+
+        auto tryLoadFromPath = [&](const std::filesystem::path& candidate) -> id<MTLLibrary> {
+            if (candidate.empty()) {
+                return nil;
+            }
+            std::error_code ec;
+            std::filesystem::path resolved = candidate;
+            if (!resolved.is_absolute()) {
+                resolved = std::filesystem::current_path(ec) / candidate;
+            }
+            if (!std::filesystem::exists(resolved, ec)) {
+                return nil;
+            }
+
+            const std::string pathString = resolved.string();
+            NSString* nsPath = [[NSString alloc] initWithUTF8String:pathString.c_str()];
+            if (!nsPath) {
+                return nil;
+            }
+
+            NSError* loadError = nil;
+            id<MTLLibrary> loaded = [device newLibraryWithFile:nsPath error:&loadError];
+            if (!loaded && loadError) {
+                core::Logger::warn("MPSRenderer", "Failed to load Metal library at %s: %s", pathString.c_str(),
+                                   loadError.localizedDescription.UTF8String);
+            }
+            return loaded;
+        };
+
+        const char* envPath = std::getenv("MTL_NEW_DEFAULT_LIBRARY_FILE");
+        if (envPath && envPath[0] != '\0') {
+            library = tryLoadFromPath(std::filesystem::path(envPath));
+            if (library) {
+                core::Logger::info("MPSRenderer", "Loaded Metal library from %s", envPath);
+                return library;
+            }
+        }
+
+        static const std::filesystem::path kFallbackLibraries[] = {
+            "shaders/RTRShaders.metallib",
+            "cmake-build-debug/shaders/RTRShaders.metallib",
+            "cmake-build-release/shaders/RTRShaders.metallib",
+            "build/shaders/RTRShaders.metallib",
+        };
+
+        for (const auto& candidate : kFallbackLibraries) {
+            library = tryLoadFromPath(candidate);
+            if (library) {
+                core::Logger::info("MPSRenderer", "Loaded Metal library from %s", candidate.string().c_str());
+                return library;
+            }
+        }
+
+        core::Logger::warn("MPSRenderer", "Unable to locate Metal library for GPU shading");
+        return nil;
+    }
+}
+
 }  // namespace
 
 struct MPSRenderer::GPUState {
@@ -52,7 +157,13 @@ struct MPSRenderer::GPUState {
 };
 
 MPSRenderer::MPSRenderer(MetalContext& context)
-    : context_(context), bufferAllocator_(context), geometryStore_(bufferAllocator_) {}
+    : context_(context), bufferAllocator_(context), geometryStore_(bufferAllocator_),
+      gpuShadingEnabled_(shouldEnableGPUShadingByDefault()) {
+    if (!gpuShadingEnabled_) {
+        core::Logger::info("MPSRenderer",
+                           "GPU shading disabled via RTR_MPS_GPU_SHADING environment override");
+    }
+}
 
 MPSRenderer::~MPSRenderer() = default;
 
@@ -68,14 +179,18 @@ void MPSRenderer::updateCameraUniforms(std::uint32_t width, std::uint32_t height
     const vector_float3 target = {0.0f, 0.0f, 0.0f};
     const vector_float3 worldUp = {0.0f, 1.0f, 0.0f};
 
-    cameraUniforms_.eye = cameraOrigin;
-    cameraUniforms_.forward = simd_normalize(target - cameraOrigin);
-    vector_float3 right = simd_cross(cameraUniforms_.forward, worldUp);
+    const vector_float3 forward = simd_normalize(target - cameraOrigin);
+    vector_float3 right = simd_cross(forward, worldUp);
     if (simd_length(right) < 1e-5f) {
         right = {1.0f, 0.0f, 0.0f};
     }
-    cameraUniforms_.right = simd_normalize(right);
-    cameraUniforms_.up = simd_normalize(simd_cross(cameraUniforms_.right, cameraUniforms_.forward));
+    const vector_float3 normRight = simd_normalize(right);
+    const vector_float3 up = simd_normalize(simd_cross(normRight, forward));
+
+    cameraUniforms_.eye = simd_make_float4(cameraOrigin, 1.0f);
+    cameraUniforms_.forward = simd_make_float4(forward, 0.0f);
+    cameraUniforms_.right = simd_make_float4(normRight, 0.0f);
+    cameraUniforms_.up = simd_make_float4(up, 0.0f);
     cameraUniforms_.imagePlaneHalfExtents = {1.0f, 1.0f};
     cameraUniforms_.width = width;
     cameraUniforms_.height = height;
@@ -94,13 +209,14 @@ void MPSRenderer::updateCameraUniforms(std::uint32_t width, std::uint32_t height
 }
 
 bool MPSRenderer::initializeGPUResources() {
-    if (!kEnableGPUShading) {
+    if (!gpuShadingEnabled_) {
         return true;
     }
 
     id<MTLDevice> device = (__bridge id<MTLDevice>)context_.rawDeviceHandle();
     if (!device) {
         core::Logger::warn("MPSRenderer", "Cannot create GPU pipelines: Metal device unavailable");
+        gpuShadingEnabled_ = false;
         return false;
     }
 
@@ -109,9 +225,9 @@ bool MPSRenderer::initializeGPUResources() {
     }
 
     NSError* error = nil;
-    id<MTLLibrary> library = [device newDefaultLibrary];
+    id<MTLLibrary> library = loadMetalLibrary(device);
     if (!library) {
-        core::Logger::warn("MPSRenderer", "Failed to load default Metal library for GPU shading");
+        gpuShadingEnabled_ = false;
         return false;
     }
 
@@ -119,6 +235,7 @@ bool MPSRenderer::initializeGPUResources() {
         id<MTLFunction> rayFunction = [library newFunctionWithName:@"mpsRayKernel"];
         if (!rayFunction) {
             core::Logger::warn("MPSRenderer", "Metal library missing mpsRayKernel; GPU shading disabled");
+            gpuShadingEnabled_ = false;
             return false;
         }
 
@@ -127,6 +244,7 @@ bool MPSRenderer::initializeGPUResources() {
             core::Logger::warn("MPSRenderer", "Failed to create ray compute pipeline state: %s",
                                error.localizedDescription.UTF8String);
             gpuState_.reset();
+            gpuShadingEnabled_ = false;
             return false;
         }
         core::Logger::info("MPSRenderer", "GPU ray generation pipeline initialised");
@@ -136,6 +254,7 @@ bool MPSRenderer::initializeGPUResources() {
         id<MTLFunction> shadeFunction = [library newFunctionWithName:@"mpsShadeKernel"];
         if (!shadeFunction) {
             core::Logger::warn("MPSRenderer", "Metal library missing mpsShadeKernel; GPU shading disabled");
+            gpuShadingEnabled_ = false;
             return false;
         }
 
@@ -144,6 +263,7 @@ bool MPSRenderer::initializeGPUResources() {
             core::Logger::warn("MPSRenderer", "Failed to create shade compute pipeline state: %s",
                                error.localizedDescription.UTF8String);
             gpuState_->shadePipeline = nil;
+            gpuShadingEnabled_ = false;
             return false;
         }
         core::Logger::info("MPSRenderer", "GPU shading pipeline initialised");
@@ -165,12 +285,20 @@ bool MPSRenderer::initializeGPUResources() {
         }
     };
 
-    uploadStaticBuffer(gpuState_->positionsBuffer, cpuScenePositions_.data(),
-                       cpuScenePositions_.size() * sizeof(vector_float3), "mps.positions");
+    const auto packedPositions = packVectorFloat3(cpuScenePositions_);
+    if (!packedPositions.empty()) {
+        uploadStaticBuffer(gpuState_->positionsBuffer, packedPositions.data(),
+                           packedPositions.size() * sizeof(MPSPackedFloat3), "mps.positions");
+    }
+
     uploadStaticBuffer(gpuState_->indicesBuffer, cpuSceneIndices_.data(),
                        cpuSceneIndices_.size() * sizeof(uint32_t), "mps.indices");
-    uploadStaticBuffer(gpuState_->colorsBuffer, cpuSceneColors_.data(),
-                       cpuSceneColors_.size() * sizeof(vector_float3), "mps.colors");
+
+    const auto packedColors = packVectorFloat3(cpuSceneColors_);
+    if (!packedColors.empty()) {
+        uploadStaticBuffer(gpuState_->colorsBuffer, packedColors.data(),
+                           packedColors.size() * sizeof(MPSPackedFloat3), "mps.colors");
+    }
 
     return true;
 }
@@ -280,7 +408,7 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
         return false;
     }
 
-    if (kEnableGPUShading && gpuState_ && gpuState_->rayPipeline) {
+    if (gpuShadingEnabled_ && gpuState_ && gpuState_->rayPipeline) {
         id<MTLCommandBuffer> setupCommandBuffer = [queue commandBuffer];
         if (!setupCommandBuffer) {
             core::Logger::error("MPSRenderer", "Failed to create command buffer for ray generation");
@@ -295,10 +423,7 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
 
         [computeEncoder setComputePipelineState:gpuState_->rayPipeline];
         [computeEncoder setBuffer:rayBuffer offset:0 atIndex:0];
-        if (uniformBuffer_.isValid()) {
-            id<MTLBuffer> uniforms = (__bridge id<MTLBuffer>)uniformBuffer_.nativeHandle();
-            [computeEncoder setBuffer:uniforms offset:0 atIndex:1];
-        }
+        [computeEncoder setBytes:&cameraUniforms_ length:sizeof(cameraUniforms_) atIndex:1];
 
         const NSUInteger threadWidth = gpuState_->rayPipeline.threadExecutionWidth;
         const NSUInteger threadHeight = gpuState_->rayPipeline.maxTotalThreadsPerThreadgroup / threadWidth;
@@ -310,12 +435,22 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
         [computeEncoder endEncoding];
         [setupCommandBuffer commit];
         [setupCommandBuffer waitUntilCompleted];
+
+        auto* rayDebug = reinterpret_cast<MPSRayOriginMaskDirectionMaxDistance*>([rayBuffer contents]);
+        if (rayDebug) {
+            for (std::uint32_t sampleIndex = 0; sampleIndex < 4; ++sampleIndex) {
+                const auto& ray = rayDebug[sampleIndex];
+                core::Logger::info("MPSRenderer", "Post-ray-kernel %u origin=(%.3f, %.3f, %.3f) dir=(%.3f, %.3f, %.3f) mask=%u",
+                                   sampleIndex, ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y,
+                                   ray.direction.z, ray.mask);
+            }
+        }
     } else {
         auto* rays = reinterpret_cast<MPSRayOriginMaskDirectionMaxDistance*>([rayBuffer contents]);
-        const vector_float3 cameraOrigin = cameraUniforms_.eye;
-        const vector_float3 right = cameraUniforms_.right;
-        const vector_float3 up = cameraUniforms_.up;
-        const vector_float3 forward = cameraUniforms_.forward;
+        const vector_float3 cameraOrigin = simd_make_float3(cameraUniforms_.eye);
+        const vector_float3 right = simd_make_float3(cameraUniforms_.right);
+        const vector_float3 up = simd_make_float3(cameraUniforms_.up);
+        const vector_float3 forward = simd_make_float3(cameraUniforms_.forward);
         const vector_float2 halfExtents = cameraUniforms_.imagePlaneHalfExtents;
         for (std::uint32_t y = 0; y < height; ++y) {
             for (std::uint32_t x = 0; x < width; ++x) {
@@ -359,11 +494,30 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
     const auto& indices = cpuSceneIndices_;
     const auto& colors = cpuSceneColors_;
 
+    if (gpuShadingEnabled_) {
+        auto* rayData = reinterpret_cast<MPSRayOriginMaskDirectionMaxDistance*>([rayBuffer contents]);
+        if (rayData) {
+            for (std::uint32_t sampleIndex = 0; sampleIndex < 4; ++sampleIndex) {
+                const auto& ray = rayData[sampleIndex];
+                core::Logger::info("MPSRenderer", "GPU ray %u origin=(%.3f, %.3f, %.3f) dir=(%.3f, %.3f, %.3f) mask=%u",
+                                   sampleIndex, ray.origin.x, ray.origin.y, ray.origin.z, ray.direction.x, ray.direction.y,
+                                   ray.direction.z, ray.mask);
+            }
+        }
+
+        for (std::size_t sampleIndex = 0; sampleIndex < 4 && sampleIndex < pixelCount; ++sampleIndex) {
+            const auto& isect = intersections[sampleIndex];
+            core::Logger::info("MPSRenderer",
+                               "GPU intersection %zu distance=%.3f primitive=%u bary=(%.3f, %.3f)", sampleIndex,
+                               isect.distance, isect.primitiveIndex, isect.coordinates.x, isect.coordinates.y);
+        }
+    }
+
     std::vector<uint8_t> pixels(pixelCount * 3);
     std::vector<uint8_t> gpuPixels;
     bool usedGPUShading = false;
 
-    if (kEnableGPUShading && gpuState_ && gpuState_->shadePipeline && gpuState_->positionsBuffer.isValid() &&
+    if (gpuShadingEnabled_ && gpuState_ && gpuState_->shadePipeline && gpuState_->positionsBuffer.isValid() &&
         gpuState_->indicesBuffer.isValid() && gpuState_->colorsBuffer.isValid()) {
         std::vector<MPSIntersectionData> gpuIntersections(pixelCount);
         for (std::size_t i = 0; i < pixelCount; ++i) {
@@ -374,12 +528,22 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
             gpuIntersections[i].padding = 0.0f;
         }
 
+        std::size_t gpuHitCount = 0;
+        std::size_t gpuMissCount = 0;
+        for (const auto& isect : gpuIntersections) {
+            if (isect.primitiveIndex != std::numeric_limits<std::uint32_t>::max() && isect.distance < FLT_MAX) {
+                ++gpuHitCount;
+            } else {
+                ++gpuMissCount;
+            }
+        }
+        core::Logger::info("MPSRenderer", "GPU intersection repack hits: %zu, misses: %zu", gpuHitCount, gpuMissCount);
+
         const std::size_t intersectionsByteLength = gpuIntersections.size() * sizeof(MPSIntersectionData);
         if (!gpuState_->intersectionsBuffer.isValid() ||
             gpuState_->intersectionsBuffer.length() < intersectionsByteLength) {
-            gpuState_->intersectionsBuffer = bufferAllocator_.createBuffer(intersectionsByteLength,
-                                                                          gpuIntersections.data(),
-                                                                          "mps.intersections");
+            gpuState_->intersectionsBuffer =
+                bufferAllocator_.createBuffer(intersectionsByteLength, gpuIntersections.data(), "mps.intersections");
         } else {
             id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)gpuState_->intersectionsBuffer.nativeHandle();
             if (buffer) {
@@ -388,9 +552,14 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
             }
         }
 
+        if (!gpuState_->intersectionsBuffer.isValid()) {
+            core::Logger::warn("MPSRenderer", "Failed to upload intersections for GPU shading");
+        }
+
         const std::size_t outputByteLength = pixelCount * sizeof(simd_float4);
         if (!gpuState_->shadingOutputBuffer.isValid() || gpuState_->shadingOutputBuffer.length() < outputByteLength) {
-            gpuState_->shadingOutputBuffer = bufferAllocator_.createBuffer(outputByteLength, nullptr, "mps.shadingOutput");
+            gpuState_->shadingOutputBuffer =
+                bufferAllocator_.createBuffer(outputByteLength, nullptr, "mps.shadingOutput");
         }
 
         if (gpuState_->intersectionsBuffer.isValid() && gpuState_->shadingOutputBuffer.isValid()) {
@@ -414,11 +583,17 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->shadingOutputBuffer.nativeHandle()
                                    offset:0
                                   atIndex:4];
-                    if (uniformBuffer_.isValid()) {
-                        [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)uniformBuffer_.nativeHandle()
-                                       offset:0
-                                      atIndex:5];
-                    }
+                    [shadeEncoder setBytes:&cameraUniforms_ length:sizeof(cameraUniforms_) atIndex:5];
+
+                    MPSSceneLimits limits{};
+                    limits.vertexCount = static_cast<std::uint32_t>(std::min<std::size_t>(cpuScenePositions_.size(),
+                                                                                          std::numeric_limits<std::uint32_t>::max()));
+                    limits.indexCount = static_cast<std::uint32_t>(std::min<std::size_t>(cpuSceneIndices_.size(),
+                                                                                       std::numeric_limits<std::uint32_t>::max()));
+                    limits.colorCount = static_cast<std::uint32_t>(std::min<std::size_t>(cpuSceneColors_.size(),
+                                                                                       std::numeric_limits<std::uint32_t>::max()));
+                    limits.primitiveCount = limits.indexCount / 3U;
+                    [shadeEncoder setBytes:&limits length:sizeof(limits) atIndex:6];
 
                     const NSUInteger threadWidth = gpuState_->shadePipeline.threadExecutionWidth;
                     const NSUInteger threadsPerThreadgroup = gpuState_->shadePipeline.maxTotalThreadsPerThreadgroup;
@@ -493,7 +668,7 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
         pixels[i * 3 + 2] = static_cast<uint8_t>(color.z * 255.0f);
     }
 
-    if (usedGPUShading && gpuPixels.size() == pixels.size()) {
+    if (gpuShadingEnabled_ && usedGPUShading && gpuPixels.size() == pixels.size()) {
         float maxDifference = 0.0f;
         for (std::size_t i = 0; i < pixels.size(); ++i) {
             maxDifference = std::max(maxDifference, std::fabs(static_cast<float>(pixels[i]) - gpuPixels[i]));

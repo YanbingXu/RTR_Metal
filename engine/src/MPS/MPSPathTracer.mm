@@ -183,7 +183,6 @@ bool MPSPathTracer::uploadScene(std::span<const vector_float3> positions,
 #else
     (void)positions;
     (void)indices;
-    (void)colors;
     core::Logger::warn("MPSPathTracer", "MPS path tracer not supported on this platform");
     return false;
 #endif

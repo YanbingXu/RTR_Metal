@@ -2,27 +2,21 @@
 #define MPS_UNIFORMS_METAL
 
 #include <metal_stdlib>
+#include <MetalPerformanceShaders/MetalPerformanceShaders.h>
 using namespace metal;
 
+typedef MPSIntersectionDistancePrimitiveIndexCoordinates MPSIntersectionData;
+
 struct MPSCameraUniforms {
-    float3 eye;
-    float padding0;
-    float3 forward;
-    float padding1;
-    float3 right;
-    float padding2;
-    float3 up;
-    float padding3;
+    float4 eye;
+    float4 forward;
+    float4 right;
+    float4 up;
     float2 imagePlaneHalfExtents;
     uint width;
     uint height;
-};
-
-struct MPSRayOriginMaskDirectionMaxDistance {
-    float3 origin;
-    uint mask;
-    float3 direction;
-    float maxDistance;
+    uint padding0;
+    uint padding1;
 };
 
 struct MPSMaterial {
@@ -32,11 +26,11 @@ struct MPSMaterial {
     float metallic;
 };
 
-struct MPSIntersectionData {
-    float distance;
-    uint primitiveIndex;
-    float2 coordinates;
-    float padding;
+struct MPSSceneLimits {
+    uint vertexCount;
+    uint indexCount;
+    uint colorCount;
+    uint primitiveCount;
 };
 
 #endif

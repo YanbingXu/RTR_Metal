@@ -143,7 +143,8 @@ if(RTR_BUILD_TESTS)
         tests/src/rendering/AccelerationStructureBuilderTests.cpp
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp
-        tests/src/mps/MPSSceneConverterTests.cpp)
+        tests/src/mps/MPSSceneConverterTests.cpp
+        tests/src/mps/MPSRendererImageComparisonTests.mm)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)
     add_dependencies(RTRMetalTests RTRMetalShaders)

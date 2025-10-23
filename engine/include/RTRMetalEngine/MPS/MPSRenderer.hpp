@@ -27,7 +27,6 @@ public:
     bool renderFrame(const char* outputPath);
 
 private:
-    static constexpr bool kEnableGPUShading = true;
     MetalContext& context_;
     BufferAllocator bufferAllocator_;
     GeometryStore geometryStore_;
@@ -37,6 +36,7 @@ private:
     std::vector<vector_float3> cpuSceneColors_;
     BufferHandle uniformBuffer_;
     MPSCameraUniforms cameraUniforms_{};
+    bool gpuShadingEnabled_ = false;
     struct GPUState;
     std::unique_ptr<GPUState> gpuState_;
 
