@@ -62,6 +62,12 @@ bool parseEnvBool(const char* value, bool defaultValue) {
     return defaultValue;
 }
 
+uint8_t floatToSRGBByte(float value) {
+    const float clamped = std::clamp(value, 0.0f, 1.0f);
+    const long rounded = std::lroundf(clamped * 255.0f);
+    return static_cast<uint8_t>(std::clamp<long>(rounded, 0, 255));
+}
+
 bool shouldEnableGPUShadingByDefault() {
     const char* envValue = std::getenv("RTR_MPS_GPU_SHADING");
     return parseEnvBool(envValue, true);
@@ -514,63 +520,26 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
     }
 
     std::vector<uint8_t> pixels(pixelCount * 3);
+    std::vector<vector_float3> cpuFloatPixels(pixelCount, (vector_float3){0.0f, 0.0f, 0.0f});
     std::vector<uint8_t> gpuPixels;
+    simd_float4* shadeOutputPtr = nullptr;
     bool usedGPUShading = false;
 
     if (gpuShadingEnabled_ && gpuState_ && gpuState_->shadePipeline && gpuState_->positionsBuffer.isValid() &&
         gpuState_->indicesBuffer.isValid() && gpuState_->colorsBuffer.isValid()) {
-        std::vector<MPSIntersectionData> gpuIntersections(pixelCount);
-        for (std::size_t i = 0; i < pixelCount; ++i) {
-            const auto& src = intersections[i];
-            gpuIntersections[i].distance = src.distance;
-            gpuIntersections[i].primitiveIndex = src.primitiveIndex;
-            gpuIntersections[i].barycentric = {src.coordinates.x, src.coordinates.y};
-            gpuIntersections[i].padding = 0.0f;
-        }
-
-        std::size_t gpuHitCount = 0;
-        std::size_t gpuMissCount = 0;
-        for (const auto& isect : gpuIntersections) {
-            if (isect.primitiveIndex != std::numeric_limits<std::uint32_t>::max() && isect.distance < FLT_MAX) {
-                ++gpuHitCount;
-            } else {
-                ++gpuMissCount;
-            }
-        }
-        core::Logger::info("MPSRenderer", "GPU intersection repack hits: %zu, misses: %zu", gpuHitCount, gpuMissCount);
-
-        const std::size_t intersectionsByteLength = gpuIntersections.size() * sizeof(MPSIntersectionData);
-        if (!gpuState_->intersectionsBuffer.isValid() ||
-            gpuState_->intersectionsBuffer.length() < intersectionsByteLength) {
-            gpuState_->intersectionsBuffer =
-                bufferAllocator_.createBuffer(intersectionsByteLength, gpuIntersections.data(), "mps.intersections");
-        } else {
-            id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)gpuState_->intersectionsBuffer.nativeHandle();
-            if (buffer) {
-                std::memcpy([buffer contents], gpuIntersections.data(), intersectionsByteLength);
-                [buffer didModifyRange:NSMakeRange(0, intersectionsByteLength)];
-            }
-        }
-
-        if (!gpuState_->intersectionsBuffer.isValid()) {
-            core::Logger::warn("MPSRenderer", "Failed to upload intersections for GPU shading");
-        }
-
         const std::size_t outputByteLength = pixelCount * sizeof(simd_float4);
         if (!gpuState_->shadingOutputBuffer.isValid() || gpuState_->shadingOutputBuffer.length() < outputByteLength) {
             gpuState_->shadingOutputBuffer =
                 bufferAllocator_.createBuffer(outputByteLength, nullptr, "mps.shadingOutput");
         }
 
-        if (gpuState_->intersectionsBuffer.isValid() && gpuState_->shadingOutputBuffer.isValid()) {
+        if (gpuState_->shadingOutputBuffer.isValid()) {
             id<MTLCommandBuffer> shadeCommandBuffer = [queue commandBuffer];
             if (shadeCommandBuffer) {
                 id<MTLComputeCommandEncoder> shadeEncoder = [shadeCommandBuffer computeCommandEncoder];
                 if (shadeEncoder) {
                     [shadeEncoder setComputePipelineState:gpuState_->shadePipeline];
-                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->intersectionsBuffer.nativeHandle()
-                                   offset:0
-                                  atIndex:0];
+                    [shadeEncoder setBuffer:intersectionBuffer offset:0 atIndex:0];
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->positionsBuffer.nativeHandle()
                                    offset:0
                                   atIndex:1];
@@ -613,10 +582,11 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
                         gpuPixels.resize(pixelCount * 3);
                         for (std::size_t i = 0; i < pixelCount; ++i) {
                             const simd_float4 c = simd_clamp(gpuOutput[i], (simd_float4){0.0f}, (simd_float4){1.0f});
-                            gpuPixels[i * 3 + 0] = static_cast<uint8_t>(c.x * 255.0f);
-                            gpuPixels[i * 3 + 1] = static_cast<uint8_t>(c.y * 255.0f);
-                            gpuPixels[i * 3 + 2] = static_cast<uint8_t>(c.z * 255.0f);
+                            gpuPixels[i * 3 + 0] = floatToSRGBByte(c.x);
+                            gpuPixels[i * 3 + 1] = floatToSRGBByte(c.y);
+                            gpuPixels[i * 3 + 2] = floatToSRGBByte(c.z);
                         }
+                        shadeOutputPtr = gpuOutput;
                         usedGPUShading = true;
                     }
                 }
@@ -663,22 +633,50 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
             }
         }
         color = simd_clamp(color, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
-        pixels[i * 3 + 0] = static_cast<uint8_t>(color.x * 255.0f);
-        pixels[i * 3 + 1] = static_cast<uint8_t>(color.y * 255.0f);
-        pixels[i * 3 + 2] = static_cast<uint8_t>(color.z * 255.0f);
+        cpuFloatPixels[i] = color;
+        pixels[i * 3 + 0] = floatToSRGBByte(color.x);
+        pixels[i * 3 + 1] = floatToSRGBByte(color.y);
+        pixels[i * 3 + 2] = floatToSRGBByte(color.z);
     }
 
     if (gpuShadingEnabled_ && usedGPUShading && gpuPixels.size() == pixels.size()) {
         float maxDifference = 0.0f;
+        std::size_t worstComponentIndex = 0;
         for (std::size_t i = 0; i < pixels.size(); ++i) {
-            maxDifference = std::max(maxDifference, std::fabs(static_cast<float>(pixels[i]) - gpuPixels[i]));
+            const float diff = std::fabs(static_cast<float>(pixels[i]) - gpuPixels[i]);
+            if (diff > maxDifference) {
+                maxDifference = diff;
+                worstComponentIndex = i;
+            }
         }
 
         if (maxDifference <= 2.0f) {
             pixels = std::move(gpuPixels);
             core::Logger::info("MPSRenderer", "GPU shading matched CPU output (max diff %.2f)", maxDifference);
         } else {
-            core::Logger::warn("MPSRenderer", "GPU shading diverged from CPU output (max diff %.2f)", maxDifference);
+            const std::size_t worstPixelIndex = worstComponentIndex / 3;
+            const std::size_t worstX = worstPixelIndex % width;
+            const std::size_t worstY = worstPixelIndex / width;
+            const std::size_t channel = worstComponentIndex % 3;
+            const char channelName = (channel == 0) ? 'R' : (channel == 1 ? 'G' : 'B');
+            const auto& cpuIntersection = intersections[worstPixelIndex];
+            const simd_float4 gpuColour = (shadeOutputPtr && worstPixelIndex < pixelCount)
+                                              ? shadeOutputPtr[worstPixelIndex]
+                                              : (simd_float4){0.0f, 0.0f, 0.0f, 0.0f};
+            const float gpuComponentFloat = (channel == 0) ? gpuColour.x : (channel == 1 ? gpuColour.y : gpuColour.z);
+            const uint8_t gpuComponentByte = static_cast<uint8_t>(
+                std::clamp(gpuComponentFloat * 255.0f, 0.0f, 255.0f));
+            const vector_float3 cpuColourFloat = (worstPixelIndex < cpuFloatPixels.size()) ? cpuFloatPixels[worstPixelIndex]
+                                                                                          : (vector_float3){0.0f, 0.0f, 0.0f};
+            core::Logger::warn("MPSRenderer",
+                               "GPU shading diverged from CPU output (max diff %.2f) at pixel (%zu, %zu) channel %c: cpu=%u gpuByte=%u gpuFloat=%.3f, cpuFloat=(%.2f, %.2f, %.2f), distance=%.3f primitive=%u bary=(%.3f, %.3f), gpuColour=(%.2f, %.2f, %.2f)",
+                               maxDifference, worstX, worstY, channelName,
+                               static_cast<unsigned>(pixels[worstComponentIndex]),
+                               static_cast<unsigned>(gpuPixels[worstComponentIndex]), gpuComponentFloat,
+                               cpuColourFloat.x, cpuColourFloat.y, cpuColourFloat.z, cpuIntersection.distance,
+                               cpuIntersection.primitiveIndex,
+                               cpuIntersection.coordinates.x, cpuIntersection.coordinates.y, gpuColour.x,
+                               gpuColour.y, gpuColour.z);
         }
     }
 
