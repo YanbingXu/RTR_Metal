@@ -7,6 +7,7 @@
 - **GeometryStore integration** – The renderer uploads every mesh in the input scene through `GeometryStore`, keeping GPU-side buffers alive alongside the diagnostic float3 copies. This mirrors the core engine’s resource flow and unlocks rendering scenes built elsewhere in the engine without rewriting geometry ingestion.
 - **Sample app** – `RTRMetalMPSSample` initialises the tracer with a simple scene composed of a ground plane and a raised prism, then emits `mps_output.ppm`. On RT-capable hardware the output shows the prism’s coloured face against the floor, matching the diagnostic goal.
 - **Test coverage** – Added `MPSSceneConverterTests` to check colour assignment and index packing. Full suite passes locally (21 tests, 1 intentional skip for unsupported hardware).
+- **GPU compute plan** – See `docs/mps_gpu_pipeline_plan.md` for the staged strategy that transitions the fallback path from CPU shading to Metal compute kernels while preserving deterministic off-screen outputs.
 
 ## How the Triangle Is Rendered
 1. **Scene build** – The sample scene constructs a ground plane and a prism face; per-vertex colours come from the scene materials or the fallback palette supplied by `MPSSceneConverter`.
@@ -28,3 +29,20 @@
 3. **On-screen vs. off-screen samples** – Keep the CLI off-screen renderer as a regression harness while adding an AppKit/MetalKit windowed demo (Stage 3C). Define the selection UX (build flag or runtime switch) and capture screenshots for documentation.
 4. **Image verification & tooling** – Add lightweight image-difference tooling (hash or checksum) under `tests/` to catch regressions once deterministic outputs are available.
 5. **Documentation & sample UX** – Update the README with MPS usage instructions, include rendered output samples, and expose simple CLI options (resolution, camera distance) for debugging.
+
+## Stage 3C Deliverables
+
+### Off-screen Sample (CLI)
+- Produce deterministic image output (`ppm` or `png`) via the GPU shading path, including optional accumulation controls.
+- Provide flags for resolution, sample count, output format, and backend selection (`mps` vs. future native RT).
+- Emit checksums/hashes for automation and integrate with the planned image-diff test harness.
+
+### On-screen Sample (AppKit/MetalKit)
+- Present progressive frames in an `MTKView`, with camera orbit controls and frame statistics overlay.
+- Allow runtime toggles for accumulation reset, sample count, and screenshot capture to the off-screen pipeline.
+- Share renderer infrastructure and resource ownership with the CLI path; both should reuse `MPSRenderer` setup with minimal divergence.
+
+### Acceptance Criteria
+- Both samples run from the same build (flags or runtime switches) and report meaningful errors on hardware lacking MPS support.
+- Rendering artifacts checked into documentation (screenshots + explanation of expected output).
+- Automated validation covers the off-screen path; manual verification checklist established for the on-screen demo until automation is feasible.

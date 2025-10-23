@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "RTRMetalEngine/MPS/MPSPathTracer.hpp"
+#include "RTRMetalEngine/MPS/MPSUniforms.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 
@@ -19,12 +20,14 @@ class MetalContext;
 class MPSRenderer {
 public:
     explicit MPSRenderer(MetalContext& context);
+    ~MPSRenderer();
 
     bool initialize();
     bool initialize(const scene::Scene& scene);
     bool renderFrame(const char* outputPath);
 
 private:
+    static constexpr bool kEnableGPUShading = true;
     MetalContext& context_;
     BufferAllocator bufferAllocator_;
     GeometryStore geometryStore_;
@@ -32,6 +35,14 @@ private:
     std::vector<vector_float3> cpuScenePositions_;
     std::vector<uint32_t> cpuSceneIndices_;
     std::vector<vector_float3> cpuSceneColors_;
+    BufferHandle uniformBuffer_;
+    MPSCameraUniforms cameraUniforms_{};
+    struct GPUState;
+    std::unique_ptr<GPUState> gpuState_;
+
+    void createUniformBuffer();
+    void updateCameraUniforms(std::uint32_t width, std::uint32_t height);
+    bool initializeGPUResources();
 };
 
 }  // namespace rtr::rendering
