@@ -48,9 +48,9 @@ TEST(MPSSceneConverterTests, ConvertsSingleInstance) {
     expectVectorNear(sceneData.positions[1], simd_make_float3(0.25f, -0.25f, 0.0f));
     expectVectorNear(sceneData.positions[2], simd_make_float3(0.0f, 0.35f, 0.0f));
 
-    expectVectorNear(sceneData.colors[0], simd_make_float3(0.2f, 0.08f, 0.12f));
-    expectVectorNear(sceneData.colors[1], simd_make_float3(0.04f, 0.4f, 0.12f));
-    expectVectorNear(sceneData.colors[2], simd_make_float3(0.04f, 0.08f, 0.6f));
+    expectVectorNear(sceneData.colors[0], customMaterial.albedo);
+    expectVectorNear(sceneData.colors[1], customMaterial.albedo);
+    expectVectorNear(sceneData.colors[2], customMaterial.albedo);
 
     EXPECT_EQ(sceneData.indices[0], 0U);
     EXPECT_EQ(sceneData.indices[1], 1U);
@@ -81,9 +81,9 @@ TEST(MPSSceneConverterTests, FallsBackToMeshesWhenNoInstancesAndAppliesDefaultCo
     expectVectorNear(sceneData.positions[1], simd_make_float3(1.0f, 0.0f, 0.0f));
     expectVectorNear(sceneData.positions[2], simd_make_float3(0.0f, 1.0f, 0.0f));
 
-    expectVectorNear(sceneData.colors[0], simd_make_float3(0.8f, 0.14f, 0.12f));
-    expectVectorNear(sceneData.colors[1], simd_make_float3(0.16f, 0.7f, 0.12f));
-    expectVectorNear(sceneData.colors[2], simd_make_float3(0.16f, 0.14f, 0.6f));
+    expectVectorNear(sceneData.colors[0], defaultColor);
+    expectVectorNear(sceneData.colors[1], defaultColor);
+    expectVectorNear(sceneData.colors[2], defaultColor);
 }
 
 TEST(MPSSceneConverterTests, MultipleInstancesAppendWithOffsetIndices) {

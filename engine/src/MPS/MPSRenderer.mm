@@ -77,7 +77,7 @@ std::vector<MPSPackedFloat3> packVectorFloat3(const std::vector<vector_float3>& 
     std::vector<MPSPackedFloat3> packed;
     packed.reserve(input.size());
     for (const auto& value : input) {
-        packed.emplace_back(value);
+        packed.push_back({value.x, value.y, value.z});
     }
     return packed;
 }
@@ -534,6 +534,8 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
         }
 
         if (gpuState_->shadingOutputBuffer.isValid()) {
+            id<MTLBuffer> debugBuffer = [device newBufferWithLength:sizeof(simd_float4) * 8 options:MTLResourceStorageModeShared];
+
             id<MTLCommandBuffer> shadeCommandBuffer = [queue commandBuffer];
             if (shadeCommandBuffer) {
                 id<MTLComputeCommandEncoder> shadeEncoder = [shadeCommandBuffer computeCommandEncoder];
@@ -563,6 +565,7 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
                                                                                        std::numeric_limits<std::uint32_t>::max()));
                     limits.primitiveCount = limits.indexCount / 3U;
                     [shadeEncoder setBytes:&limits length:sizeof(limits) atIndex:6];
+                    [shadeEncoder setBuffer:debugBuffer offset:0 atIndex:7];
 
                     const NSUInteger threadWidth = gpuState_->shadePipeline.threadExecutionWidth;
                     const NSUInteger threadsPerThreadgroup = gpuState_->shadePipeline.maxTotalThreadsPerThreadgroup;
@@ -575,6 +578,19 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
                     [shadeEncoder endEncoding];
                     [shadeCommandBuffer commit];
                     [shadeCommandBuffer waitUntilCompleted];
+
+                    auto* gpuDebug = reinterpret_cast<simd_float4*>([debugBuffer contents]);
+                    if (gpuDebug) {
+                        core::Logger::info("DEBUG_GPU", "-- Pixel (153, 225) --");
+                        core::Logger::info("DEBUG_GPU", "bary=(%.3f, %.3f, %.3f)", gpuDebug[0].x, gpuDebug[0].y, gpuDebug[0].z);
+                        core::Logger::info("DEBUG_GPU", "indices=(%u, %u, %u)", (uint)gpuDebug[1].x, (uint)gpuDebug[1].y, (uint)gpuDebug[1].z);
+                        core::Logger::info("DEBUG_GPU", "c0=(%.2f, %.2f, %.2f)", gpuDebug[2].x, gpuDebug[2].y, gpuDebug[2].z);
+                        core::Logger::info("DEBUG_GPU", "c1=(%.2f, %.2f, %.2f)", gpuDebug[3].x, gpuDebug[3].y, gpuDebug[3].z);
+                        core::Logger::info("DEBUG_GPU", "c2=(%.2f, %.2f, %.2f)", gpuDebug[4].x, gpuDebug[4].y, gpuDebug[4].z);
+                        core::Logger::info("DEBUG_GPU", "normal=(%.3f, %.3f, %.3f)", gpuDebug[5].x, gpuDebug[5].y, gpuDebug[5].z);
+                        core::Logger::info("DEBUG_GPU", "intensity=%.3f", gpuDebug[6].x);
+                        core::Logger::info("DEBUG_GPU", "interpolatedColor=(%.2f, %.2f, %.2f)", gpuDebug[7].x, gpuDebug[7].y, gpuDebug[7].z);
+                    }
 
                     auto* gpuOutput = reinterpret_cast<simd_float4*>(
                         [(__bridge id<MTLBuffer>)gpuState_->shadingOutputBuffer.nativeHandle() contents]);
@@ -632,6 +648,41 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
                 }
             }
         }
+        const std::uint32_t x = i % width;
+        const std::uint32_t y = i / width;
+        if (x == 153 && y == 225) {
+            core::Logger::info("DEBUG_CPU", "-- Pixel (153, 225) --");
+            core::Logger::info("DEBUG_CPU", "hit=%d, primitive=%u, distance=%.3f", hit, intersection.primitiveIndex, intersection.distance);
+            if (hit) {
+                const uint32_t primitiveIndex = intersection.primitiveIndex;
+                const std::size_t base = static_cast<std::size_t>(primitiveIndex) * 3;
+                const uint32_t i0 = indices[base + 0];
+                const uint32_t i1 = indices[base + 1];
+                const uint32_t i2 = indices[base + 2];
+                const float u = intersection.coordinates.x;
+                const float v = intersection.coordinates.y;
+                const float w = 1.0f - u - v;
+                const vector_float3& v0 = vertices[i0];
+                const vector_float3& v1 = vertices[i1];
+                const vector_float3& v2 = vertices[i2];
+                vector_float3 e1 = v1 - v0;
+                vector_float3 e2 = v2 - v0;
+                vector_float3 normal = simd_normalize(simd_cross(e1, e2));
+                float intensity = fmaxf(0.0f, simd_dot(normal, lightDir));
+                intensity = intensity * 0.8f + 0.2f;
+                vector_float3 c0 = (i0 < colors.size()) ? colors[i0] : vector_float3{0.85f, 0.4f, 0.25f};
+                vector_float3 c1 = (i1 < colors.size()) ? colors[i1] : vector_float3{0.25f, 0.85f, 0.4f};
+                vector_float3 c2 = (i2 < colors.size()) ? colors[i2] : vector_float3{0.4f, 0.25f, 0.85f};
+                core::Logger::info("DEBUG_CPU", "bary=(%.3f, %.3f, %.3f)", u, v, w);
+                core::Logger::info("DEBUG_CPU", "indices=(%u, %u, %u)", i0, i1, i2);
+                core::Logger::info("DEBUG_CPU", "c0=(%.2f, %.2f, %.2f)", c0.x, c0.y, c0.z);
+                core::Logger::info("DEBUG_CPU", "c1=(%.2f, %.2f, %.2f)", c1.x, c1.y, c1.z);
+                core::Logger::info("DEBUG_CPU", "c2=(%.2f, %.2f, %.2f)", c2.x, c2.y, c2.z);
+                core::Logger::info("DEBUG_CPU", "normal=(%.3f, %.3f, %.3f)", normal.x, normal.y, normal.z);
+                core::Logger::info("DEBUG_CPU", "intensity=%.3f", intensity);
+            }
+        }
+
         color = simd_clamp(color, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
         cpuFloatPixels[i] = color;
         pixels[i * 3 + 0] = floatToSRGBByte(color.x);

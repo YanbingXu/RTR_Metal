@@ -62,10 +62,13 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
                            device float4* outRadiance [[buffer(4)]],
                            constant MPSCameraUniforms& uniforms [[buffer(5)]],
                            constant MPSSceneLimits& limits [[buffer(6)]],
+                           device float4* debugBuffer [[buffer(7)]],
                            uint gid [[thread_position_in_grid]]) {
     if (gid >= uniforms.width * uniforms.height) {
         return;
     }
+
+    const bool isDebugPixel = (gid == (225 * uniforms.width + 153));
 
     const MPSIntersectionData isect = intersections[gid];
     float4 colour = float4(0.08f, 0.08f, 0.12f, 1.0f);
@@ -102,8 +105,20 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
                 const float3 c0 = (i0 < limits.colorCount) ? float3(colors[i0]) : fallbackPalette[0];
                 const float3 c1 = (i1 < limits.colorCount) ? float3(colors[i1]) : fallbackPalette[1];
                 const float3 c2 = (i2 < limits.colorCount) ? float3(colors[i2]) : fallbackPalette[2];
-                const float3 hitColour = clamp((c0 * w + c1 * u + c2 * v) * shading, 0.0f, 1.0f);
+                const float3 interpolatedColor = c0 * w + c1 * u + c2 * v;
+                const float3 hitColour = clamp(interpolatedColor * shading, 0.0f, 1.0f);
                 colour = float4(hitColour, 1.0f);
+
+                if (isDebugPixel) {
+                    debugBuffer[0] = float4(u, v, w, 0.0);
+                    debugBuffer[1] = float4(float(i0), float(i1), float(i2), 0.0);
+                    debugBuffer[2] = float4(c0, 0.0);
+                    debugBuffer[3] = float4(c1, 0.0);
+                    debugBuffer[4] = float4(c2, 0.0);
+                    debugBuffer[5] = float4(normal, 0.0);
+                    debugBuffer[6] = float4(shading, 0.0, 0.0, 0.0);
+                    debugBuffer[7] = float4(interpolatedColor, 0.0);
+                }
             }
         }
     }

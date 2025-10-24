@@ -62,13 +62,7 @@ bool appendMeshInstance(const scene::Mesh& mesh,
         const auto& vertex = vertices[vertexIndex];
         const simd_float4 position4 = simd_mul(transform, simd_make_float4(vertex.position, 1.0f));
         outScene.positions.push_back(simd_make_float3(position4.x, position4.y, position4.z));
-        vector_float3 vertexColor = materialColor;
-        if (isMonochrome(materialColor)) {
-            vertexColor = palette[vertexIndex % std::size(palette)];
-        } else {
-            vertexColor = clampColor(materialColor * palette[vertexIndex % std::size(palette)]);
-        }
-        outScene.colors.push_back(vertexColor);
+        outScene.colors.push_back(materialColor);
     }
 
     outScene.indices.reserve(outScene.indices.size() + indices.size());

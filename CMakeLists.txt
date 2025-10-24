@@ -58,6 +58,7 @@ add_custom_target(RTRMetalShaders ALL DEPENDS ${RTR_METALLIB})
 
 # Library ------------------------------------------------------------------
 add_library(RTRMetalEngine STATIC
+    ${RTR_METAL_SOURCES}
     engine/src/Core/ConfigLoader.cpp
     engine/src/Core/FileSystem.cpp
     engine/src/Core/Math.cpp
