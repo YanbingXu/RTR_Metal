@@ -34,7 +34,7 @@ kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buf
         return;
     }
 
-    const float2 pixel = float2(gid);
+    const float2 pixel = float2(gid) + 0.5f;
     const float2 ndc = (pixel / float2(uniforms.width, uniforms.height) - 0.5f) * 2.0f;
     const float3 eye = uniforms.eye.xyz;
     const float3 forward = uniforms.forward.xyz;

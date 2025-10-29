@@ -19,12 +19,25 @@ namespace rtr::rendering {
 class MetalContext;
 class MPSRenderer {
 public:
+    struct FrameComparison {
+        std::vector<uint8_t> cpuPixels;
+        std::vector<uint8_t> gpuPixels;
+        double maxByteDifference = 0.0;
+        double maxFloatDifference = 0.0;
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+    };
+
     explicit MPSRenderer(MetalContext& context);
     ~MPSRenderer();
 
     bool initialize();
     bool initialize(const scene::Scene& scene);
     bool renderFrame(const char* outputPath);
+    bool renderFrameComparison(const char* cpuOutputPath,
+                               const char* gpuOutputPath,
+                               FrameComparison* outComparison = nullptr);
+    [[nodiscard]] bool usesGPUShading() const noexcept;
 
 private:
     MetalContext& context_;
@@ -43,6 +56,8 @@ private:
     void createUniformBuffer();
     void updateCameraUniforms(std::uint32_t width, std::uint32_t height);
     bool initializeGPUResources();
+    bool computeFrame(FrameComparison& comparison, bool logDifferences);
+    static bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t width, std::uint32_t height);
 };
 
 }  // namespace rtr::rendering

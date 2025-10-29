@@ -110,6 +110,7 @@ TEST(MPSRendererImageComparisonTests, CpuAndGpuOutputsStayWithinTolerance) {
 #endif
 
     EnvOverride envGuard("RTR_MPS_GPU_SHADING");
+    envGuard.set("1");
 
     auto cpuOutputPath = makeTempPPMPath("cpu");
     auto gpuOutputPath = makeTempPPMPath("gpu");
@@ -117,33 +118,46 @@ TEST(MPSRendererImageComparisonTests, CpuAndGpuOutputsStayWithinTolerance) {
     std::cerr << "CPU path: " << cpuOutputPath << "\nGPU path: " << gpuOutputPath << '\n';
 #endif
 
-    envGuard.set("0");
-    rtr::rendering::MPSRenderer cpuRenderer(context);
-    ASSERT_TRUE(cpuRenderer.initialize()) << "Failed to initialize CPU shading path";
-    ASSERT_TRUE(cpuRenderer.renderFrame(cpuOutputPath.c_str())) << "Failed to render CPU reference frame";
+    rtr::rendering::MPSRenderer renderer(context);
+    ASSERT_TRUE(renderer.initialize()) << "Failed to initialise renderer";
+    if (!renderer.usesGPUShading()) {
+        GTEST_SKIP() << "GPU shading pipeline inactive on this configuration";
+    }
 
-    envGuard.set("1");
-    rtr::rendering::MPSRenderer gpuRenderer(context);
-    ASSERT_TRUE(gpuRenderer.initialize()) << "Failed to initialize GPU shading path";
-    ASSERT_TRUE(gpuRenderer.renderFrame(gpuOutputPath.c_str())) << "Failed to render GPU frame";
+    rtr::rendering::MPSRenderer::FrameComparison comparison;
+    ASSERT_TRUE(renderer.renderFrameComparison(cpuOutputPath.c_str(),
+                                               gpuOutputPath.c_str(),
+                                               &comparison))
+        << "Failed to render comparison frame";
 
-    auto cpuPixels = loadPPMPixels(cpuOutputPath);
-    auto gpuPixels = loadPPMPixels(gpuOutputPath);
+    auto cpuFilePixels = loadPPMPixels(cpuOutputPath);
+    auto gpuFilePixels = loadPPMPixels(gpuOutputPath);
 
     std::error_code ec;
     std::filesystem::remove(cpuOutputPath, ec);
     std::filesystem::remove(gpuOutputPath, ec);
 
-    if (cpuPixels.empty() || gpuPixels.empty()) {
-        GTEST_SKIP() << "Unable to read rendered output for comparison";
+    if (comparison.gpuPixels.empty()) {
+        GTEST_SKIP() << "GPU shading produced no output for comparison";
     }
 
-    ASSERT_EQ(cpuPixels.size(), gpuPixels.size()) << "Rendered outputs differ in size";
+    ASSERT_FALSE(comparison.cpuPixels.empty()) << "CPU shading produced no pixels";
+    ASSERT_EQ(comparison.cpuPixels.size(), comparison.gpuPixels.size())
+        << "CPU and GPU buffers differ in size";
 
-    double maxDifference = 0.0;
-    for (std::size_t i = 0; i < cpuPixels.size(); ++i) {
-        maxDifference = std::max(maxDifference, std::fabs(static_cast<double>(cpuPixels[i]) - gpuPixels[i]));
+    double maxDifference = comparison.maxByteDifference;
+    if (maxDifference == 0.0) {
+        for (std::size_t i = 0; i < comparison.cpuPixels.size(); ++i) {
+            const double diff = std::fabs(static_cast<double>(comparison.cpuPixels[i]) - comparison.gpuPixels[i]);
+            maxDifference = std::max(maxDifference, diff);
+        }
     }
 
-    EXPECT_LE(maxDifference, 2.0) << "GPU shading diverged from CPU reference beyond tolerance";
+    EXPECT_LE(maxDifference, 2.0)
+        << "GPU shading diverged from CPU reference beyond tolerance (max diff = " << maxDifference << ')';
+
+    if (!cpuFilePixels.empty() && !gpuFilePixels.empty()) {
+        EXPECT_EQ(cpuFilePixels.size(), gpuFilePixels.size())
+            << "PPM outputs differ in size";
+    }
 }
