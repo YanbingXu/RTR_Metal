@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <TargetConditionals.h>
 
 #include "RTRMetalEngine/MPS/MPSRenderer.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"

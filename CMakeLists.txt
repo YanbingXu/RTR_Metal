@@ -76,7 +76,8 @@ add_library(RTRMetalEngine STATIC
     engine/src/MPS/MPSSceneConverter.cpp
     engine/src/Scene/Mesh.cpp
     engine/src/Scene/Scene.cpp
-    engine/src/Scene/SceneBuilder.cpp)
+    engine/src/Scene/SceneBuilder.cpp
+    engine/src/Scene/CornellBox.cpp)
 
 # Placeholder source to satisfy library creation until core module fills out
 if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/Core/placeholder.cpp)
@@ -144,7 +145,10 @@ if(RTR_BUILD_TESTS)
         tests/src/rendering/AccelerationStructureBuilderTests.cpp
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp
+        tests/src/scene/ScenesTests.cpp
         tests/src/mps/MPSSceneConverterTests.cpp
+        tests/src/mps/MPSRendererDeterminismTests.cpp
+        tests/src/mps/MPSRendererGpuHashTests.cpp
         tests/src/mps/MPSRendererImageComparisonTests.mm)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)

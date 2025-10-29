@@ -25,13 +25,20 @@ struct alignas(16) MPSIntersectionData {
 
 struct MPSSceneLimits {
     std::uint32_t vertexCount = 0;
-    std::uint32_t indexCount = 0;
-    std::uint32_t colorCount = 0;
-    std::uint32_t primitiveCount = 0;
+   std::uint32_t indexCount = 0;
+   std::uint32_t colorCount = 0;
+   std::uint32_t primitiveCount = 0;
+};
+
+struct alignas(16) MPSAccumulationUniforms {
+    std::uint32_t frameIndex = 0;
+    std::uint32_t reset = 0;
+    std::uint32_t padding[2] = {0, 0};
 };
 
 static_assert(sizeof(MPSCameraUniforms) % 16 == 0, "MPSCameraUniforms must be 16-byte aligned");
 static_assert(sizeof(MPSIntersectionData) == sizeof(float) * 4, "MPSIntersectionData must match MPS layout");
 static_assert(sizeof(MPSSceneLimits) % 16 == 0, "MPSSceneLimits must be 16-byte aligned");
+static_assert(sizeof(MPSAccumulationUniforms) % 16 == 0, "MPSAccumulationUniforms must be 16-byte aligned");
 
 }  // namespace rtr::rendering

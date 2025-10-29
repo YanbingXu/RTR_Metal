@@ -33,4 +33,11 @@ struct MPSSceneLimits {
     uint primitiveCount;
 };
 
+struct MPSAccumulationUniforms {
+    uint frameIndex;
+    uint reset;
+    uint padding0;
+    uint padding1;
+};
+
 #endif

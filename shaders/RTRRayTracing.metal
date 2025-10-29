@@ -125,3 +125,20 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
 
     outRadiance[gid] = colour;
 }
+
+kernel void mpsAccumulateKernel(device float4* accumulation [[buffer(0)]],
+                                device float4* current [[buffer(1)]],
+                                constant MPSAccumulationUniforms& uniforms [[buffer(2)]],
+                                uint gid [[thread_position_in_grid]]) {
+    float4 sample = current[gid];
+    if (uniforms.reset != 0) {
+        accumulation[gid] = sample;
+        return;
+    }
+
+    const float frameCount = static_cast<float>(uniforms.frameIndex);
+    float4 accum = accumulation[gid];
+    float4 blended = (accum * frameCount + sample) / (frameCount + 1.0f);
+    accumulation[gid] = blended;
+    current[gid] = blended;
+}

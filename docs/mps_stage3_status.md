@@ -6,7 +6,7 @@
 - **Renderer shading pass** – `MPSRenderer` dispatches the `MPSRayIntersector` for a camera facing the X/Y plane, shades hits on the CPU (Lambert + barycentric mix), and writes a 512×512 PPM. Rays now originate from `{0,0,1.5}` and march toward each pixel’s projection, yielding a correctly framed triangle that now sits above a lit floor.
 - **GeometryStore integration** – The renderer uploads every mesh in the input scene through `GeometryStore`, keeping GPU-side buffers alive alongside the diagnostic float3 copies. This mirrors the core engine’s resource flow and unlocks rendering scenes built elsewhere in the engine without rewriting geometry ingestion.
 - **Sample app** – `RTRMetalMPSSample` initialises the tracer with a simple scene composed of a ground plane and a raised prism, then emits `mps_output.ppm`. On RT-capable hardware the output shows the prism’s coloured face against the floor, matching the diagnostic goal.
-- **Sample app** – `RTRMetalMPSSample` now accepts CLI flags to choose shading mode (`--cpu`, `--gpu`) and can emit a CPU/GPU comparison pair (`--compare`),报告最大差异；同时 `config/engine.ini` 可以通过 `shadingMode=auto|cpu|gpu` 设置默认偏好，CLI 参数会覆盖该值。
+- **Sample app** – `RTRMetalMPSSample` now accepts CLI flags to choose shading mode (`--cpu`, `--gpu`) and can emit a CPU/GPU comparison pair (`--compare`),报告最大差异；同时 `config/engine.ini` 可以通过 `shadingMode=auto|cpu|gpu` 设置默认偏好，CLI 参数会覆盖该值；`--reset-accum` 会清空 GPU 累积缓冲。
 - **Test coverage** – Added `MPSSceneConverterTests` to check colour assignment and index packing. Full suite passes locally (21 tests, 1 intentional skip for unsupported hardware).
 - **GPU compute plan** – See `docs/mps_gpu_pipeline_plan.md` for the staged strategy that transitions the fallback path from CPU shading to Metal compute kernels while preserving deterministic off-screen outputs.
 
@@ -25,11 +25,11 @@
   - Align the fallback path with the ultimate renderer architecture where per-frame work happens on the GPU.
 
 ## Next Steps
-1. **Integrate real engine geometry** – Feed meshes uploaded via `GeometryStore` into `MPSSceneConverter` so the fallback path can render arbitrary scenes, not just the built-in triangle.
-2. **Port shading to GPU** – Recreate the reference compute pipeline within `RTRMetalEngine`: generate rays, shade, cast shadows, and accumulate entirely on the GPU. Reuse `MPSRayIntersector` buffers for interoperability.
-3. **On-screen vs. off-screen samples** – Keep the CLI off-screen renderer as a regression harness while adding an AppKit/MetalKit windowed demo (Stage 3C). Define the selection UX (build flag or runtime switch) and capture screenshots for documentation.
-4. **Image verification & tooling** – Add lightweight image-difference tooling (hash or checksum) under `tests/` to catch regressions once deterministic outputs are available.
-5. **Documentation & sample UX** – Update the README with MPS usage instructions, include rendered output samples, and extend the CLI options (e.g. resolution, camera distance) for debugging.
+1. **Integrate real engine geometry** – Ingest Cornell Box assets, upload via `GeometryStore`, and allow scene switching in the samples.
+2. **Port shading to GPU** – Extend the compute pipeline with shadow rays and multi-sample accumulation（现已具备基础平均流程，下一步加入阴影与多样本控制）。
+3. **On-screen vs. off-screen samples** – 保留 CLI 回归通道，同时引入 MetalKit/SwiftUI 上屏 Demo，统一 shading/accumulation 控制并记录参考截图。
+4. **Image verification & tooling** – 通过 hash/截图建立回归基线，在支持设备上验证多帧累积输出。
+5. **Documentation & sample UX** – README/docs 补充 shadingMode、accumulation、scene selector 说明，并记录真机回归数据。
 
 ## Stage 3C Deliverables
 

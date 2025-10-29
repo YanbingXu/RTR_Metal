@@ -11,15 +11,23 @@
 3. Create ray tracing pipeline setup, including shader binding table buffers.
 4. Implement `Renderer` capable of producing a single-bounce ray traced image with a directional light.
 
-## Milestone 3 – Example Application
-1. Build a SwiftUI-based macOS viewer (`RTRMetalExample`) that embeds an `MTKView`.
-2. Provide camera orbit controls and keyboard shortcuts for animation toggles.
-3. Compose a Cornell-box inspired demo scene using engine APIs.
-4. Add build and run instructions to the root `README.md`.
+## Milestone 3 – Rendering Pipeline Completion
+
+### Short-Term (Stage 3B focus)
+1. **MPS pipeline hardening**
+   - Ingest Cornell Box assets (reuse `/Users/yanbing.xu/Desktop/MetalRayTracing`).
+   - Add shadow-ray pass and per-frame sample controls (config + CLI) while keeping deterministic test modes.
+   - Extend regression tests to hash-check CPU/GPU outputs and multi-frame accumulation where hardware allows.
+2. **Demo & documentation**
+   - Update CLI samples/README with shading mode, accumulation, and scene selection guidance.
+   - Capture reference hashes/screenshots for continuous verification.
+
+### Mid-Term (Stage 3C + Stage 3A prep)
+1. **On-screen sample** – Build an `MTKView`/SwiftUI demo that streams GPU output, exposes runtime toggles (accum reset, sample count, shading mode) and displays hash statistics.
+2. **Native Metal Ray Tracing groundwork** – Finish TLAS/SBT plumbing, feature flags, and shader dispatch so the engine can switch to `MTLRayTracingPipelineState` when the SDK/device supports it.
 
 ## Milestone 4 – Polish & Validation
-1. Expose configurable rendering options (samples per pixel, max bounce count, tone mapping).
-2. Add CPU-driven accumulation/reset logic for camera movement.
-3. Validate rendering on Apple Silicon hardware, profiling GPU timings with Xcode GPU Frame Capture.
-4. Document future work items (denoising, textures, animated meshes) for community contribution.
-
+1. Richer lighting/material features (textures, multi-bounce, tone mapping) shared across MPS/native paths.
+2. Performance & QA tooling – GPU frame capture, profiling scripts, automated hash comparisons.
+3. Asset/documentation pipeline – Cornell Box plus additional scenes, onboarding docs, contribution guidelines.
+4. Future roadmap – Denoising, animated meshes, and community extension points.

@@ -12,6 +12,7 @@
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/MPS/MPSRenderer.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
+#include "RTRMetalEngine/Scene/CornellBox.hpp"
 
 namespace {
 
@@ -21,6 +22,8 @@ struct CommandLineOptions {
     std::optional<std::string> gpuOutputPath;
     bool runComparison = false;
     std::optional<rtr::rendering::MPSRenderer::ShadingMode> requestedMode;
+    bool resetAccumulation = false;
+    std::string sceneName = "prism";
 };
 
 void printUsage() {
@@ -31,6 +34,8 @@ void printUsage() {
               << "  --output=<file>     Set output path when not comparing\n"
               << "  --cpu-output=<file> Output path for CPU image in compare mode\n"
               << "  --gpu-output=<file> Output path for GPU image in compare mode\n"
+              << "  --reset-accum       Reset GPU accumulation state before rendering\n"
+              << "  --scene=<name>      Scene to render (prism|cornell)\n"
               << std::endl;
 }
 
@@ -47,12 +52,19 @@ CommandLineOptions parseOptions(int argc, const char* argv[]) {
             options.requestedMode = rtr::rendering::MPSRenderer::ShadingMode::GpuPreferred;
         } else if (arg == "--compare") {
             options.runComparison = true;
+        } else if (arg == "--reset-accum") {
+            options.resetAccumulation = true;
         } else if (arg.rfind("--output=", 0) == 0) {
             options.outputPath = arg.substr(9);
         } else if (arg.rfind("--cpu-output=", 0) == 0) {
             options.cpuOutputPath = arg.substr(13);
         } else if (arg.rfind("--gpu-output=", 0) == 0) {
             options.gpuOutputPath = arg.substr(13);
+        } else if (arg.rfind("--scene=", 0) == 0) {
+            options.sceneName = arg.substr(8);
+            std::transform(options.sceneName.begin(), options.sceneName.end(), options.sceneName.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
         } else {
             std::cerr << "Unknown option: " << arg << "\n";
             printUsage();
@@ -107,14 +119,27 @@ int main(int argc, const char* argv[]) {
         return 1;
     }
 
+    const auto configuredMode = shadingModeFromString(config.shadingMode);
     rtr::rendering::MPSRenderer renderer(context);
-    if (!renderer.initialize()) {
+    renderer.setShadingMode(options.requestedMode.value_or(configuredMode));
+
+    const bool useCornell = options.sceneName == "cornell";
+    bool initialised = false;
+    if (useCornell) {
+        rtr::scene::Scene cornell = rtr::scene::createCornellBoxScene();
+        initialised = renderer.initialize(cornell);
+    } else {
+        initialised = renderer.initialize();
+    }
+
+    if (!initialised) {
         rtr::core::Logger::warn("MPSSample", "MPS renderer unavailable on this device");
         return 0;
     }
 
-    const auto configuredMode = shadingModeFromString(config.shadingMode);
-    renderer.setShadingMode(options.requestedMode.value_or(configuredMode));
+    if (options.resetAccumulation) {
+        renderer.resetAccumulation();
+    }
 
     if (options.runComparison) {
         rtr::rendering::MPSRenderer::FrameComparison comparison;

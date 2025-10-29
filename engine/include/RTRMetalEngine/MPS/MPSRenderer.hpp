@@ -47,6 +47,7 @@ public:
                                FrameComparison* outComparison = nullptr);
     [[nodiscard]] bool usesGPUShading() const noexcept;
     void setShadingMode(ShadingMode mode) noexcept;
+    void resetAccumulation() noexcept;
 
 private:
     MetalContext& context_;
@@ -62,6 +63,7 @@ private:
     struct GPUState;
     std::unique_ptr<GPUState> gpuState_;
     ShadingMode shadingMode_ = ShadingMode::Auto;
+    std::uint32_t gpuFrameIndex_ = 0;
 
     void createUniformBuffer();
     void updateCameraUniforms(std::uint32_t width, std::uint32_t height);
@@ -69,7 +71,8 @@ private:
     bool computeFrame(FrameComparison& comparison,
                       bool logDifferences,
                       bool enableCpuShading,
-                      bool enableGpuShading);
+                      bool enableGpuShading,
+                      bool accumulateGpu);
     static std::uint64_t computePixelHash(const std::vector<uint8_t>& data);
     static bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t width, std::uint32_t height);
 };
