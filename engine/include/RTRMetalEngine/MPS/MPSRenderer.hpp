@@ -32,6 +32,8 @@ public:
         double maxFloatDifference = 0.0;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
+        std::uint64_t cpuPixelHash = 0;
+        std::uint64_t gpuPixelHash = 0;
     };
 
     explicit MPSRenderer(MetalContext& context);
@@ -68,6 +70,7 @@ private:
                       bool logDifferences,
                       bool enableCpuShading,
                       bool enableGpuShading);
+    static std::uint64_t computePixelHash(const std::vector<uint8_t>& data);
     static bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t width, std::uint32_t height);
 };
 

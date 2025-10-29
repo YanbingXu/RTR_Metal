@@ -36,6 +36,7 @@ shaderLibraryPath = assets/RTR.metallib
     const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
     EXPECT_EQ(config.applicationName, "Sample");
     EXPECT_EQ(config.shaderLibraryPath, "assets/RTR.metallib");
+    EXPECT_EQ(config.shadingMode, "auto");
 
     std::filesystem::remove(path);
 }
@@ -48,6 +49,22 @@ TEST(ConfigLoader, AppliesDefaultShaderLibraryPath) {
     const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
     EXPECT_EQ(config.applicationName, "NoShaderPath");
     EXPECT_EQ(config.shaderLibraryPath, "shaders/RTRShaders.metallib");
+    EXPECT_EQ(config.shadingMode, "auto");
+
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigLoader, ParsesOptionalShadingMode) {
+    const auto path = makeTempFile("rtr_engine_config_shading.ini",
+                                   R"(applicationName = Sample
+shaderLibraryPath = assets/RTR.metallib
+shadingMode = cpu
+)");
+
+    const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
+    EXPECT_EQ(config.applicationName, "Sample");
+    EXPECT_EQ(config.shaderLibraryPath, "assets/RTR.metallib");
+    EXPECT_EQ(config.shadingMode, "cpu");
 
     std::filesystem::remove(path);
 }

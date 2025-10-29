@@ -28,6 +28,8 @@
    - 提供 `computeFrame` 与 `renderFrameComparison`，在一次交点计算后同步生成 CPU 与 GPU 像素，并可选择性写出两份 PPM。
    - `renderFrame` 复用该逻辑，只按阈值挑选最终输出，实现单通道渲染无需额外成本。
    - 引入 `ShadingMode`（`Auto`/`CpuOnly`/`GpuPreferred`），默认在支持 GPU shading 时直接返回 GPU 图像，失败时自动回退至 CPU。
+- `EngineConfig` 增加 `shadingMode` 字段，允许通过 `config/engine.ini` 提供默认值（被 CLI `--cpu/--gpu` 覆盖）。
+- `FrameComparison` 现在携带 CPU/GPU 像素哈希（FNV-1a 64-bit），CLI demo 和单元测试都会记录/验证该值，用于快速检查渲染稳定性。
 2. **保持 GPU 与 CPU 光线生成一致**：
    - `shaders/RTRRayTracing.metal` 使用 `float2(gid) + 0.5f`，与 CPU 的 `makePrimaryRay` 同步。
 3. **测试更新**：

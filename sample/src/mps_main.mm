@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -19,8 +20,7 @@ struct CommandLineOptions {
     std::optional<std::string> cpuOutputPath;
     std::optional<std::string> gpuOutputPath;
     bool runComparison = false;
-    rtr::rendering::MPSRenderer::ShadingMode shadingMode =
-        rtr::rendering::MPSRenderer::ShadingMode::GpuPreferred;
+    std::optional<rtr::rendering::MPSRenderer::ShadingMode> requestedMode;
 };
 
 void printUsage() {
@@ -42,9 +42,9 @@ CommandLineOptions parseOptions(int argc, const char* argv[]) {
             printUsage();
             std::exit(0);
         } else if (arg == "--cpu") {
-            options.shadingMode = rtr::rendering::MPSRenderer::ShadingMode::CpuOnly;
+            options.requestedMode = rtr::rendering::MPSRenderer::ShadingMode::CpuOnly;
         } else if (arg == "--gpu") {
-            options.shadingMode = rtr::rendering::MPSRenderer::ShadingMode::GpuPreferred;
+            options.requestedMode = rtr::rendering::MPSRenderer::ShadingMode::GpuPreferred;
         } else if (arg == "--compare") {
             options.runComparison = true;
         } else if (arg.rfind("--output=", 0) == 0) {
@@ -72,6 +72,19 @@ CommandLineOptions parseOptions(int argc, const char* argv[]) {
     return options;
 }
 
+static rtr::rendering::MPSRenderer::ShadingMode shadingModeFromString(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    if (value == "cpu") {
+        return rtr::rendering::MPSRenderer::ShadingMode::CpuOnly;
+    }
+    if (value == "gpu") {
+        return rtr::rendering::MPSRenderer::ShadingMode::GpuPreferred;
+    }
+    return rtr::rendering::MPSRenderer::ShadingMode::Auto;
+}
+
 }  // namespace
 
 int main(int argc, const char* argv[]) {
@@ -84,6 +97,7 @@ int main(int argc, const char* argv[]) {
     } else {
         config.applicationName = "RTR Metal MPS Sample";
         config.shaderLibraryPath = "shaders/RTRShaders.metallib";
+        config.shadingMode = "auto";
         rtr::core::Logger::warn("MPSSample", "Config file not found, using defaults");
     }
 
@@ -99,7 +113,8 @@ int main(int argc, const char* argv[]) {
         return 0;
     }
 
-    renderer.setShadingMode(options.shadingMode);
+    const auto configuredMode = shadingModeFromString(config.shadingMode);
+    renderer.setShadingMode(options.requestedMode.value_or(configuredMode));
 
     if (options.runComparison) {
         rtr::rendering::MPSRenderer::FrameComparison comparison;
@@ -110,8 +125,10 @@ int main(int argc, const char* argv[]) {
             return 1;
         }
         rtr::core::Logger::info("MPSSample",
-                                "Comparison complete: cpu=%s gpu=%s maxDiff=%.2f maxFloatDiff=%.6f",
-                                cpuPath, gpuPath, comparison.maxByteDifference, comparison.maxFloatDifference);
+                                "Comparison complete: cpu=%s gpu=%s maxDiff=%.2f maxFloatDiff=%.6f cpuHash=%llu gpuHash=%llu",
+                                cpuPath, gpuPath, comparison.maxByteDifference, comparison.maxFloatDifference,
+                                static_cast<unsigned long long>(comparison.cpuPixelHash),
+                                static_cast<unsigned long long>(comparison.gpuPixelHash));
     } else {
         if (!renderer.renderFrame(options.outputPath.c_str())) {
             rtr::core::Logger::error("MPSSample", "Failed to render frame to %s", options.outputPath.c_str());

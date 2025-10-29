@@ -11,6 +11,7 @@
 #include <cctype>
 #include <cfloat>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <cstdlib>
 #include <filesystem>
@@ -474,9 +475,9 @@ bool MPSRenderer::renderFrameComparison(const char* cpuOutputPath,
 void MPSRenderer::setShadingMode(ShadingMode mode) noexcept { shadingMode_ = mode; }
 
 bool MPSRenderer::computeFrame(FrameComparison& comparison,
-                                      bool logDifferences,
-                                      bool enableCpuShading,
-                                      bool enableGpuShading) {
+                      bool logDifferences,
+                      bool enableCpuShading,
+                      bool enableGpuShading) {
     comparison = {};
 
     if (!pathTracer_.isValid()) {
@@ -870,11 +871,13 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
 
     if (cpuComputed) {
         comparison.cpuPixels = std::move(cpuPixels);
+        comparison.cpuPixelHash = computePixelHash(comparison.cpuPixels);
     }
     if (gpuShadingComputed) {
         comparison.gpuPixels = std::move(gpuPixels);
         comparison.maxByteDifference = maxByteDifference;
         comparison.maxFloatDifference = maxFloatDifference;
+        comparison.gpuPixelHash = computePixelHash(comparison.gpuPixels);
     }
     comparison.width = width;
     comparison.height = height;
@@ -886,6 +889,17 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
     }
 
     return !comparison.cpuPixels.empty() || !comparison.gpuPixels.empty();
+}
+
+std::uint64_t MPSRenderer::computePixelHash(const std::vector<uint8_t>& data) {
+    constexpr std::uint64_t kFNVOffset = 1469598103934665603ull;
+    constexpr std::uint64_t kFNVPrime = 1099511628211ull;
+    std::uint64_t hash = kFNVOffset;
+    for (uint8_t byte : data) {
+        hash ^= static_cast<std::uint64_t>(byte);
+        hash *= kFNVPrime;
+    }
+    return hash;
 }
 
 bool MPSRenderer::writePPM(const char* path,

@@ -68,6 +68,7 @@ EngineConfig ConfigLoader::loadEngineConfig(const std::filesystem::path& path) {
     const auto pairs = parseKeyValuePairs(content);
 
     EngineConfig config{};
+    config.shadingMode = "auto";
 
     if (auto it = pairs.find("applicationName"); it != pairs.end()) {
         config.applicationName = it->second;
@@ -79,6 +80,10 @@ EngineConfig ConfigLoader::loadEngineConfig(const std::filesystem::path& path) {
         config.shaderLibraryPath = it->second;
     } else {
         config.shaderLibraryPath = "shaders/RTRShaders.metallib";
+    }
+
+    if (auto it = pairs.find("shadingMode"); it != pairs.end()) {
+        config.shadingMode = it->second;
     }
 
     return config;

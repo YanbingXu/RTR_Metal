@@ -18,11 +18,13 @@ int main() {
         } else {
             config.applicationName = "RTR Metal Sample";
             config.shaderLibraryPath = "shaders/RTRShaders.metallib";
+            config.shadingMode = "auto";
             rtr::core::Logger::warn("Sample", "Config file not found at %s, using defaults", configPath.string().c_str());
         }
     } catch (const std::exception& ex) {
         config.applicationName = "RTR Metal Sample";
         config.shaderLibraryPath = "shaders/RTRShaders.metallib";
+        config.shadingMode = "auto";
         rtr::core::Logger::error("Sample", "Failed to load config: %s", ex.what());
     }
 
