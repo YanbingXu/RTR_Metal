@@ -27,6 +27,7 @@
    - 新增 `MPSRenderer::FrameComparison` 结构，封装 CPU/GPU 输出、最大字节差 / 浮点差及分辨率。
    - 提供 `computeFrame` 与 `renderFrameComparison`，在一次交点计算后同步生成 CPU 与 GPU 像素，并可选择性写出两份 PPM。
    - `renderFrame` 复用该逻辑，只按阈值挑选最终输出，实现单通道渲染无需额外成本。
+   - 引入 `ShadingMode`（`Auto`/`CpuOnly`/`GpuPreferred`），默认在支持 GPU shading 时直接返回 GPU 图像，失败时自动回退至 CPU。
 2. **保持 GPU 与 CPU 光线生成一致**：
    - `shaders/RTRRayTracing.metal` 使用 `float2(gid) + 0.5f`，与 CPU 的 `makePrimaryRay` 同步。
 3. **测试更新**：

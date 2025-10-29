@@ -6,6 +6,7 @@
 - **Renderer shading pass** – `MPSRenderer` dispatches the `MPSRayIntersector` for a camera facing the X/Y plane, shades hits on the CPU (Lambert + barycentric mix), and writes a 512×512 PPM. Rays now originate from `{0,0,1.5}` and march toward each pixel’s projection, yielding a correctly framed triangle that now sits above a lit floor.
 - **GeometryStore integration** – The renderer uploads every mesh in the input scene through `GeometryStore`, keeping GPU-side buffers alive alongside the diagnostic float3 copies. This mirrors the core engine’s resource flow and unlocks rendering scenes built elsewhere in the engine without rewriting geometry ingestion.
 - **Sample app** – `RTRMetalMPSSample` initialises the tracer with a simple scene composed of a ground plane and a raised prism, then emits `mps_output.ppm`. On RT-capable hardware the output shows the prism’s coloured face against the floor, matching the diagnostic goal.
+- **Sample app** – `RTRMetalMPSSample` now accepts CLI flags to choose shading mode (`--cpu`, `--gpu`) and can emit a CPU/GPU comparison pair (`--compare`), reporting the maximum divergence captured via the shared `FrameComparison` path. The default run prefers GPU shading and falls back automatically when kernels are unavailable.
 - **Test coverage** – Added `MPSSceneConverterTests` to check colour assignment and index packing. Full suite passes locally (21 tests, 1 intentional skip for unsupported hardware).
 - **GPU compute plan** – See `docs/mps_gpu_pipeline_plan.md` for the staged strategy that transitions the fallback path from CPU shading to Metal compute kernels while preserving deterministic off-screen outputs.
 
@@ -28,7 +29,7 @@
 2. **Port shading to GPU** – Recreate the reference compute pipeline within `RTRMetalEngine`: generate rays, shade, cast shadows, and accumulate entirely on the GPU. Reuse `MPSRayIntersector` buffers for interoperability.
 3. **On-screen vs. off-screen samples** – Keep the CLI off-screen renderer as a regression harness while adding an AppKit/MetalKit windowed demo (Stage 3C). Define the selection UX (build flag or runtime switch) and capture screenshots for documentation.
 4. **Image verification & tooling** – Add lightweight image-difference tooling (hash or checksum) under `tests/` to catch regressions once deterministic outputs are available.
-5. **Documentation & sample UX** – Update the README with MPS usage instructions, include rendered output samples, and expose simple CLI options (resolution, camera distance) for debugging.
+5. **Documentation & sample UX** – Update the README with MPS usage instructions, include rendered output samples, and extend the CLI options (e.g. resolution, camera distance) for debugging.
 
 ## Stage 3C Deliverables
 

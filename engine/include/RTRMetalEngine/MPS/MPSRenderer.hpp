@@ -19,6 +19,12 @@ namespace rtr::rendering {
 class MetalContext;
 class MPSRenderer {
 public:
+    enum class ShadingMode {
+        Auto,
+        CpuOnly,
+        GpuPreferred,
+    };
+
     struct FrameComparison {
         std::vector<uint8_t> cpuPixels;
         std::vector<uint8_t> gpuPixels;
@@ -38,6 +44,7 @@ public:
                                const char* gpuOutputPath,
                                FrameComparison* outComparison = nullptr);
     [[nodiscard]] bool usesGPUShading() const noexcept;
+    void setShadingMode(ShadingMode mode) noexcept;
 
 private:
     MetalContext& context_;
@@ -52,11 +59,15 @@ private:
     bool gpuShadingEnabled_ = false;
     struct GPUState;
     std::unique_ptr<GPUState> gpuState_;
+    ShadingMode shadingMode_ = ShadingMode::Auto;
 
     void createUniformBuffer();
     void updateCameraUniforms(std::uint32_t width, std::uint32_t height);
     bool initializeGPUResources();
-    bool computeFrame(FrameComparison& comparison, bool logDifferences);
+    bool computeFrame(FrameComparison& comparison,
+                      bool logDifferences,
+                      bool enableCpuShading,
+                      bool enableGpuShading);
     static bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t width, std::uint32_t height);
 };
 

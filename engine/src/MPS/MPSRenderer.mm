@@ -397,19 +397,27 @@ bool MPSRenderer::initialize(const scene::Scene& scene) {
 }
 
 bool MPSRenderer::renderFrame(const char* outputPath) {
+    const bool requestGpu = shadingMode_ != ShadingMode::CpuOnly;
+    const bool requestCpu = shadingMode_ == ShadingMode::CpuOnly;
+    const bool logDifferences = requestCpu && requestGpu;
+
     FrameComparison comparison;
-    if (!computeFrame(comparison, true)) {
+    if (!computeFrame(comparison, logDifferences, requestCpu, requestGpu)) {
         return false;
     }
 
-    if (comparison.cpuPixels.empty()) {
-        core::Logger::error("MPSRenderer", "CPU shading produced no pixels");
-        return false;
-    }
-
-    const std::vector<uint8_t>* finalPixels = &comparison.cpuPixels;
-    if (!comparison.gpuPixels.empty() && comparison.maxByteDifference <= 2.0) {
+    const std::vector<uint8_t>* finalPixels = nullptr;
+    if (!comparison.gpuPixels.empty() && requestGpu) {
         finalPixels = &comparison.gpuPixels;
+    } else if (!comparison.cpuPixels.empty()) {
+        finalPixels = &comparison.cpuPixels;
+    } else if (!comparison.gpuPixels.empty()) {
+        finalPixels = &comparison.gpuPixels;
+    }
+
+    if (!finalPixels) {
+        core::Logger::error("MPSRenderer", "No pixels produced for frame output");
+        return false;
     }
 
     if (!outputPath) {
@@ -429,7 +437,7 @@ bool MPSRenderer::renderFrameComparison(const char* cpuOutputPath,
                                         const char* gpuOutputPath,
                                         FrameComparison* outComparison) {
     FrameComparison comparison;
-    if (!computeFrame(comparison, true)) {
+    if (!computeFrame(comparison, true, true, true)) {
         return false;
     }
 
@@ -463,7 +471,12 @@ bool MPSRenderer::renderFrameComparison(const char* cpuOutputPath,
     return true;
 }
 
-bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences) {
+void MPSRenderer::setShadingMode(ShadingMode mode) noexcept { shadingMode_ = mode; }
+
+bool MPSRenderer::computeFrame(FrameComparison& comparison,
+                                      bool logDifferences,
+                                      bool enableCpuShading,
+                                      bool enableGpuShading) {
     comparison = {};
 
     if (!pathTracer_.isValid()) {
@@ -530,8 +543,11 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
         return true;
     };
 
+    const bool gpuResourcesReady = usesGPUShading();
+    const bool requestGpu = enableGpuShading && gpuResourcesReady;
+
     bool raysGeneratedWithGPU = false;
-    if (gpuShadingEnabled_ && gpuState_ && gpuState_->rayPipeline) {
+    if (requestGpu) {
         raysGeneratedWithGPU = dispatchRayKernel();
     }
 
@@ -598,7 +614,7 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
         }
     }
 
-    if (gpuShadingEnabled_) {
+    if (requestGpu) {
         for (std::size_t sampleIndex = 0; sampleIndex < 4 && sampleIndex < pixelCount; ++sampleIndex) {
             const auto& isect = intersections[sampleIndex];
             core::Logger::info("MPSRenderer",
@@ -607,104 +623,98 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
         }
     }
 
-    std::vector<uint8_t> cpuPixels(pixelCount * 3);
-    std::vector<vector_float3> cpuFloatPixels(pixelCount, (vector_float3){0.0f, 0.0f, 0.0f});
-
-    vector_float3 lightDir = simd_normalize((vector_float3){0.2f, 0.8f, 0.6f});
-    std::size_t hitCount = 0;
-    constexpr std::uint32_t kNoHit = std::numeric_limits<std::uint32_t>::max();
-    for (std::size_t i = 0; i < pixelCount; ++i) {
-        const auto& intersection = intersections[i];
-        const bool hit = intersection.distance < FLT_MAX && intersection.primitiveIndex != kNoHit && indices.size() >= 3;
-        vector_float3 color = {0.08f, 0.08f, 0.12f};
-        if (hit) {
-            ++hitCount;
-            const uint32_t primitiveIndex = intersection.primitiveIndex;
-            const std::size_t base = static_cast<std::size_t>(primitiveIndex) * 3;
-            if ((base + 2) < indices.size()) {
-                const uint32_t i0 = indices[base + 0];
-                const uint32_t i1 = indices[base + 1];
-                const uint32_t i2 = indices[base + 2];
-                if (i0 < vertices.size() && i1 < vertices.size() && i2 < vertices.size()) {
-                    const vector_float3& v0 = vertices[i0];
-                    const vector_float3& v1 = vertices[i1];
-                    const vector_float3& v2 = vertices[i2];
-
-                    vector_float3 e1 = v1 - v0;
-                    vector_float3 e2 = v2 - v0;
-                    vector_float3 normal = simd_normalize(simd_cross(e1, e2));
-
-                    float intensity = fmaxf(0.0f, simd_dot(normal, lightDir));
-                    intensity = intensity * 0.8f + 0.2f;
-
-                    float u = intersection.coordinates.x;
-                    float v = intersection.coordinates.y;
-                    float w = 1.0f - u - v;
-
-                    vector_float3 c0 = (i0 < colors.size()) ? colors[i0] : vector_float3{0.85f, 0.4f, 0.25f};
-                    vector_float3 c1 = (i1 < colors.size()) ? colors[i1] : vector_float3{0.25f, 0.85f, 0.4f};
-                    vector_float3 c2 = (i2 < colors.size()) ? colors[i2] : vector_float3{0.4f, 0.25f, 0.85f};
-                    color = (c0 * w + c1 * u + c2 * v) * intensity;
-                }
+    const auto hitCount = [&]() {
+        std::size_t count = 0;
+        constexpr std::uint32_t kNoHit = std::numeric_limits<std::uint32_t>::max();
+        for (std::size_t i = 0; i < pixelCount; ++i) {
+            const auto& intersection = intersections[i];
+            if (intersection.distance < FLT_MAX && intersection.primitiveIndex != kNoHit) {
+                ++count;
             }
         }
-        const std::uint32_t x = i % width;
-        const std::uint32_t y = i / width;
-        if (x == 153 && y == 225) {
-            core::Logger::info("DEBUG_CPU", "-- Pixel (153, 225) --");
-            core::Logger::info("DEBUG_CPU", "hit=%d, primitive=%u, distance=%.3f", hit, intersection.primitiveIndex,
-                               intersection.distance);
+        return count;
+    }();
+
+    std::vector<uint8_t> cpuPixels;
+    std::vector<vector_float3> cpuFloatPixels;
+    bool cpuComputed = false;
+
+    auto runCpuShading = [&]() {
+        if (cpuComputed) {
+            return;
+        }
+
+        cpuPixels.resize(pixelCount * 3);
+        cpuFloatPixels.resize(pixelCount, (vector_float3){0.0f, 0.0f, 0.0f});
+
+        constexpr std::uint32_t kNoHit = std::numeric_limits<std::uint32_t>::max();
+        vector_float3 lightDir = simd_normalize((vector_float3){0.2f, 0.8f, 0.6f});
+
+        for (std::size_t i = 0; i < pixelCount; ++i) {
+            const auto& intersection = intersections[i];
+            const bool hit = intersection.distance < FLT_MAX && intersection.primitiveIndex != kNoHit && indices.size() >= 3;
+            vector_float3 color = {0.08f, 0.08f, 0.12f};
             if (hit) {
                 const uint32_t primitiveIndex = intersection.primitiveIndex;
                 const std::size_t base = static_cast<std::size_t>(primitiveIndex) * 3;
-                const uint32_t i0 = indices[base + 0];
-                const uint32_t i1 = indices[base + 1];
-                const uint32_t i2 = indices[base + 2];
-                const float u = intersection.coordinates.x;
-                const float v = intersection.coordinates.y;
-                const float w = 1.0f - u - v;
-                const vector_float3& v0 = vertices[i0];
-                const vector_float3& v1 = vertices[i1];
-                const vector_float3& v2 = vertices[i2];
-                vector_float3 e1 = v1 - v0;
-                vector_float3 e2 = v2 - v0;
-                vector_float3 normal = simd_normalize(simd_cross(e1, e2));
-                float intensity = fmaxf(0.0f, simd_dot(normal, lightDir));
-                intensity = intensity * 0.8f + 0.2f;
-                vector_float3 c0 = (i0 < colors.size()) ? colors[i0] : vector_float3{0.85f, 0.4f, 0.25f};
-                vector_float3 c1 = (i1 < colors.size()) ? colors[i1] : vector_float3{0.25f, 0.85f, 0.4f};
-                vector_float3 c2 = (i2 < colors.size()) ? colors[i2] : vector_float3{0.4f, 0.25f, 0.85f};
-                core::Logger::info("DEBUG_CPU", "bary=(%.3f, %.3f, %.3f)", u, v, w);
-                core::Logger::info("DEBUG_CPU", "indices=(%u, %u, %u)", i0, i1, i2);
-                core::Logger::info("DEBUG_CPU", "c0=(%.2f, %.2f, %.2f)", c0.x, c0.y, c0.z);
-                core::Logger::info("DEBUG_CPU", "c1=(%.2f, %.2f, %.2f)", c1.x, c1.y, c1.z);
-                core::Logger::info("DEBUG_CPU", "c2=(%.2f, %.2f, %.2f)", c2.x, c2.y, c2.z);
-                core::Logger::info("DEBUG_CPU", "normal=(%.3f, %.3f, %.3f)", normal.x, normal.y, normal.z);
-                core::Logger::info("DEBUG_CPU", "intensity=%.3f", intensity);
+                if ((base + 2) < indices.size()) {
+                    const uint32_t i0 = indices[base + 0];
+                    const uint32_t i1 = indices[base + 1];
+                    const uint32_t i2 = indices[base + 2];
+                    if (i0 < vertices.size() && i1 < vertices.size() && i2 < vertices.size()) {
+                        const vector_float3& v0 = vertices[i0];
+                        const vector_float3& v1 = vertices[i1];
+                        const vector_float3& v2 = vertices[i2];
+
+                        vector_float3 e1 = v1 - v0;
+                        vector_float3 e2 = v2 - v0;
+                        vector_float3 normal = simd_normalize(simd_cross(e1, e2));
+
+                        float intensity = fmaxf(0.0f, simd_dot(normal, lightDir));
+                        intensity = intensity * 0.8f + 0.2f;
+
+                        float u = intersection.coordinates.x;
+                        float v = intersection.coordinates.y;
+                        float w = 1.0f - u - v;
+
+                        vector_float3 c0 = (i0 < colors.size()) ? colors[i0] : vector_float3{0.85f, 0.4f, 0.25f};
+                        vector_float3 c1 = (i1 < colors.size()) ? colors[i1] : vector_float3{0.25f, 0.85f, 0.4f};
+                        vector_float3 c2 = (i2 < colors.size()) ? colors[i2] : vector_float3{0.4f, 0.25f, 0.85f};
+                        color = (c0 * w + c1 * u + c2 * v) * intensity;
+                    }
+                }
             }
+
+            const std::uint32_t x = i % width;
+            const std::uint32_t y = i / width;
+            if (logDifferences && x == 153 && y == 225) {
+                core::Logger::info("DEBUG_CPU", "-- Pixel (153, 225) --");
+                core::Logger::info("DEBUG_CPU", "hit=%d, primitive=%u, distance=%.3f", hit, intersection.primitiveIndex,
+                                   intersection.distance);
+            }
+
+            color = simd_clamp(color, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
+            cpuFloatPixels[i] = color;
+            cpuPixels[i * 3 + 0] = floatToSRGBByte(color.x);
+            cpuPixels[i * 3 + 1] = floatToSRGBByte(color.y);
+            cpuPixels[i * 3 + 2] = floatToSRGBByte(color.z);
         }
 
-        color = simd_clamp(color, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
-        cpuFloatPixels[i] = color;
-        cpuPixels[i * 3 + 0] = floatToSRGBByte(color.x);
-        cpuPixels[i * 3 + 1] = floatToSRGBByte(color.y);
-        cpuPixels[i * 3 + 2] = floatToSRGBByte(color.z);
-    }
+        cpuComputed = true;
+    };
 
     std::vector<uint8_t> gpuPixels;
     double maxByteDifference = 0.0;
     float maxFloatDifference = 0.0f;
     std::size_t worstComponentIndex = 0;
-    vector_float3 worstCpuColour{0.0f, 0.0f, 0.0f};
-    vector_float3 worstGpuColour{0.0f, 0.0f, 0.0f};
-    bool usedGPUShading = false;
+    vector_float3 worstCpuColour = {0.0f, 0.0f, 0.0f};
+    vector_float3 worstGpuColour = {0.0f, 0.0f, 0.0f};
 
-    if (gpuShadingEnabled_ && gpuState_ && gpuState_->shadePipeline && gpuState_->positionsBuffer.isValid() &&
-        gpuState_->indicesBuffer.isValid() && gpuState_->colorsBuffer.isValid()) {
+    bool gpuShadingComputed = false;
+    if (requestGpu) {
         const std::size_t outputByteLength = pixelCount * sizeof(simd_float4);
         if (!gpuState_->shadingOutputBuffer.isValid() || gpuState_->shadingOutputBuffer.length() < outputByteLength) {
-            gpuState_->shadingOutputBuffer =
-                bufferAllocator_.createBuffer(outputByteLength, nullptr, "mps.shadingOutput");
+            gpuState_->shadingOutputBuffer = bufferAllocator_.createBuffer(outputByteLength, nullptr, "mps.shadingOutput");
         }
 
         if (gpuState_->shadingOutputBuffer.isValid()) {
@@ -754,7 +764,7 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
                     [shadeCommandBuffer waitUntilCompleted];
 
                     auto* gpuDebug = reinterpret_cast<simd_float4*>([debugBuffer contents]);
-                    if (gpuDebug) {
+                    if (gpuDebug && logDifferences) {
                         core::Logger::info("DEBUG_GPU", "-- Pixel (153, 225) --");
                         core::Logger::info("DEBUG_GPU", "bary=(%.3f, %.3f, %.3f)", gpuDebug[0].x, gpuDebug[0].y, gpuDebug[0].z);
                         core::Logger::info("DEBUG_GPU", "indices=(%u, %u, %u)", (uint)gpuDebug[1].x, (uint)gpuDebug[1].y, (uint)gpuDebug[1].z);
@@ -769,46 +779,51 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
                     auto* gpuOutput = reinterpret_cast<simd_float4*>(
                         [(__bridge id<MTLBuffer>)gpuState_->shadingOutputBuffer.nativeHandle() contents]);
                     if (gpuOutput) {
-                        usedGPUShading = true;
+                        gpuShadingComputed = true;
+                        if ((enableCpuShading || logDifferences) && !cpuComputed) {
+                            runCpuShading();
+                        }
+
                         gpuPixels.resize(pixelCount * 3);
                         for (std::size_t i = 0; i < pixelCount; ++i) {
-                            const vector_float3 cpuColour = cpuFloatPixels[i];
                             const vector_float3 gpuColour = {gpuOutput[i].x, gpuOutput[i].y, gpuOutput[i].z};
-
-                            const float diffR = std::fabs(cpuColour.x - gpuColour.x);
-                            const float diffG = std::fabs(cpuColour.y - gpuColour.y);
-                            const float diffB = std::fabs(cpuColour.z - gpuColour.z);
-                            maxFloatDifference = std::max({maxFloatDifference, diffR, diffG, diffB});
 
                             const uint8_t gpuR = floatToSRGBByte(gpuColour.x);
                             const uint8_t gpuG = floatToSRGBByte(gpuColour.y);
                             const uint8_t gpuB = floatToSRGBByte(gpuColour.z);
-
                             gpuPixels[i * 3 + 0] = gpuR;
                             gpuPixels[i * 3 + 1] = gpuG;
                             gpuPixels[i * 3 + 2] = gpuB;
 
-                            if (i == ((std::size_t)225 * width + 153)) {
+                            if (logDifferences && i == ((std::size_t)225 * width + 153)) {
                                 core::Logger::info("DEBUG_GPU", "quantised (%.3f, %.3f, %.3f) -> (%u, %u, %u)",
                                                    gpuColour.x, gpuColour.y, gpuColour.z,
                                                    static_cast<unsigned>(gpuR), static_cast<unsigned>(gpuG), static_cast<unsigned>(gpuB));
                             }
 
-                            const uint8_t cpuR = floatToSRGBByte(cpuColour.x);
-                            const uint8_t cpuG = floatToSRGBByte(cpuColour.y);
-                            const uint8_t cpuB = floatToSRGBByte(cpuColour.z);
+                            if (cpuComputed) {
+                                const vector_float3& cpuColour = cpuFloatPixels[i];
+                                const float diffR = std::fabs(cpuColour.x - gpuColour.x);
+                                const float diffG = std::fabs(cpuColour.y - gpuColour.y);
+                                const float diffB = std::fabs(cpuColour.z - gpuColour.z);
+                                maxFloatDifference = std::max({maxFloatDifference, diffR, diffG, diffB});
 
-                            const std::array<double, 3> channelDiffs = {
-                                std::fabs(static_cast<double>(cpuR) - gpuR),
-                                std::fabs(static_cast<double>(cpuG) - gpuG),
-                                std::fabs(static_cast<double>(cpuB) - gpuB),
-                            };
-                            for (std::size_t channel = 0; channel < channelDiffs.size(); ++channel) {
-                                if (channelDiffs[channel] > maxByteDifference) {
-                                    maxByteDifference = channelDiffs[channel];
-                                    worstComponentIndex = i * 3 + channel;
-                                    worstCpuColour = cpuColour;
-                                    worstGpuColour = gpuColour;
+                                const uint8_t cpuR = floatToSRGBByte(cpuColour.x);
+                                const uint8_t cpuG = floatToSRGBByte(cpuColour.y);
+                                const uint8_t cpuB = floatToSRGBByte(cpuColour.z);
+
+                                const std::array<double, 3> channelDiffs = {
+                                    std::fabs(static_cast<double>(cpuR) - gpuR),
+                                    std::fabs(static_cast<double>(cpuG) - gpuG),
+                                    std::fabs(static_cast<double>(cpuB) - gpuB),
+                                };
+                                for (std::size_t channel = 0; channel < channelDiffs.size(); ++channel) {
+                                    if (channelDiffs[channel] > maxByteDifference) {
+                                        maxByteDifference = channelDiffs[channel];
+                                        worstComponentIndex = i * 3 + channel;
+                                        worstCpuColour = cpuColour;
+                                        worstGpuColour = gpuColour;
+                                    }
                                 }
                             }
                         }
@@ -818,11 +833,15 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
         }
     }
 
-    if (logDifferences && gpuShadingEnabled_ && !usedGPUShading) {
-        core::Logger::warn("MPSRenderer", "GPU shading unavailable; retaining CPU output");
+    if (!cpuComputed && enableCpuShading) {
+        runCpuShading();
     }
 
-    if (logDifferences && usedGPUShading) {
+    if (!gpuShadingComputed && !cpuComputed) {
+        runCpuShading();
+    }
+
+    if (logDifferences && cpuComputed && gpuShadingComputed) {
         if (maxByteDifference <= 2.0) {
             core::Logger::info("MPSRenderer",
                                "GPU shading matched CPU output (max byte diff %.2f, max float diff %.6f)",
@@ -836,29 +855,37 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison, bool logDifferences)
             const auto& cpuIntersection = intersections[worstPixelIndex];
             const float gpuComponentFloat = (channel == 0) ? worstGpuColour.x : (channel == 1 ? worstGpuColour.y : worstGpuColour.z);
             const uint8_t gpuComponentByte = floatToSRGBByte(gpuComponentFloat);
-            const vector_float3 cpuColourFloat = worstCpuColour;
             core::Logger::warn("MPSRenderer",
                                "GPU shading diverged from CPU output (max diff %.2f, float diff %.6f) at pixel (%zu, %zu) channel %c: cpu=%u gpuByte=%u gpuByteFromFloat=%u gpuFloat=%.3f, cpuFloat=(%.2f, %.2f, %.2f), distance=%.3f primitive=%u bary=(%.3f, %.3f), gpuColour=(%.2f, %.2f, %.2f)",
                                maxByteDifference, static_cast<double>(maxFloatDifference), worstX, worstY, channelName,
                                static_cast<unsigned>(cpuPixels[worstComponentIndex]),
                                static_cast<unsigned>(gpuPixels[worstComponentIndex]),
                                static_cast<unsigned>(gpuComponentByte), gpuComponentFloat,
-                               cpuColourFloat.x, cpuColourFloat.y, cpuColourFloat.z, cpuIntersection.distance,
+                               worstCpuColour.x, worstCpuColour.y, worstCpuColour.z, cpuIntersection.distance,
                                cpuIntersection.primitiveIndex,
                                cpuIntersection.coordinates.x, cpuIntersection.coordinates.y,
                                worstGpuColour.x, worstGpuColour.y, worstGpuColour.z);
         }
     }
 
-    comparison.cpuPixels = std::move(cpuPixels);
-    comparison.gpuPixels = usedGPUShading ? std::move(gpuPixels) : std::vector<uint8_t>{};
-    comparison.maxByteDifference = usedGPUShading ? maxByteDifference : 0.0;
-    comparison.maxFloatDifference = usedGPUShading ? maxFloatDifference : 0.0f;
+    if (cpuComputed) {
+        comparison.cpuPixels = std::move(cpuPixels);
+    }
+    if (gpuShadingComputed) {
+        comparison.gpuPixels = std::move(gpuPixels);
+        comparison.maxByteDifference = maxByteDifference;
+        comparison.maxFloatDifference = maxFloatDifference;
+    }
     comparison.width = width;
     comparison.height = height;
 
     core::Logger::info("MPSRenderer", "Intersection hits: %zu / %zu", hitCount, pixelCount);
-    return true;
+
+    if (enableGpuShading && !gpuShadingComputed && enableCpuShading) {
+        return false;
+    }
+
+    return !comparison.cpuPixels.empty() || !comparison.gpuPixels.empty();
 }
 
 bool MPSRenderer::writePPM(const char* path,
