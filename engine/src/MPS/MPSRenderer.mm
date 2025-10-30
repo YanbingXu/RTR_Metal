@@ -175,7 +175,6 @@ struct MPSRenderer::GPUState {
     BufferHandle positionsBuffer;
     BufferHandle indicesBuffer;
     BufferHandle colorsBuffer;
-    BufferHandle intersectionsBuffer;
     BufferHandle shadingOutputBuffer;
     BufferHandle accumulationBuffer;
 };
@@ -198,7 +197,10 @@ void MPSRenderer::createUniformBuffer() {
     }
 }
 
-void MPSRenderer::updateCameraUniforms(std::uint32_t width, std::uint32_t height) {
+void MPSRenderer::updateCameraUniforms() {
+    const std::uint32_t width = std::max<std::uint32_t>(1u, frameWidth_);
+    const std::uint32_t height = std::max<std::uint32_t>(1u, frameHeight_);
+
     const vector_float3 cameraOrigin = {0.0f, 0.0f, 1.5f};
     const vector_float3 target = {0.0f, 0.0f, 0.0f};
     const vector_float3 worldUp = {0.0f, 1.0f, 0.0f};
@@ -388,6 +390,14 @@ bool MPSRenderer::initialize(const scene::Scene& scene) {
         createUniformBuffer();
     }
 
+    if (!uploadScene(scene)) {
+        return false;
+    }
+
+    return true;
+}
+
+bool MPSRenderer::uploadScene(const scene::Scene& scene) {
     const MPSSceneData sceneData = buildSceneData(scene);
     if (sceneData.positions.empty() || sceneData.indices.empty()) {
         core::Logger::warn("MPSRenderer", "Scene conversion produced no geometry");
@@ -417,9 +427,30 @@ bool MPSRenderer::initialize(const scene::Scene& scene) {
     return true;
 }
 
+void MPSRenderer::setFrameDimensions(std::uint32_t width, std::uint32_t height) noexcept {
+    const std::uint32_t sanitizedWidth = std::max<std::uint32_t>(1u, width);
+    const std::uint32_t sanitizedHeight = std::max<std::uint32_t>(1u, height);
+    if (sanitizedWidth == frameWidth_ && sanitizedHeight == frameHeight_) {
+        return;
+    }
+
+    frameWidth_ = sanitizedWidth;
+    frameHeight_ = sanitizedHeight;
+
+    rayBuffer_ = {};
+    intersectionBuffer_ = {};
+    if (gpuState_) {
+        gpuState_->shadingOutputBuffer = {};
+        gpuState_->accumulationBuffer = {};
+    }
+
+    resetAccumulation();
+}
+
 bool MPSRenderer::renderFrame(const char* outputPath) {
-    const bool requestGpu = shadingMode_ != ShadingMode::CpuOnly;
-    const bool requestCpu = shadingMode_ == ShadingMode::CpuOnly;
+    const bool allowGpu = shadingMode_ != ShadingMode::CpuOnly && usesGPUShading();
+    const bool requestGpu = allowGpu;
+    const bool requestCpu = !allowGpu || shadingMode_ == ShadingMode::CpuOnly;
     const bool logDifferences = requestCpu && requestGpu;
 
     const bool accumulateGpu = requestGpu;
@@ -460,7 +491,8 @@ bool MPSRenderer::renderFrameComparison(const char* cpuOutputPath,
                                         const char* gpuOutputPath,
                                         FrameComparison* outComparison) {
     FrameComparison comparison;
-    if (!computeFrame(comparison, true, true, true, false)) {
+    const bool allowGpu = shadingMode_ != ShadingMode::CpuOnly && usesGPUShading();
+    if (!computeFrame(comparison, true, true, allowGpu, false)) {
         return false;
     }
 
@@ -510,6 +542,41 @@ void MPSRenderer::resetAccumulation() noexcept {
     }
 }
 
+bool MPSRenderer::ensureFrameBuffers() {
+    const std::uint32_t width = std::max<std::uint32_t>(1u, frameWidth_);
+    const std::uint32_t height = std::max<std::uint32_t>(1u, frameHeight_);
+    const std::uint64_t pixelCount = static_cast<std::uint64_t>(width) * height;
+    if (pixelCount == 0) {
+        core::Logger::error("MPSRenderer", "Invalid frame dimensions (%u x %u)", frameWidth_, frameHeight_);
+        return false;
+    }
+
+    const std::size_t rayBytes = static_cast<std::size_t>(pixelCount) * sizeof(MPSRayOriginMaskDirectionMaxDistance);
+    const std::size_t intersectionBytes = static_cast<std::size_t>(pixelCount) *
+                                          sizeof(MPSIntersectionDistancePrimitiveIndexCoordinates);
+
+    auto ensureBuffer = [&](BufferHandle& handle, const char* label, std::size_t required) {
+        if (handle.isValid() && handle.length() >= required) {
+            return true;
+        }
+        handle = bufferAllocator_.createBuffer(required, nullptr, label);
+        if (!handle.isValid()) {
+            core::Logger::error("MPSRenderer", "Failed to allocate %s (%zu bytes)", label, required);
+            return false;
+        }
+        return true;
+    };
+
+    if (!ensureBuffer(rayBuffer_, "mps.rays", rayBytes)) {
+        return false;
+    }
+    if (!ensureBuffer(intersectionBuffer_, "mps.intersections", intersectionBytes)) {
+        return false;
+    }
+
+    return true;
+}
+
 bool MPSRenderer::computeFrame(FrameComparison& comparison,
                       bool logDifferences,
                       bool enableCpuShading,
@@ -533,21 +600,22 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
         return false;
     }
 
-    constexpr std::uint32_t width = 512;
-    constexpr std::uint32_t height = 512;
+    const std::uint32_t width = std::max<std::uint32_t>(1u, frameWidth_);
+    const std::uint32_t height = std::max<std::uint32_t>(1u, frameHeight_);
     const std::size_t pixelCount = static_cast<std::size_t>(width) * height;
 
-    updateCameraUniforms(width, height);
+    if (!ensureFrameBuffers()) {
+        core::Logger::error("MPSRenderer", "Failed to ensure frame buffers for %ux%u", width, height);
+        return false;
+    }
 
-    id<MTLBuffer> rayBuffer =
-        [device newBufferWithLength:pixelCount * sizeof(MPSRayOriginMaskDirectionMaxDistance)
-                             options:MTLResourceStorageModeShared];
-    id<MTLBuffer> intersectionBuffer =
-        [device newBufferWithLength:pixelCount * sizeof(MPSIntersectionDistancePrimitiveIndexCoordinates)
-                             options:MTLResourceStorageModeShared];
+    updateCameraUniforms();
+
+    id<MTLBuffer> rayBuffer = (__bridge id<MTLBuffer>)rayBuffer_.nativeHandle();
+    id<MTLBuffer> intersectionBuffer = (__bridge id<MTLBuffer>)intersectionBuffer_.nativeHandle();
 
     if (!rayBuffer || !intersectionBuffer) {
-        core::Logger::error("MPSRenderer", "Failed to allocate ray or intersection buffers");
+        core::Logger::error("MPSRenderer", "Frame buffers unavailable");
         return false;
     }
 

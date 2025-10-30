@@ -43,14 +43,14 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 ## Running
 
 - Sample: `./build/RTRMetalSample`
-- MPS Sample: `./build/RTRMetalMPSSample [--cpu|--gpu] [--compare] [--reset-accum] [--output=<file>] [--cpu-output=<file>] [--gpu-output=<file>]`
+- MPS Sample: `./build/RTRMetalMPSSample [--cpu|--gpu] [--compare] [--reset-accum] [--resolution=WxH] [--output=<file>] [--cpu-output=<file>] [--gpu-output=<file>]`
 - Tests: `cd build && ctest --output-on-failure`
 
 Both binaries currently emit console output only; rendering integration arrives in later stages.
 
 The MPS sample defaults to the shading mode configured in `config/engine.ini` (`shadingMode = auto|cpu|gpu`).
 CLI switches override that default. `--compare` writes both CPU and GPU frames while reporting pixel hash statistics, and
-`--reset-accum` clears the GPU accumulation buffer before rendering a new frame.
+`--reset-accum` clears the GPU accumulation buffer before rendering a new frame. `--resolution=WxH` overrides the default 512x512 frame size.
 
 > `RTRMetalMPSSample` 会在当前工作目录输出 `mps_output.ppm`（若设备支持 MPS ray tracing），便于快速检查渲染结果。
 

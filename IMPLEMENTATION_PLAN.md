@@ -10,34 +10,38 @@
 **Tests**: New C++ unit tests for math/utilities; run sample in headless init mode validating context creation.
 **Status**: Complete
 
-## Stage 3: Ray Tracing Pipeline
-**Goal**: Build acceleration structure builders, shader binding tables, ray generation/miss/closest-hit shaders, and per-frame rendering loop.
-**Success Criteria**: Engine traces rays against test geometry producing rendered image to texture; validation frame dump matches tolerance; tests cover AS builders.
-**Tests**: Offline render test comparing checksum; unit tests for TLAS/BLAS builders.
+## Stage 3: Ray Tracing Pipelines
+**Goal**: Deliver both hardware RT and MPS pipelines capable of rendering Cornell Box/off-screen scenes with ray-tracing features (reflections, shadows, refraction), plus supporting infrastructure for deterministic validation.
+
+### Stage 3A: Hardware RT Path (Metal Ray Tracing)
+**Goal**: Build BLAS/TLAS constructors, shader binding tables, and dispatch a hardware RT frame to an off-screen target.
+**Success Criteria**:
+- Diagnostic Cornell Box renders through the hardware RT path on RT-capable devices, producing non-black frames with basic lighting.
+- TLAS build + instance management validated via logs/tests; SBT layout documented.
+- Renderer toggles between hardware RT and MPS backends at runtime with graceful fallback when headers/devices are missing.
+**Tests**: Capability-gated integration tests for TLAS/SBT creation, hash comparison on RT hardware, smoke test ensuring fallback when unavailable.
 **Status**: In Progress
 
-### Stage 3 Sub-plan: Dual Ray Tracing Backends
-
-#### Stage 3A: Native Metal Ray Tracing Path
-**Goal**: Complete TLAS build, ray tracing pipeline state, SBT, and render dispatch using `MTLRayTracingPipelineState`.
-**Success Criteria**: On SDKs exposing `MetalRayTracing.h`, diagnostic scene renders via hardware RT; surface logs confirm TLAS/dispatch.
-**Tests**: Feature-flagged integration test that verifies BLAS/TLAS creation under ray-tracing-capable SDK; renderer smoke test logs.
+### Stage 3B: MPS Compute Path
+**Goal**: Mirror the reference MPS-based path tracer using compute shaders for ray generation, shading, and accumulation to cover machines without stable hardware RT.
+**Success Criteria**:
+- GPU shading kernels (ray, shade, accumulate, optional shadow/refraction passes) render Cornell/prism scenes with deterministic hashes.
+- Resolution/sample-count configurable; accumulation reset exposed (CLI + API).
+- CPU fallback retained for testing with unified comparison and tolerance thresholds.
+**Tests**: Frame hash/diff tests, multi-frame accumulation checks, scene-switch validation, capability probe skip logic.
 **Status**: In Progress
 
-#### Stage 3B: MPS Path Tracing Path
-**Goal**: Integrate Metal Performance Shaders path tracer (e.g., `MPSRayIntersector`/`MPSPathTracingSample`) sharing scene/resource infrastructure.
-**Success Criteria**: MPS backend renders diagnostic scene deterministically; API surface allows switching between native + MPS backends.
-**Tests**: Unit tests for backend selection/initialization; offline render comparison for MPS output.
-**Status**: In Progress
-
-#### Stage 3C: Demo Applications
-**Goal**: Provide two runnable demos—one using native RT (when available), one using MPS fallback—with CLI or simple UI to choose backend.
-**Success Criteria**: Both demos build/run via CMake; README documents requirements and selection; logs/screenshots captured.
-**Tests**: Manual verification on hardware; scripted build/run checks for each demo target.
+### Stage 3C: Examples & Scene Assets
+**Goal**: Provide off-screen and on-screen demos consuming shared renderer infrastructure and showcasing ray-traced effects.
+**Success Criteria**:
+- CLI tool renders Cornell Box and additional assets to disk (PNG/PPM) with recorded hashes and backend selection flags.
+- On-screen demo (MetalKit/SwiftUI) displays progressive rendering with runtime toggles (backend, scene, sample count, accumulation reset, screenshot capture).
+- Documentation and scripts describe running both demos, backend requirements, and regression expectations.
+**Tests**: Automated CLI hash comparisons; manual checklist for on-screen demo until CI coverage is feasible.
 **Status**: Not Started
 
-## Stage 4: Sample Application & Documentation
-**Goal**: Deliver macOS sample app demonstrating engine with interactive controls, plus developer docs and usage instructions.
-**Success Criteria**: Sample window renders scene with camera controls; README updated; docs explain architecture and build steps.
-**Tests**: Manual run of sample; doc lint/checklist; integration test verifying sample executable launches.
+## Stage 4: Polish & Documentation
+**Goal**: Round out material models (reflections/refraction, textures), ensure parity between hardware RT and MPS shading, and publish developer guidance.
+**Success Criteria**: Extended shading features shared across backends; performance/QA tooling (hash baselines, profiling); README/docs capture usage and troubleshooting.
+**Tests**: Expanded hash/image diff suite, profiling scripts, documentation linting.
 **Status**: Not Started

@@ -1,33 +1,39 @@
 # Development Plan
 
-## Milestone 1 – Project Bootstrap
-1. Add Swift Package manifest with `RTRMetalEngine` library and `RTRMetalExample` executable targets.
-2. Implement shared infrastructure: `MetalContext`, logging utilities, math helpers, and buffer alignment helpers.
-3. Author architecture documentation (this document) and development plan.
+## Milestone 1 – Project Bootstrap (✅)
+1. Establish CMake build with `RTRMetalEngine` library, sample targets, and shader compilation.
+2. Implement logging, math helpers, Metal context, buffer allocator, and configuration loader.
+3. Draft architecture/development guidelines.
 
-## Milestone 2 – Core Engine
-1. Define CPU-side scene representations (`Mesh`, `Material`, `Light`, `Scene`).
-2. Implement GPU uploaders and acceleration-structure builders (`GeometryStore`, `AccelerationStructureBuilder`).
-3. Create ray tracing pipeline setup, including shader binding table buffers.
-4. Implement `Renderer` capable of producing a single-bounce ray traced image with a directional light.
+## Milestone 2 – Core Engine (✅)
+1. Define CPU-side scene graph (`Mesh`, `Material`, `Scene`, builders).
+2. Integrate `GeometryStore`, `BufferAllocator`, and acceleration-structure scaffolding.
+3. Assemble renderer façade and diagnostic BLAS build.
 
-## Milestone 3 – Rendering Pipeline Completion
+## Milestone 3 – Ray Tracing Pipelines (🚧)
+### Focus A – Hardware RT Pipeline
+- Implement TLAS builder, shader binding table management, and ray dispatch writing into textures.
+- Align shading inputs (materials, camera, lighting) with the MPS path.
+- Detect capability at runtime; fallback to MPS when RT APIs unavailable.
+- Target Effects: primary visibility, soft shadows, reflections; refraction once base path is stable.
 
-### Short-Term (Stage 3B focus)
-1. **MPS pipeline hardening**
-   - Ingest Cornell Box assets (reuse `/Users/yanbing.xu/Desktop/MetalRayTracing`).
-   - Add shadow-ray pass and per-frame sample controls (config + CLI) while keeping deterministic test modes.
-   - Extend regression tests to hash-check CPU/GPU outputs and multi-frame accumulation where hardware allows.
-2. **Demo & documentation**
-   - Update CLI samples/README with shading mode, accumulation, and scene selection guidance.
-   - Capture reference hashes/screenshots for continuous verification.
+### Focus B – MPS Compute Pipeline
+- Finish GPU-only ray/shade/accumulate loop based on the MetalRayTracing reference sample.
+- Support configurable resolution, samples per pixel, accumulation reset, and deterministic hashes.
+- Keep CPU shading path as deterministic check; extend tests to cover scene switching (prism, Cornell).
+- Introduce optional passes (shadow rays, refractive materials) to mirror hardware RT behaviour.
 
-### Mid-Term (Stage 3C + Stage 3A prep)
-1. **On-screen sample** – Build an `MTKView`/SwiftUI demo that streams GPU output, exposes runtime toggles (accum reset, sample count, shading mode) and displays hash statistics.
-2. **Native Metal Ray Tracing groundwork** – Finish TLAS/SBT plumbing, feature flags, and shader dispatch so the engine can switch to `MTLRayTracingPipelineState` when the SDK/device supports it.
+### Focus C – Examples
+- Off-screen CLI renderer accepting Cornell Box assets, outputting PPM/PNG + hash metadata for both backends.
+- On-screen demo (MetalKit/SwiftUI) with backend/sampling toggles, accumulation HUD, and screenshot capture.
+- Shared scene loading/config handling between demos.
 
-## Milestone 4 – Polish & Validation
-1. Richer lighting/material features (textures, multi-bounce, tone mapping) shared across MPS/native paths.
-2. Performance & QA tooling – GPU frame capture, profiling scripts, automated hash comparisons.
-3. Asset/documentation pipeline – Cornell Box plus additional scenes, onboarding docs, contribution guidelines.
-4. Future roadmap – Denoising, animated meshes, and community extension points.
+## Milestone 4 – Polish & Validation (🔒)
+1. Expand material system (textures, multi-bounce, tone mapping) and keep feature parity across backends.
+2. Add profiling & QA tooling (hash baselines, performance scripts, capture guides).
+3. Document onboarding, backend requirements, regression workflow, and known limitations.
+4. Explore roadmap extensions (denoising, animation support) once pipelines are stable.
+
+## Reference
+- `IMPLEMENTATION_PLAN.md` contains the stage statuses and acceptance tests.
+- `/Users/yanbing.xu/Desktop/MetalRayTracing` remains the reference sample for the MPS compute pipeline.

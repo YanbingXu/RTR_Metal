@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -47,6 +48,9 @@ public:
                                FrameComparison* outComparison = nullptr);
     [[nodiscard]] bool usesGPUShading() const noexcept;
     void setShadingMode(ShadingMode mode) noexcept;
+    void setFrameDimensions(std::uint32_t width, std::uint32_t height) noexcept;
+    [[nodiscard]] std::uint32_t frameWidth() const noexcept { return frameWidth_; }
+    [[nodiscard]] std::uint32_t frameHeight() const noexcept { return frameHeight_; }
     void resetAccumulation() noexcept;
 
 private:
@@ -58,21 +62,27 @@ private:
     std::vector<uint32_t> cpuSceneIndices_;
     std::vector<vector_float3> cpuSceneColors_;
     BufferHandle uniformBuffer_;
+    BufferHandle rayBuffer_;
+    BufferHandle intersectionBuffer_;
     MPSCameraUniforms cameraUniforms_{};
     bool gpuShadingEnabled_ = false;
     struct GPUState;
     std::unique_ptr<GPUState> gpuState_;
     ShadingMode shadingMode_ = ShadingMode::Auto;
     std::uint32_t gpuFrameIndex_ = 0;
+    std::uint32_t frameWidth_ = 512;
+    std::uint32_t frameHeight_ = 512;
 
     void createUniformBuffer();
-    void updateCameraUniforms(std::uint32_t width, std::uint32_t height);
+    void updateCameraUniforms();
     bool initializeGPUResources();
+    bool ensureFrameBuffers();
     bool computeFrame(FrameComparison& comparison,
                       bool logDifferences,
                       bool enableCpuShading,
                       bool enableGpuShading,
                       bool accumulateGpu);
+    bool uploadScene(const scene::Scene& scene);
     static std::uint64_t computePixelHash(const std::vector<uint8_t>& data);
     static bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t width, std::uint32_t height);
 };

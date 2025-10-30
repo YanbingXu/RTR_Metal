@@ -149,6 +149,7 @@ if(RTR_BUILD_TESTS)
         tests/src/mps/MPSSceneConverterTests.cpp
         tests/src/mps/MPSRendererDeterminismTests.cpp
         tests/src/mps/MPSRendererGpuHashTests.cpp
+        tests/src/mps/MPSRendererResolutionTests.mm
         tests/src/mps/MPSRendererImageComparisonTests.mm)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)

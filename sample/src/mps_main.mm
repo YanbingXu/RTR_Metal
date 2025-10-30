@@ -1,10 +1,13 @@
 #import <Foundation/Foundation.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <optional>
 #include <string>
+#include <utility>
 
 #include "RTRMetalEngine/Core/ConfigLoader.hpp"
 #include "RTRMetalEngine/Core/EngineConfig.hpp"
@@ -24,6 +27,7 @@ struct CommandLineOptions {
     std::optional<rtr::rendering::MPSRenderer::ShadingMode> requestedMode;
     bool resetAccumulation = false;
     std::string sceneName = "prism";
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> resolution;
 };
 
 void printUsage() {
@@ -36,6 +40,7 @@ void printUsage() {
               << "  --gpu-output=<file> Output path for GPU image in compare mode\n"
               << "  --reset-accum       Reset GPU accumulation state before rendering\n"
               << "  --scene=<name>      Scene to render (prism|cornell)\n"
+              << "  --resolution=WxH    Override frame resolution (e.g. 640x480)\n"
               << std::endl;
 }
 
@@ -60,6 +65,29 @@ CommandLineOptions parseOptions(int argc, const char* argv[]) {
             options.cpuOutputPath = arg.substr(13);
         } else if (arg.rfind("--gpu-output=", 0) == 0) {
             options.gpuOutputPath = arg.substr(13);
+        } else if (arg.rfind("--resolution=", 0) == 0) {
+            std::string value = arg.substr(13);
+            auto delimiter = value.find_first_of("xX");
+            if (delimiter == std::string::npos) {
+                std::cerr << "Invalid resolution format. Expected WxH." << std::endl;
+                std::exit(1);
+            }
+            const std::string widthStr = value.substr(0, delimiter);
+            const std::string heightStr = value.substr(delimiter + 1);
+            try {
+                const unsigned long width = std::stoul(widthStr);
+                const unsigned long height = std::stoul(heightStr);
+                if (width == 0 || height == 0 || width > std::numeric_limits<std::uint32_t>::max() ||
+                    height > std::numeric_limits<std::uint32_t>::max()) {
+                    std::cerr << "Resolution values must be positive 32-bit integers." << std::endl;
+                    std::exit(1);
+                }
+                options.resolution =
+                    std::make_pair(static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
+            } catch (const std::exception&) {
+                std::cerr << "Invalid resolution value: " << value << std::endl;
+                std::exit(1);
+            }
         } else if (arg.rfind("--scene=", 0) == 0) {
             options.sceneName = arg.substr(8);
             std::transform(options.sceneName.begin(), options.sceneName.end(), options.sceneName.begin(), [](unsigned char c) {
@@ -139,6 +167,10 @@ int main(int argc, const char* argv[]) {
 
     if (options.resetAccumulation) {
         renderer.resetAccumulation();
+    }
+
+    if (options.resolution.has_value()) {
+        renderer.setFrameDimensions(options.resolution->first, options.resolution->second);
     }
 
     if (options.runComparison) {
