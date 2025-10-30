@@ -43,14 +43,16 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 ## Running
 
 - Sample: `./build/RTRMetalSample`
-- MPS Sample: `./build/RTRMetalMPSSample [--cpu|--gpu] [--compare] [--reset-accum] [--resolution=WxH] [--output=<file>] [--cpu-output=<file>] [--gpu-output=<file>]`
+- MPS Sample: `./build/RTRMetalMPSSample [--cpu|--gpu] [--compare] [--reset-accum] [--no-accum|--accum] [--accum-frames=N] [--resolution=WxH] [--output=<file>] [--cpu-output=<file>] [--gpu-output=<file>]`
 - Tests: `cd build && ctest --output-on-failure`
 
 Both binaries currently emit console output only; rendering integration arrives in later stages.
 
 The MPS sample defaults to the shading mode configured in `config/engine.ini` (`shadingMode = auto|cpu|gpu`).
 CLI switches override that default. `--compare` writes both CPU and GPU frames while reporting pixel hash statistics, and
-`--reset-accum` clears the GPU accumulation buffer before rendering a new frame. `--resolution=WxH` overrides the default 512x512 frame size.
+`--reset-accum` clears the GPU accumulation buffer before rendering a new frame. `--no-accum` disables GPU accumulation (single-sample), `--accum` re-enables it, `--accum-frames=N` caps accumulation at `N` frames (0 keeps accumulating indefinitely), and `--resolution=WxH` overrides the default 512x512 frame size.
+
+Scenes available via `--scene=` include `prism`, `cornell`, `reflective`, and `glass`. The reflective/glass demos expect OBJ assets under `assets/` (for example the bundled `assets/mario.obj` sourced from the reference project).
 
 > `RTRMetalMPSSample` 会在当前工作目录输出 `mps_output.ppm`（若设备支持 MPS ray tracing），便于快速检查渲染结果。
 
@@ -63,6 +65,8 @@ Project direction, architecture, and working agreements live in:
 - [`docs/Development_Guidelines.md`](docs/Development_Guidelines.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
+
+The optional keys `accumulation = on|off`, `accumulationFrames = <n>`, `samplesPerPixel = <n>`, and `sampleSeed = <n>` can be added to `config/engine.ini` to provide defaults for the sample apps, and the CLI flags above override those values when present.
 
 ## License
 

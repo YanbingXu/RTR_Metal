@@ -2,6 +2,36 @@
 #include "MPSUniforms.metal"
 using namespace metal;
 
+namespace {
+
+inline uint mixBits(uint value) {
+    value ^= value >> 17;
+    value *= 0xed5ad4bbU;
+    value ^= value >> 11;
+    value *= 0xac4c1b51U;
+    value ^= value >> 15;
+    value *= 0x31848babU;
+    value ^= value >> 14;
+    return value;
+}
+
+inline float2 jitterForPixel(uint2 gid, constant MPSSamplingUniforms& sampling) {
+    const uint sampleIndex = (sampling.samplesPerPixel == 0)
+                                 ? sampling.sampleIndex
+                                 : min(sampling.sampleIndex, sampling.samplesPerPixel - 1);
+    if (sampling.samplesPerPixel == 1 && sampleIndex == 0 && sampling.baseSeed == 0) {
+        return float2(0.0f);
+    }
+    const uint base = mixBits(gid.x ^ (gid.y << 16) ^ (sampling.baseSeed * 0x9E3779B9U) ^ sampleIndex);
+    const uint hashX = mixBits(base ^ 0x68bc21ebu);
+    const uint hashY = mixBits(base ^ 0x02e5be93u);
+    const float jitterX = (static_cast<float>(hashX & 0xFFFFu) + 0.5f) / 65536.0f - 0.5f;
+    const float jitterY = (static_cast<float>(hashY & 0xFFFFu) + 0.5f) / 65536.0f - 0.5f;
+    return float2(jitterX, jitterY);
+}
+
+}  // namespace
+
 kernel void rayGenMain(texture2d<float, access::write> output [[texture(0)]],
                        uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= output.get_width() || gid.y >= output.get_height()) {
@@ -29,12 +59,14 @@ kernel void closestHitMain(texture2d<float, access::write> output [[texture(0)]]
 
 kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buffer(0)]],
                          constant MPSCameraUniforms& uniforms [[buffer(1)]],
+                         constant MPSSamplingUniforms& sampling [[buffer(2)]],
                          uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uniforms.width || gid.y >= uniforms.height) {
         return;
     }
 
-    const float2 pixel = float2(gid) + 0.5f;
+    const float2 jitter = jitterForPixel(gid, sampling);
+    const float2 pixel = float2(gid) + 0.5f + jitter;
     const float2 ndc = (pixel / float2(uniforms.width, uniforms.height) - 0.5f) * 2.0f;
     const float3 eye = uniforms.eye.xyz;
     const float3 forward = uniforms.forward.xyz;

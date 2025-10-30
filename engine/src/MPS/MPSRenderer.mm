@@ -531,6 +531,19 @@ void MPSRenderer::setShadingMode(ShadingMode mode) noexcept {
     resetAccumulation();
 }
 
+void MPSRenderer::setAccumulationParameters(bool enabled, std::uint32_t maxFrames) noexcept {
+    accumulationEnabled_ = enabled;
+    accumulationTargetFrames_ = maxFrames;
+    if (!accumulationEnabled_) {
+        resetAccumulation();
+    }
+}
+
+void MPSRenderer::setSamplingParameters(std::uint32_t samplesPerPixel, std::uint32_t seed) noexcept {
+    samplesPerPixel_ = samplesPerPixel == 0 ? 0U : samplesPerPixel;
+    baseSeed_ = seed;
+}
+
 void MPSRenderer::resetAccumulation() noexcept {
     gpuFrameIndex_ = 0;
     if (gpuState_ && gpuState_->accumulationBuffer.isValid()) {

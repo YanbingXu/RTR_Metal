@@ -16,6 +16,7 @@
 #include "RTRMetalEngine/MPS/MPSRenderer.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 #include "RTRMetalEngine/Scene/CornellBox.hpp"
+#include "RTRMetalEngine/Scene/DemoScenes.hpp"
 
 namespace {
 
@@ -28,6 +29,10 @@ struct CommandLineOptions {
     bool resetAccumulation = false;
     std::string sceneName = "prism";
     std::optional<std::pair<std::uint32_t, std::uint32_t>> resolution;
+    std::optional<bool> accumulationEnabled;
+    std::optional<std::uint32_t> accumulationFrames;
+    std::optional<std::uint32_t> samplesPerPixel;
+    std::optional<std::uint32_t> sampleSeed;
 };
 
 void printUsage() {
@@ -39,7 +44,12 @@ void printUsage() {
               << "  --cpu-output=<file> Output path for CPU image in compare mode\n"
               << "  --gpu-output=<file> Output path for GPU image in compare mode\n"
               << "  --reset-accum       Reset GPU accumulation state before rendering\n"
-              << "  --scene=<name>      Scene to render (prism|cornell)\n"
+              << "  --no-accum          Disable accumulation (equivalent to single sample)\n"
+              << "  --accum             Enable accumulation even if disabled in config\n"
+              << "  --accum-frames=N    Limit accumulation to N frames (0 = unlimited)\n"
+              << "  --spp=N             Samples per pixel (N>0, 0 = unlimited)\n"
+              << "  --seed=N            RNG seed for sampling jitter\n"
+              << "  --scene=<name>      Scene to render (prism|cornell|reflective|glass)\n"
               << "  --resolution=WxH    Override frame resolution (e.g. 640x480)\n"
               << std::endl;
 }
@@ -59,12 +69,55 @@ CommandLineOptions parseOptions(int argc, const char* argv[]) {
             options.runComparison = true;
         } else if (arg == "--reset-accum") {
             options.resetAccumulation = true;
+        } else if (arg == "--no-accum") {
+            options.accumulationEnabled = false;
+        } else if (arg == "--accum") {
+            options.accumulationEnabled = true;
         } else if (arg.rfind("--output=", 0) == 0) {
             options.outputPath = arg.substr(9);
         } else if (arg.rfind("--cpu-output=", 0) == 0) {
             options.cpuOutputPath = arg.substr(13);
         } else if (arg.rfind("--gpu-output=", 0) == 0) {
             options.gpuOutputPath = arg.substr(13);
+        } else if (arg.rfind("--accum-frames=", 0) == 0) {
+            const std::string value = arg.substr(15);
+            try {
+                const unsigned long frames = std::stoul(value);
+                if (frames > std::numeric_limits<std::uint32_t>::max()) {
+                    std::cerr << "accum-frames value exceeds 32-bit range" << std::endl;
+                    std::exit(1);
+                }
+                options.accumulationFrames = static_cast<std::uint32_t>(frames);
+            } catch (const std::exception&) {
+                std::cerr << "Invalid accum-frames value: " << value << std::endl;
+                std::exit(1);
+            }
+        } else if (arg.rfind("--spp=", 0) == 0) {
+            const std::string value = arg.substr(6);
+            try {
+                const unsigned long spp = std::stoul(value);
+                if (spp > std::numeric_limits<std::uint32_t>::max()) {
+                    std::cerr << "spp value exceeds 32-bit range" << std::endl;
+                    std::exit(1);
+                }
+                options.samplesPerPixel = static_cast<std::uint32_t>(spp);
+            } catch (const std::exception&) {
+                std::cerr << "Invalid spp value: " << value << std::endl;
+                std::exit(1);
+            }
+        } else if (arg.rfind("--seed=", 0) == 0) {
+            const std::string value = arg.substr(7);
+            try {
+                const unsigned long seed = std::stoul(value);
+                if (seed > std::numeric_limits<std::uint32_t>::max()) {
+                    std::cerr << "seed value exceeds 32-bit range" << std::endl;
+                    std::exit(1);
+                }
+                options.sampleSeed = static_cast<std::uint32_t>(seed);
+            } catch (const std::exception&) {
+                std::cerr << "Invalid seed value: " << value << std::endl;
+                std::exit(1);
+            }
         } else if (arg.rfind("--resolution=", 0) == 0) {
             std::string value = arg.substr(13);
             auto delimiter = value.find_first_of("xX");
@@ -151,11 +204,24 @@ int main(int argc, const char* argv[]) {
     rtr::rendering::MPSRenderer renderer(context);
     renderer.setShadingMode(options.requestedMode.value_or(configuredMode));
 
-    const bool useCornell = options.sceneName == "cornell";
+    const bool accumulationEnabled = options.accumulationEnabled.value_or(config.accumulationEnabled);
+    const std::uint32_t accumulationFrames = options.accumulationFrames.value_or(config.accumulationFrames);
+    const std::uint32_t samplesPerPixel = options.samplesPerPixel.value_or(config.samplesPerPixel);
+    const std::uint32_t sampleSeed = options.sampleSeed.value_or(config.sampleSeed);
+    renderer.setSamplingParameters(samplesPerPixel, sampleSeed);
+    renderer.setAccumulationParameters(accumulationEnabled, accumulationFrames);
+
+    const std::filesystem::path assetsRoot = "assets";
     bool initialised = false;
-    if (useCornell) {
+    if (options.sceneName == "cornell") {
         rtr::scene::Scene cornell = rtr::scene::createCornellBoxScene();
         initialised = renderer.initialize(cornell);
+    } else if (options.sceneName == "reflective") {
+        rtr::scene::Scene scene = rtr::scene::createReflectiveDemoScene(assetsRoot);
+        initialised = renderer.initialize(scene);
+    } else if (options.sceneName == "glass") {
+        rtr::scene::Scene scene = rtr::scene::createGlassDemoScene(assetsRoot);
+        initialised = renderer.initialize(scene);
     } else {
         initialised = renderer.initialize();
     }

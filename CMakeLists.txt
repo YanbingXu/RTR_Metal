@@ -77,6 +77,8 @@ add_library(RTRMetalEngine STATIC
     engine/src/Scene/Mesh.cpp
     engine/src/Scene/Scene.cpp
     engine/src/Scene/SceneBuilder.cpp
+    engine/src/Scene/OBJLoader.cpp
+    engine/src/Scene/DemoScenes.cpp
     engine/src/Scene/CornellBox.cpp)
 
 # Placeholder source to satisfy library creation until core module fills out
@@ -149,6 +151,7 @@ if(RTR_BUILD_TESTS)
         tests/src/mps/MPSSceneConverterTests.cpp
         tests/src/mps/MPSRendererDeterminismTests.cpp
         tests/src/mps/MPSRendererGpuHashTests.cpp
+        tests/src/mps/MPSRendererAccumulationTests.cpp
         tests/src/mps/MPSRendererResolutionTests.mm
         tests/src/mps/MPSRendererImageComparisonTests.mm)
     target_link_libraries(RTRMetalTests

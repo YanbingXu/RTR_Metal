@@ -51,6 +51,12 @@ public:
     void setFrameDimensions(std::uint32_t width, std::uint32_t height) noexcept;
     [[nodiscard]] std::uint32_t frameWidth() const noexcept { return frameWidth_; }
     [[nodiscard]] std::uint32_t frameHeight() const noexcept { return frameHeight_; }
+    void setAccumulationParameters(bool enabled, std::uint32_t maxFrames) noexcept;
+    [[nodiscard]] bool accumulationEnabled() const noexcept { return accumulationEnabled_; }
+    [[nodiscard]] std::uint32_t accumulationTargetFrames() const noexcept { return accumulationTargetFrames_; }
+    void setSamplingParameters(std::uint32_t samplesPerPixel, std::uint32_t seed) noexcept;
+    [[nodiscard]] std::uint32_t samplesPerPixel() const noexcept { return samplesPerPixel_; }
+    [[nodiscard]] std::uint32_t sampleSeed() const noexcept { return baseSeed_; }
     void resetAccumulation() noexcept;
 
 private:
@@ -72,6 +78,10 @@ private:
     std::uint32_t gpuFrameIndex_ = 0;
     std::uint32_t frameWidth_ = 512;
     std::uint32_t frameHeight_ = 512;
+    bool accumulationEnabled_ = true;
+    std::uint32_t accumulationTargetFrames_ = 0;
+    std::uint32_t samplesPerPixel_ = 1;
+    std::uint32_t baseSeed_ = 0;
 
     void createUniformBuffer();
     void updateCameraUniforms();

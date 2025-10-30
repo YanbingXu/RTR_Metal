@@ -40,4 +40,11 @@ struct MPSAccumulationUniforms {
     uint padding1;
 };
 
+struct MPSSamplingUniforms {
+    uint sampleIndex;
+    uint samplesPerPixel;
+    uint baseSeed;
+    uint padding;
+};
+
 #endif
