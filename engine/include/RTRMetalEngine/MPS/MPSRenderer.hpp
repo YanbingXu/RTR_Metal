@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <vector>
 
@@ -54,12 +55,22 @@ public:
     void setAccumulationParameters(bool enabled, std::uint32_t maxFrames) noexcept;
     [[nodiscard]] bool accumulationEnabled() const noexcept { return accumulationEnabled_; }
     [[nodiscard]] std::uint32_t accumulationTargetFrames() const noexcept { return accumulationTargetFrames_; }
+    [[nodiscard]] std::uint32_t accumulatedFrames() const noexcept;
     void setSamplingParameters(std::uint32_t samplesPerPixel, std::uint32_t seed) noexcept;
     [[nodiscard]] std::uint32_t samplesPerPixel() const noexcept { return samplesPerPixel_; }
     [[nodiscard]] std::uint32_t sampleSeed() const noexcept { return baseSeed_; }
     void resetAccumulation() noexcept;
 
 private:
+    struct MaterialProperties {
+        vector_float3 albedo{1.0f, 1.0f, 1.0f};
+        float roughness = 0.5f;
+        vector_float3 emission{0.0f, 0.0f, 0.0f};
+        float metallic = 0.0f;
+        float reflectivity = 0.0f;
+        float indexOfRefraction = 1.5f;
+    };
+
     MetalContext& context_;
     BufferAllocator bufferAllocator_;
     GeometryStore geometryStore_;
@@ -67,6 +78,8 @@ private:
     std::vector<vector_float3> cpuScenePositions_;
     std::vector<uint32_t> cpuSceneIndices_;
     std::vector<vector_float3> cpuSceneColors_;
+    std::vector<uint32_t> cpuScenePrimitiveMaterials_;
+    std::vector<MaterialProperties> materials_;
     BufferHandle uniformBuffer_;
     BufferHandle rayBuffer_;
     BufferHandle intersectionBuffer_;

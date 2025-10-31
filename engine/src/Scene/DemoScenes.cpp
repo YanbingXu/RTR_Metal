@@ -29,6 +29,7 @@ void addFloor(SceneBuilder& builder, Scene& scene) {
     Material floorMaterial{};
     floorMaterial.albedo = {0.6F, 0.6F, 0.6F};
     floorMaterial.roughness = 0.8F;
+    floorMaterial.reflectivity = 0.05F;
     auto materialHandle = scene.addMaterial(floorMaterial);
     scene.addInstance(mesh, materialHandle, matrix_identity_float4x4);
 }
@@ -49,6 +50,7 @@ void addBackdrop(SceneBuilder& builder, Scene& scene) {
     Material wallMaterial{};
     wallMaterial.albedo = {0.75F, 0.8F, 0.85F};
     wallMaterial.roughness = 0.5F;
+    wallMaterial.reflectivity = 0.05F;
     auto materialHandle = scene.addMaterial(wallMaterial);
     scene.addInstance(mesh, materialHandle, matrix_identity_float4x4);
 }
@@ -132,6 +134,7 @@ Scene createReflectiveDemoScene(const std::filesystem::path& assetRoot) {
     material.albedo = {0.95F, 0.95F, 0.95F};
     material.roughness = 0.05F;
     material.metallic = 1.0F;
+    material.reflectivity = 0.9F;
     return createDemoScene(assetRoot, material, 0.2F);
 }
 
@@ -140,6 +143,8 @@ Scene createGlassDemoScene(const std::filesystem::path& assetRoot) {
     material.albedo = {0.9F, 0.95F, 1.0F};
     material.roughness = 0.02F;
     material.metallic = 0.0F;
+    material.reflectivity = 0.1F;
+    material.indexOfRefraction = 1.45F;
     return createDemoScene(assetRoot, material, 0.25F);
 }
 

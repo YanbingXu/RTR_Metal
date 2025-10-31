@@ -23,6 +23,7 @@ bool isMonochrome(vector_float3 value, float epsilon = 1e-3f) {
 
 bool appendMeshInstance(const scene::Mesh& mesh,
                         const scene::Material* material,
+                        std::uint32_t materialIndex,
                         simd_float4x4 transform,
                         vector_float3 defaultColor,
                         MPSSceneData& outScene) {
@@ -46,15 +47,11 @@ bool appendMeshInstance(const scene::Mesh& mesh,
     }
 
     const vector_float3 materialColor = material ? clampColor(material->albedo) : clampColor(defaultColor);
-    constexpr vector_float3 palette[3] = {
-        {1.0f, 0.2f, 0.2f},
-        {0.2f, 1.0f, 0.2f},
-        {0.2f, 0.2f, 1.0f},
-    };
 
     const std::size_t positionStart = outScene.positions.size();
     const std::size_t colorStart = outScene.colors.size();
     const std::size_t indexStart = outScene.indices.size();
+    const std::size_t primitiveStart = outScene.primitiveMaterials.size();
 
     outScene.positions.reserve(outScene.positions.size() + vertexCount);
     outScene.colors.reserve(outScene.colors.size() + vertexCount);
@@ -72,10 +69,15 @@ bool appendMeshInstance(const scene::Mesh& mesh,
             outScene.positions.resize(positionStart);
             outScene.colors.resize(colorStart);
             outScene.indices.resize(indexStart);
+            outScene.primitiveMaterials.resize(primitiveStart);
             return false;
         }
         outScene.indices.push_back(static_cast<std::uint32_t>(transformedIndex));
     }
+
+    const std::size_t triangleCount = indices.size() / 3;
+    const std::uint32_t storedMaterialIndex = material ? materialIndex : std::numeric_limits<std::uint32_t>::max();
+    outScene.primitiveMaterials.insert(outScene.primitiveMaterials.end(), triangleCount, storedMaterialIndex);
 
     return true;
 }
@@ -89,6 +91,18 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
     const auto& materials = scene.materials();
     const auto& instances = scene.instances();
 
+    sceneData.materials.reserve(materials.size());
+    for (const auto& mat : materials) {
+        MPSMaterialProperties props{};
+        props.albedo = mat.albedo;
+        props.roughness = mat.roughness;
+        props.emission = mat.emission;
+        props.metallic = mat.metallic;
+        props.reflectivity = mat.reflectivity;
+        props.indexOfRefraction = mat.indexOfRefraction;
+        sceneData.materials.push_back(props);
+    }
+
     bool appendedAny = false;
     for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
         const auto& instance = instances[instanceIndex];
@@ -99,13 +113,15 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
 
         const scene::Mesh& mesh = meshes[instance.mesh.index];
         const scene::Material* material = nullptr;
+        std::uint32_t materialIndex = std::numeric_limits<std::uint32_t>::max();
         if (instance.material.isValid() && instance.material.index < materials.size()) {
             material = &materials[instance.material.index];
+            materialIndex = static_cast<std::uint32_t>(instance.material.index);
         } else if (instance.material.isValid()) {
             core::Logger::warn("MPSSceneConverter", "Instance %zu references invalid material", instanceIndex);
         }
 
-        if (appendMeshInstance(mesh, material, instance.transform, defaultColor, sceneData)) {
+        if (appendMeshInstance(mesh, material, materialIndex, instance.transform, defaultColor, sceneData)) {
             appendedAny = true;
         } else {
             core::Logger::warn("MPSSceneConverter", "Skipped mesh instance %zu due to invalid geometry", instanceIndex);
@@ -115,7 +131,12 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
     if (!appendedAny) {
         for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
             const scene::Mesh& mesh = meshes[meshIndex];
-            if (appendMeshInstance(mesh, nullptr, matrix_identity_float4x4, defaultColor, sceneData)) {
+            if (appendMeshInstance(mesh,
+                                    nullptr,
+                                    std::numeric_limits<std::uint32_t>::max(),
+                                    matrix_identity_float4x4,
+                                    defaultColor,
+                                    sceneData)) {
                 appendedAny = true;
             } else {
                 core::Logger::warn("MPSSceneConverter", "Skipped mesh %zu due to invalid geometry", meshIndex);

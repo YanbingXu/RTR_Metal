@@ -415,6 +415,20 @@ bool MPSRenderer::uploadScene(const scene::Scene& scene) {
     cpuScenePositions_ = sceneData.positions;
     cpuSceneIndices_ = sceneData.indices;
     cpuSceneColors_ = sceneData.colors;
+    cpuScenePrimitiveMaterials_ = sceneData.primitiveMaterials;
+
+    materials_.clear();
+    materials_.reserve(sceneData.materials.size());
+    for (const auto& mat : sceneData.materials) {
+        MaterialProperties props{};
+        props.albedo = mat.albedo;
+        props.roughness = mat.roughness;
+        props.emission = mat.emission;
+        props.metallic = mat.metallic;
+        props.reflectivity = mat.reflectivity;
+        props.indexOfRefraction = mat.indexOfRefraction;
+        materials_.push_back(props);
+    }
 
     if (!initializeGPUResources()) {
         core::Logger::warn("MPSRenderer", "GPU shading resources unavailable; falling back to CPU shading");
@@ -542,6 +556,10 @@ void MPSRenderer::setAccumulationParameters(bool enabled, std::uint32_t maxFrame
 void MPSRenderer::setSamplingParameters(std::uint32_t samplesPerPixel, std::uint32_t seed) noexcept {
     samplesPerPixel_ = samplesPerPixel == 0 ? 0U : samplesPerPixel;
     baseSeed_ = seed;
+}
+
+std::uint32_t MPSRenderer::accumulatedFrames() const noexcept {
+    return accumulationEnabled_ ? gpuFrameIndex_ : 0U;
 }
 
 void MPSRenderer::resetAccumulation() noexcept {
@@ -972,6 +990,25 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
 
     if (accumulationApplied) {
         ++gpuFrameIndex_;
+        if (accumulationEnabled_) {
+            // TODO: clamp against both accumulationTargetFrames_ and samplesPerPixel_; consider unifying frame budget logic.
+            if (accumulationTargetFrames_ > 0 && gpuFrameIndex_ > accumulationTargetFrames_) {
+                gpuFrameIndex_ = accumulationTargetFrames_;
+            }
+            if (samplesPerPixel_ > 0 && gpuFrameIndex_ > samplesPerPixel_) {
+                gpuFrameIndex_ = samplesPerPixel_;
+            }
+        }
+    } else if (gpuShadingComputed && accumulationEnabled_) {
+        if (gpuFrameIndex_ == 0) {
+            gpuFrameIndex_ = 1;
+        }
+        if (accumulationTargetFrames_ > 0 && gpuFrameIndex_ > accumulationTargetFrames_) {
+            gpuFrameIndex_ = accumulationTargetFrames_;
+        }
+        if (samplesPerPixel_ > 0 && gpuFrameIndex_ > samplesPerPixel_) {
+            gpuFrameIndex_ = samplesPerPixel_;
+        }
     }
 
     if (gpuShadingComputed) {
