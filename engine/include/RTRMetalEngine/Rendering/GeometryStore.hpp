@@ -12,11 +12,20 @@ namespace rtr::rendering {
 
 struct MeshBuffers {
     MeshBuffers() = default;
-    MeshBuffers(BufferHandle&& vb, BufferHandle&& ib, std::size_t idxCount, std::size_t stride)
-        : vertexBuffer(std::move(vb)), indexBuffer(std::move(ib)), indexCount(idxCount), vertexStride(stride) {}
+    MeshBuffers(BufferHandle&& vb,
+                BufferHandle&& ib,
+                std::size_t vtxCount,
+                std::size_t idxCount,
+                std::size_t stride)
+        : vertexBuffer(std::move(vb)),
+          indexBuffer(std::move(ib)),
+          vertexCount(vtxCount),
+          indexCount(idxCount),
+          vertexStride(stride) {}
 
     BufferHandle vertexBuffer;
     BufferHandle indexBuffer;
+    std::size_t vertexCount = 0;
     std::size_t indexCount = 0;
     std::size_t vertexStride = 0;
 };

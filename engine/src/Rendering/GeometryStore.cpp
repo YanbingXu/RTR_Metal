@@ -36,7 +36,11 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
         return std::nullopt;
     }
 
-    meshes_.emplace_back(std::move(vertexBuffer), std::move(indexBuffer), indices.size(), sizeof(scene::Vertex));
+    meshes_.emplace_back(std::move(vertexBuffer),
+                         std::move(indexBuffer),
+                         vertices.size(),
+                         indices.size(),
+                         sizeof(scene::Vertex));
     return meshes_.size() - 1;
 }
 

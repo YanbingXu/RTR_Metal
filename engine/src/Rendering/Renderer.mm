@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <limits>
 #include <random>
 #include <utility>
 #include <vector>
@@ -66,6 +67,8 @@ struct RayTracingResources {
     id<MTLBuffer> resourceBuffer = nil;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    NSUInteger resourceHeaderSize = 0;
+    std::size_t meshCount = 0;
 
     void reset() {
         accumulationTexture = nil;
@@ -73,8 +76,12 @@ struct RayTracingResources {
         resourceBuffer = nil;
         width = 0;
         height = 0;
+        resourceHeaderSize = 0;
+        meshCount = 0;
     }
 };
+
+constexpr std::size_t kUniformRingSize = 3;
 
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
@@ -100,7 +107,9 @@ struct Renderer::Impl {
         target.reset();
         fallbackRayGenState = nil;
         resources.reset();
-        rayTracingUniformBuffer = nil;
+        for (std::size_t i = 0; i < uniformBuffers.size(); ++i) {
+            uniformBuffers[i] = nil;
+        }
     }
 
     void renderFrame() {
@@ -142,7 +151,8 @@ struct Renderer::Impl {
     RayTracingTarget target;
     RayTracingResources resources;
     id<MTLComputePipelineState> fallbackRayGenState = nil;
-    id<MTLBuffer> rayTracingUniformBuffer = nil;
+    std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
+    std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
@@ -282,7 +292,13 @@ struct Renderer::Impl {
             return false;
         }
 
-        updateRayTracingUniforms();
+        id<MTLBuffer> uniformBuffer = acquireUniformBufferForFrame();
+        if (!uniformBuffer) {
+            core::Logger::error("Renderer", "Uniform buffer unavailable for ray tracing dispatch");
+            return false;
+        }
+
+        updateRayTracingUniforms(uniformBuffer);
 
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)context.rawCommandQueue();
         if (!queue) {
@@ -310,9 +326,45 @@ struct Renderer::Impl {
         }
 
         [encoder setComputePipelineState:pipelineState];
-        [encoder setBuffer:rayTracingUniformBuffer offset:0 atIndex:0];
+        [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
         if (resources.resourceBuffer != nil) {
             [encoder setBuffer:resources.resourceBuffer offset:0 atIndex:1];
+            const NSUInteger meshOffset = resources.resourceHeaderSize;
+            const NSUInteger bufferLength = [resources.resourceBuffer length];
+            const NSUInteger offset = meshOffset < bufferLength ? meshOffset : 0;
+            [encoder setBuffer:resources.resourceBuffer offset:offset atIndex:2];
+        }
+#if __has_include(<Metal/MetalRayTracing.h>)
+        if (rayTracingPipeline.requiresAccelerationStructure() && @available(macOS 13.0, *)) {
+            id<MTLAccelerationStructure> accelerationStructure =
+                topLevelStructure.isValid() ? (__bridge id<MTLAccelerationStructure>)topLevelStructure.rawHandle() : nil;
+            if (accelerationStructure) {
+                if ([encoder respondsToSelector:@selector(setAccelerationStructure:atBufferIndex:)]) {
+                    [encoder setAccelerationStructure:accelerationStructure atBufferIndex:3];
+                } else if ([encoder respondsToSelector:@selector(setAccelerationStructure:atIndex:)]) {
+                    [encoder setAccelerationStructure:accelerationStructure atIndex:3];
+                } else {
+                    core::Logger::warn("Renderer", "Compute encoder missing setAccelerationStructure API; TLAS not bound");
+                }
+            } else {
+                core::Logger::warn("Renderer", "TLAS unavailable; ray tracing kernel may miss scene data");
+            }
+        }
+#endif
+        const auto& uploadedMeshes = geometryStore.uploadedMeshes();
+        if (!uploadedMeshes.empty()) {
+            const auto& firstMesh = uploadedMeshes.front();
+            id<MTLBuffer> vertexBuffer = (__bridge id<MTLBuffer>)firstMesh.vertexBuffer.nativeHandle();
+            id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)firstMesh.indexBuffer.nativeHandle();
+            if (vertexBuffer) {
+                [encoder setBuffer:vertexBuffer offset:0 atIndex:4];
+            }
+            if (indexBuffer) {
+                [encoder setBuffer:indexBuffer offset:0 atIndex:5];
+            }
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:4];
+            [encoder setBuffer:nil offset:0 atIndex:5];
         }
         [encoder setTexture:target.colorTexture atIndex:0];
         if (resources.accumulationTexture != nil) {
@@ -352,37 +404,55 @@ struct Renderer::Impl {
         return true;
     }
 
-    [[nodiscard]] bool ensureRayTracingUniformBuffer(std::uint32_t width, std::uint32_t height) {
+    [[nodiscard]] bool ensureRayTracingUniformBuffer(std::uint32_t /*width*/, std::uint32_t /*height*/) {
         if (!context.isValid()) {
             return false;
         }
 
-        if (rayTracingUniformBuffer != nil) {
-            return true;
-        }
-
         id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
         if (!device) {
-            core::Logger::error("Renderer", "Unable to acquire Metal device for uniform buffer");
+            core::Logger::error("Renderer", "Unable to acquire Metal device for uniform buffers");
             return false;
         }
 
-        const NSUInteger length = sizeof(RayTracingUniforms);
-        rayTracingUniformBuffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
-        if (!rayTracingUniformBuffer) {
-            core::Logger::error("Renderer", "Failed to allocate ray tracing uniform buffer");
-            return false;
+        bool allValid = true;
+        for (std::size_t i = 0; i < uniformBuffers.size(); ++i) {
+            if (uniformBuffers[i] != nil) {
+                continue;
+            }
+
+            id<MTLBuffer> buffer = [device newBufferWithLength:sizeof(RayTracingUniforms)
+                                                        options:MTLResourceStorageModeShared];
+            if (!buffer) {
+                core::Logger::error("Renderer", "Failed to allocate uniform buffer %zu", i);
+                allValid = false;
+                break;
+            }
+
+            NSString* label = [NSString stringWithFormat:@"rtr.uniform[%zu]", i];
+            [buffer setLabel:label];
+            uniformBuffers[i] = buffer;
         }
 
-        return true;
+        return allValid && uniformBuffers[0] != nil;
     }
 
-    void updateRayTracingUniforms() {
-        if (!rayTracingUniformBuffer) {
+    [[nodiscard]] id<MTLBuffer> acquireUniformBufferForFrame() {
+        if (uniformBuffers.empty()) {
+            return nil;
+        }
+
+        const std::size_t index = uniformBufferCursor;
+        uniformBufferCursor = (uniformBufferCursor + 1) % uniformBuffers.size();
+        return uniformBuffers[index];
+    }
+
+    void updateRayTracingUniforms(id<MTLBuffer> buffer) {
+        if (!buffer) {
             return;
         }
 
-        auto* uniforms = reinterpret_cast<RayTracingUniforms*>([rayTracingUniformBuffer contents]);
+        auto* uniforms = reinterpret_cast<RayTracingUniforms*>([buffer contents]);
         if (!uniforms) {
             return;
         }
@@ -395,6 +465,8 @@ struct Renderer::Impl {
         uniforms->width = target.width;
         uniforms->height = target.height;
         uniforms->frameIndex = frameCounter;
+
+        [buffer didModifyRange:NSMakeRange(0, sizeof(RayTracingUniforms))];
     }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
@@ -508,24 +580,80 @@ struct Renderer::Impl {
             }
         }
 
-        if (resources.resourceBuffer == nil) {
-            const NSUInteger length = sizeof(std::uint32_t) * 4;
-            id<MTLBuffer> buffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
+        const auto& uploadedMeshes = geometryStore.uploadedMeshes();
+        const std::size_t meshCount = uploadedMeshes.size();
+        const std::size_t headerSize = sizeof(RayTracingResourceHeader);
+        const std::size_t meshEntrySize = sizeof(RayTracingMeshResource);
+
+        std::size_t requiredLength = headerSize + meshCount * meshEntrySize;
+        if (requiredLength == 0) {
+            requiredLength = headerSize;
+        }
+
+        if (resources.resourceBuffer == nil || static_cast<std::size_t>([resources.resourceBuffer length]) < requiredLength) {
+            id<MTLBuffer> buffer = [device newBufferWithLength:requiredLength options:MTLResourceStorageModeShared];
             if (!buffer) {
-                core::Logger::error("Renderer", "Failed to allocate ray tracing resource buffer");
+                core::Logger::error("Renderer", "Failed to allocate ray tracing resource buffer (%zu bytes)",
+                                    requiredLength);
                 success = false;
             } else {
+                NSString* label = @"rtr.resourcePointers";
+                [buffer setLabel:label];
                 resources.resourceBuffer = buffer;
+                resources.resourceHeaderSize = static_cast<NSUInteger>(headerSize);
             }
         }
 
         if (resources.resourceBuffer != nil) {
-            auto* data = static_cast<std::uint32_t*>([resources.resourceBuffer contents]);
-            if (data) {
-                data[0] = static_cast<std::uint32_t>(bottomLevelStructures.size());
-                data[1] = resources.width;
-                data[2] = resources.height;
-                data[3] = frameCounter;
+            resources.resourceHeaderSize = static_cast<NSUInteger>(headerSize);
+            auto* header = reinterpret_cast<RayTracingResourceHeader*>([resources.resourceBuffer contents]);
+            if (header) {
+                *header = {};
+                header->geometryCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                    meshCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->materialCount = 0;
+                header->randomTextureWidth = resources.randomTexture != nil
+                                               ? static_cast<std::uint32_t>([resources.randomTexture width])
+                                               : 0U;
+                header->randomTextureHeight = resources.randomTexture != nil
+                                                ? static_cast<std::uint32_t>([resources.randomTexture height])
+                                                : 0U;
+
+                auto* meshEntries = reinterpret_cast<RayTracingMeshResource*>(
+                    reinterpret_cast<std::uint8_t*>(header) + headerSize);
+                const bool supportsGPUAddress = context.supportsRayTracing();
+                for (std::size_t i = 0; i < meshCount; ++i) {
+                    const auto& meshBuffers = uploadedMeshes[i];
+                    RayTracingMeshResource entry{};
+
+                    id<MTLBuffer> vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.vertexBuffer.nativeHandle();
+                    id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.indexBuffer.nativeHandle();
+
+                    if (supportsGPUAddress && vertexBuffer) {
+                        entry.vertexBufferAddress = vertexBuffer.gpuAddress;
+                    }
+                    if (supportsGPUAddress && indexBuffer) {
+                        entry.indexBufferAddress = indexBuffer.gpuAddress;
+                    }
+
+                    entry.vertexCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                        meshBuffers.vertexCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                    entry.indexCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                        meshBuffers.indexCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                    entry.vertexStride = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(meshBuffers.vertexStride,
+                                              static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                    entry.materialIndex = 0U;
+                    const bool enableFallback = !supportsGPUAddress && i == 0;
+                    entry.fallbackVertexSlot = enableFallback ? 0U : std::numeric_limits<std::uint32_t>::max();
+                    entry.fallbackIndexSlot = enableFallback ? 0U : std::numeric_limits<std::uint32_t>::max();
+
+                    meshEntries[i] = entry;
+                }
+
+                const NSUInteger bytesToMark = static_cast<NSUInteger>(headerSize + meshCount * meshEntrySize);
+                [resources.resourceBuffer didModifyRange:NSMakeRange(0, bytesToMark)];
+                resources.meshCount = meshCount;
             }
         }
 

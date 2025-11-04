@@ -1,7 +1,18 @@
 #include <metal_stdlib>
 #include "MPSUniforms.metal"
 #include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
+
+#if defined(MTL_ENABLE_RAYTRACING) && MTL_ENABLE_RAYTRACING && __has_include(<metal_raytracing>)
+#include <metal_raytracing>
+#define RTR_HAS_RAYTRACING 1
+#else
+#define RTR_HAS_RAYTRACING 0
+#endif
+
 using namespace metal;
+#if RTR_HAS_RAYTRACING
+using namespace metal::raytracing;
+#endif
 
 namespace {
 
@@ -20,7 +31,7 @@ inline float2 jitterForPixel(uint2 gid, constant MPSSamplingUniforms& sampling) 
     const uint sampleIndex = (sampling.samplesPerPixel == 0)
                                  ? sampling.sampleIndex
                                  : min(sampling.sampleIndex, sampling.samplesPerPixel - 1);
-    if (sampling.samplesPerPixel == 1 && sampleIndex == 0 && sampling.baseSeed == 0) {
+    if (sampleIndex == 0 && sampling.baseSeed == 0) {
         return float2(0.0f);
     }
     const uint base = mixBits(gid.x ^ (gid.y << 16) ^ (sampling.baseSeed * 0x9E3779B9U) ^ sampleIndex);
@@ -59,7 +70,10 @@ kernel void closestHitMain(texture2d<float, access::write> output [[texture(0)]]
 }
 
 kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(0)]],
-                             device const uint* resourceBuffer [[buffer(1)]],
+                             device const RTRRayTracingResourceHeader* resourceHeader [[buffer(1)]],
+                             device const RTRRayTracingMeshResource* meshResources [[buffer(2)]],
+                             device const float3* fallbackVertices [[buffer(4)]],
+                             device const uint* fallbackIndices [[buffer(5)]],
                              texture2d<float, access::write> output [[texture(0)]],
                              texture2d<float, access::write> accumulation [[texture(1)]],
                              texture2d<float, access::read> randomTex [[texture(2)]],
@@ -71,24 +85,165 @@ kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(0
     const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
     float2 uv = float2(gid) / dims;
 
-    uint resourceCount = resourceBuffer ? resourceBuffer[0] : 0;
-    float base = resourceCount > 0 ? 0.7f : 0.4f;
+    const uint geometryCount = (resourceHeader != nullptr) ? resourceHeader->geometryCount : 0u;
+    const uint randomWidth = (resourceHeader != nullptr) ? resourceHeader->randomTextureWidth : 0u;
+    const uint randomHeight = (resourceHeader != nullptr) ? resourceHeader->randomTextureHeight : 0u;
 
-    const uint noiseWidth = randomTex.get_width();
-    const uint noiseHeight = randomTex.get_height();
+    (void)meshResources;
+    (void)fallbackVertices;
+    (void)fallbackIndices;
+
+    const float geomBoost = geometryCount > 0 ? 0.5f : 0.0f;
+
+    const uint noiseWidth = randomWidth > 0 ? randomWidth : randomTex.get_width();
+    const uint noiseHeight = randomHeight > 0 ? randomHeight : randomTex.get_height();
     float noise = 0.0f;
     if (noiseWidth > 0 && noiseHeight > 0) {
         const uint2 noiseCoord = uint2(gid.x % noiseWidth, gid.y % noiseHeight);
         noise = randomTex.read(noiseCoord).x;
     }
 
-    float3 colour = float3(uv * (0.5f + 0.5f * base), 0.3f + 0.6f * sin((float)uniforms.frameIndex * 0.1f + noise));
+    float3 colour = float3(uv * (0.5f + geomBoost * 0.5f), 0.35f + 0.4f * sin((float)uniforms.frameIndex * 0.1f + noise));
+    colour = clamp(colour, 0.0f, 1.0f);
     output.write(float4(colour, 1.0f), gid);
 
     if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
         accumulation.write(float4(colour, 1.0f), gid);
     }
 }
+
+#if RTR_HAS_RAYTRACING
+kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(3)]],
+                             constant RTRRayTracingUniforms& uniforms [[buffer(0)]],
+                             device const RTRRayTracingResourceHeader* resourceHeader [[buffer(1)]],
+                             device const RTRRayTracingMeshResource* meshResources [[buffer(2)]],
+                             device const float3* fallbackVertices [[buffer(4)]],
+                             device const uint* fallbackIndices [[buffer(5)]],
+                             texture2d<float, access::write> output [[texture(0)]],
+                             texture2d<float, access::write> accumulation [[texture(1)]],
+                             texture2d<float, access::read> randomTex [[texture(2)]],
+                             uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= uniforms.width || gid.y >= uniforms.height) {
+        return;
+    }
+
+    const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
+    const float2 pixel = float2(gid) + 0.5f;
+    const float2 ndc = (pixel / dims - 0.5f) * 2.0f;
+
+    const float3 eye = uniforms.eye.xyz;
+    const float3 forward = uniforms.forward.xyz;
+    const float3 right = uniforms.right.xyz;
+    const float3 up = uniforms.up.xyz;
+    const float3 target = eye + forward + right * (ndc.x * uniforms.imagePlaneHalfExtents.x) +
+                          up * (ndc.y * uniforms.imagePlaneHalfExtents.y);
+    const float3 direction = normalize(target - eye);
+
+    const float rayMin = 0.001f;
+    const float rayMax = 1.0e6f;
+    ray primaryRay(eye, direction, rayMin, rayMax);
+
+    float3 colour = float3(0.04f, 0.06f, 0.10f);
+
+    constexpr uint kInvalidSlot = 0xFFFFFFFFu;
+
+    if (!is_null_instance_acceleration_structure(scene)) {
+        intersection_query<triangle_data, instancing> query(primaryRay, scene);
+        if (query.next()) {
+            query.commit_triangle_intersection();
+
+            const uint primitiveID = query.get_committed_primitive_id();
+            const float2 bary = query.get_committed_triangle_barycentric_coord();
+            const float w = clamp(1.0f - bary.x - bary.y, 0.0f, 1.0f);
+            const float u = clamp(bary.x, 0.0f, 1.0f);
+            const float v = clamp(bary.y, 0.0f, 1.0f);
+
+            const float3 palette[3] = {
+                float3(0.92f, 0.38f, 0.24f),
+                float3(0.24f, 0.88f, 0.46f),
+                float3(0.46f, 0.32f, 0.92f),
+            };
+            float3 hitColour = palette[0] * w + palette[1] * u + palette[2] * v;
+
+            float3 normal = normalize(float3(0.0f, 1.0f, 0.0f));
+            if (meshResources != nullptr && resourceHeader != nullptr && resourceHeader->geometryCount > 0) {
+                const RTRRayTracingMeshResource mesh = meshResources[0];
+
+                const bool hasGPUAddresses = mesh.vertexBufferAddress != 0 && mesh.indexBufferAddress != 0;
+                const bool useFallbackVertices = mesh.fallbackVertexSlot != kInvalidSlot && fallbackVertices;
+                const bool useFallbackIndices = mesh.fallbackIndexSlot != kInvalidSlot && fallbackIndices;
+
+                const device float3* vertexData = nullptr;
+                const device uint* indexData = nullptr;
+                if (hasGPUAddresses) {
+                    vertexData = reinterpret_cast<const device float3*>(mesh.vertexBufferAddress);
+                    indexData = reinterpret_cast<const device uint*>(mesh.indexBufferAddress);
+                } else {
+                    if (useFallbackVertices && mesh.fallbackVertexSlot == 0) {
+                        vertexData = fallbackVertices;
+                    }
+                    if (useFallbackIndices && mesh.fallbackIndexSlot == 0) {
+                        indexData = fallbackIndices;
+                    }
+                }
+
+                if (vertexData && indexData && mesh.indexCount >= 3 && mesh.vertexCount >= 3) {
+                    const uint base = min(primitiveID * 3u, mesh.indexCount - 3u);
+                    const uint maxVertex = mesh.vertexCount - 1u;
+                    const uint i0 = min(indexData[base + 0], maxVertex);
+                    const uint i1 = min(indexData[base + 1], maxVertex);
+                    const uint i2 = min(indexData[base + 2], maxVertex);
+
+                    const float3 p0 = vertexData[i0];
+                    const float3 p1 = vertexData[i1];
+                    const float3 p2 = vertexData[i2];
+                    const float3 e1 = p1 - p0;
+                    const float3 e2 = p2 - p0;
+                    const float3 maybeNormal = normalize(cross(e1, e2));
+                    if (all(isfinite(maybeNormal))) {
+                        normal = maybeNormal;
+                    }
+                }
+
+                const uint materialIndex = mesh.materialIndex;
+                const float bias = (materialIndex & 1u) ? 0.08f : -0.05f;
+                hitColour = clamp(hitColour + bias, 0.0f, 1.0f);
+            }
+
+            const float distance = query.get_committed_distance();
+            const float attenuation = clamp(exp(-distance * 0.2f), 0.15f, 1.0f);
+            const float diffuse = clamp(dot(normal, normalize(float3(0.25f, 0.85f, 0.6f))), 0.0f, 1.0f);
+            hitColour *= attenuation * (0.35f + 0.65f * diffuse);
+            colour = hitColour;
+        } else {
+            const float t = direction.y * 0.5f + 0.5f;
+            const float3 skyTop = float3(0.45f, 0.55f, 0.85f);
+            const float3 skyBottom = float3(0.1f, 0.12f, 0.2f);
+            colour = mix(skyBottom, skyTop, t);
+        }
+    }
+
+    const uint noiseW = (resourceHeader != nullptr && resourceHeader->randomTextureWidth > 0)
+                            ? resourceHeader->randomTextureWidth
+                            : randomTex.get_width();
+    const uint noiseH = (resourceHeader != nullptr && resourceHeader->randomTextureHeight > 0)
+                            ? resourceHeader->randomTextureHeight
+                            : randomTex.get_height();
+
+    if (noiseW > 0 && noiseH > 0) {
+        const uint2 noiseCoord = uint2(gid.x % noiseW, gid.y % noiseH);
+        const float noise = randomTex.read(noiseCoord).x;
+        colour *= clamp(0.8f + 0.2f * noise, 0.75f, 1.1f);
+    }
+
+    colour = clamp(colour, 0.0f, 1.0f);
+    output.write(float4(colour, 1.0f), gid);
+
+    if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
+        accumulation.write(float4(colour, 1.0f), gid);
+    }
+}
+#endif // RTR_HAS_RAYTRACING
 
 kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buffer(0)]],
                          constant MPSCameraUniforms& uniforms [[buffer(1)]],
