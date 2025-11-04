@@ -1,4 +1,13 @@
 #import <Metal/Metal.h>
+#ifndef MTL_ENABLE_RAYTRACING
+#define MTL_ENABLE_RAYTRACING 1
+#endif
+#if __has_include(<Metal/MetalRayTracing.h>)
+#import <Metal/MetalRayTracing.h>
+#define RTR_RENDERER_HAS_RAYTRACING_HEADERS 1
+#else
+#define RTR_RENDERER_HAS_RAYTRACING_HEADERS 0
+#endif
 
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
 
@@ -54,6 +63,28 @@ struct RayTracingTarget {
     }
 };
 
+struct ShaderBindingTable {
+    id<MTLBuffer> raygenRecord = nil;
+    id<MTLBuffer> missRecord = nil;
+    id<MTLBuffer> hitGroupRecord = nil;
+    std::size_t raygenStride = 0;
+    std::size_t missStride = 0;
+    std::size_t hitGroupStride = 0;
+
+    void reset() {
+        raygenRecord = nil;
+        missRecord = nil;
+        hitGroupRecord = nil;
+        raygenStride = 0;
+        missStride = 0;
+        hitGroupStride = 0;
+    }
+
+    [[nodiscard]] bool isValid() const noexcept {
+        return raygenRecord != nil && missRecord != nil && hitGroupRecord != nil;
+    }
+};
+
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
         : config(std::move(cfg)), context(), bufferAllocator(context), geometryStore(bufferAllocator),
@@ -74,7 +105,10 @@ struct Renderer::Impl {
         }
     }
 
-    ~Impl() { target.reset(); }
+    ~Impl() {
+        target.reset();
+        sbt.reset();
+    }
 
     void renderFrame() {
         if (!context.isValid()) {
@@ -101,6 +135,7 @@ struct Renderer::Impl {
     std::vector<AccelerationStructure> bottomLevelStructures;
     AccelerationStructure topLevelStructure;
     RayTracingTarget target;
+    ShaderBindingTable sbt;
 
     [[nodiscard]] bool ensureRayTracingTarget(std::uint32_t width, std::uint32_t height) {
         if (!context.isValid() || !rayTracingPipeline.isValid()) {
@@ -151,8 +186,74 @@ struct Renderer::Impl {
         return true;
     }
 
+    [[nodiscard]] bool ensureShaderBindingTable() {
+        if (!context.isValid() || !rayTracingPipeline.isValid()) {
+            return false;
+        }
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
+        if (!device) {
+            core::Logger::error("Renderer", "Unable to acquire Metal device for shader binding table");
+            sbt.reset();
+            return false;
+        }
+
+#if RTR_RENDERER_HAS_RAYTRACING_HEADERS
+        id<MTLRayTracingPipelineState> pipelineState =
+            (__bridge id<MTLRayTracingPipelineState>)rayTracingPipeline.rawPipelineState();
+        if (!pipelineState) {
+            core::Logger::warn("Renderer", "Ray tracing pipeline unavailable; SBT allocation skipped");
+            sbt.reset();
+            return false;
+        }
+        (void)pipelineState;
+#else
+        (void)rayTracingPipeline;
+        core::Logger::warn("Renderer", "Ray tracing headers unavailable; SBT allocation skipped");
+        sbt.reset();
+        return false;
+#endif
+
+        if (sbt.isValid()) {
+            return true;
+        }
+
+        sbt.reset();
+
+        const std::size_t recordSize = 256U;  // Placeholder record stride until binding layout is defined.
+        auto allocateBuffer = [&](const char* usageLabel) -> id<MTLBuffer> {
+            id<MTLBuffer> buffer =
+                [device newBufferWithLength:recordSize options:MTLResourceStorageModeShared];
+            if (!buffer) {
+                core::Logger::error("Renderer", "Failed to allocate %s shader binding table buffer (%zu bytes)",
+                                    usageLabel, recordSize);
+            }
+            return buffer;
+        };
+
+        id<MTLBuffer> raygen = allocateBuffer("ray generation");
+        id<MTLBuffer> miss = allocateBuffer("miss");
+        id<MTLBuffer> hit = allocateBuffer("hit group");
+
+        if (!raygen || !miss || !hit) {
+            sbt.reset();
+            return false;
+        }
+
+        sbt.raygenRecord = raygen;
+        sbt.missRecord = miss;
+        sbt.hitGroupRecord = hit;
+        sbt.raygenStride = recordSize;
+        sbt.missStride = recordSize;
+        sbt.hitGroupStride = recordSize;
+
+        core::Logger::info("Renderer", "Allocated shader binding table buffers (%zu bytes each)", recordSize);
+        return true;
+    }
+
     [[nodiscard]] bool isRayTracingReady() const noexcept {
-        return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid() && target.isValid();
+        return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid() && target.isValid() &&
+               sbt.isValid();
     }
 
     void buildDiagnosticAccelerationStructure() {
@@ -196,8 +297,13 @@ struct Renderer::Impl {
             if (tlas.has_value()) {
                 core::Logger::info("Renderer", "Built diagnostic TLAS (%zu bytes)", tlas->sizeInBytes());
                 topLevelStructure = std::move(*tlas);
-                if (!ensureRayTracingTarget(kDiagnosticWidth, kDiagnosticHeight)) {
+                const bool targetReady = ensureRayTracingTarget(kDiagnosticWidth, kDiagnosticHeight);
+                const bool sbtReady = ensureShaderBindingTable();
+                if (!targetReady) {
                     core::Logger::warn("Renderer", "Failed to prepare ray tracing target after TLAS build");
+                }
+                if (!sbtReady) {
+                    core::Logger::warn("Renderer", "Failed to prepare shader binding table after TLAS build");
                 }
             } else {
                 core::Logger::warn("Renderer", "Diagnostic TLAS build skipped");

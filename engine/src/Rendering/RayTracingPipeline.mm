@@ -94,6 +94,10 @@ bool RayTracingPipeline::initialize(MetalContext& context, const std::string& sh
 
 bool RayTracingPipeline::isValid() const noexcept { return impl_ && impl_->isValid(); }
 
+void* RayTracingPipeline::rawPipelineState() const noexcept {
+    return impl_ && impl_->isValid() ? (__bridge void*)impl_->state_ : nullptr;
+}
+
 #else  // RTR_HAS_RAYTRACING_HEADERS
 
 class RayTracingPipeline::Impl {
@@ -112,6 +116,8 @@ bool RayTracingPipeline::initialize(MetalContext&, const std::string&) {
 }
 
 bool RayTracingPipeline::isValid() const noexcept { return false; }
+
+void* RayTracingPipeline::rawPipelineState() const noexcept { return nullptr; }
 
 #endif  // RTR_HAS_RAYTRACING_HEADERS
 

@@ -11,3 +11,13 @@ TEST(RendererTests, RayTracingNotReadyWithoutValidPipeline) {
     rtr::rendering::Renderer renderer(config);
     EXPECT_FALSE(renderer.isRayTracingReady());
 }
+
+TEST(RendererTests, RenderFrameExecutesWithoutCrash) {
+    rtr::core::EngineConfig config;
+    config.applicationName = "RendererTests";
+    config.shaderLibraryPath = "/invalid/path/RTRShaders.metallib";
+
+    rtr::rendering::Renderer renderer(config);
+    renderer.renderFrame();
+    SUCCEED();
+}
