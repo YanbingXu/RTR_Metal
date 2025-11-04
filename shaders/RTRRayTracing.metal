@@ -1,5 +1,6 @@
 #include <metal_stdlib>
 #include "MPSUniforms.metal"
+#include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
 using namespace metal;
 
 namespace {
@@ -55,6 +56,38 @@ kernel void closestHitMain(texture2d<float, access::write> output [[texture(0)]]
         return;
     }
     output.write(float4(0.8, 0.8, 0.8, 1.0), gid);
+}
+
+kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(0)]],
+                             device const uint* resourceBuffer [[buffer(1)]],
+                             texture2d<float, access::write> output [[texture(0)]],
+                             texture2d<float, access::write> accumulation [[texture(1)]],
+                             texture2d<float, access::read> randomTex [[texture(2)]],
+                             uint2 gid [[thread_position_in_grid]]) {
+    if (gid.x >= uniforms.width || gid.y >= uniforms.height) {
+        return;
+    }
+
+    const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
+    float2 uv = float2(gid) / dims;
+
+    uint resourceCount = resourceBuffer ? resourceBuffer[0] : 0;
+    float base = resourceCount > 0 ? 0.7f : 0.4f;
+
+    const uint noiseWidth = randomTex.get_width();
+    const uint noiseHeight = randomTex.get_height();
+    float noise = 0.0f;
+    if (noiseWidth > 0 && noiseHeight > 0) {
+        const uint2 noiseCoord = uint2(gid.x % noiseWidth, gid.y % noiseHeight);
+        noise = randomTex.read(noiseCoord).x;
+    }
+
+    float3 colour = float3(uv * (0.5f + 0.5f * base), 0.3f + 0.6f * sin((float)uniforms.frameIndex * 0.1f + noise));
+    output.write(float4(colour, 1.0f), gid);
+
+    if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
+        accumulation.write(float4(colour, 1.0f), gid);
+    }
 }
 
 kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buffer(0)]],

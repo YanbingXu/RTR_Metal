@@ -40,6 +40,7 @@ foreach(SOURCE_FILE ${RTR_METAL_SOURCES})
     add_custom_command(
         OUTPUT ${AIR_FILE}
         COMMAND xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=${RTR_METAL_MODULE_CACHE}
+                -I${CMAKE_SOURCE_DIR}/engine/include -DMTL_ENABLE_RAYTRACING=1
                 -c ${SOURCE_FILE} -o ${AIR_FILE}
         DEPENDS ${SOURCE_FILE}
         WORKING_DIRECTORY ${RTR_SHADER_DIR}

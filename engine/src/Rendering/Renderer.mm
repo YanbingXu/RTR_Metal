@@ -3,12 +3,6 @@
 #ifndef MTL_ENABLE_RAYTRACING
 #define MTL_ENABLE_RAYTRACING 1
 #endif
-#if __has_include(<Metal/MetalRayTracing.h>)
-#import <Metal/MetalRayTracing.h>
-#define RTR_RENDERER_HAS_RAYTRACING_HEADERS 1
-#else
-#define RTR_RENDERER_HAS_RAYTRACING_HEADERS 0
-#endif
 
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
 
@@ -19,11 +13,13 @@
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 #include "RTRMetalEngine/Rendering/RayTracingPipeline.hpp"
+#include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <random>
 #include <utility>
 #include <vector>
 
@@ -64,25 +60,19 @@ struct RayTracingTarget {
     }
 };
 
-struct ShaderBindingTable {
-    id<MTLBuffer> raygenRecord = nil;
-    id<MTLBuffer> missRecord = nil;
-    id<MTLBuffer> hitGroupRecord = nil;
-    std::size_t raygenStride = 0;
-    std::size_t missStride = 0;
-    std::size_t hitGroupStride = 0;
+struct RayTracingResources {
+    id<MTLTexture> accumulationTexture = nil;
+    id<MTLTexture> randomTexture = nil;
+    id<MTLBuffer> resourceBuffer = nil;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
 
     void reset() {
-        raygenRecord = nil;
-        missRecord = nil;
-        hitGroupRecord = nil;
-        raygenStride = 0;
-        missStride = 0;
-        hitGroupStride = 0;
-    }
-
-    [[nodiscard]] bool isValid() const noexcept {
-        return raygenRecord != nil && missRecord != nil && hitGroupRecord != nil;
+        accumulationTexture = nil;
+        randomTexture = nil;
+        resourceBuffer = nil;
+        width = 0;
+        height = 0;
     }
 };
 
@@ -108,8 +98,9 @@ struct Renderer::Impl {
 
     ~Impl() {
         target.reset();
-        sbt.reset();
         fallbackRayGenState = nil;
+        resources.reset();
+        rayTracingUniformBuffer = nil;
     }
 
     void renderFrame() {
@@ -136,6 +127,7 @@ struct Renderer::Impl {
                 core::Logger::warn("Renderer", "Fallback gradient dispatch skipped");
             }
         }
+        frameCounter++;
         std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
     }
 
@@ -148,77 +140,13 @@ struct Renderer::Impl {
     std::vector<AccelerationStructure> bottomLevelStructures;
     AccelerationStructure topLevelStructure;
     RayTracingTarget target;
-    ShaderBindingTable sbt;
+    RayTracingResources resources;
     id<MTLComputePipelineState> fallbackRayGenState = nil;
-
-    [[nodiscard]] bool ensureShaderBindingTable() {
-        if (!context.isValid() || !rayTracingPipeline.isValid()) {
-            return false;
-        }
-
-        id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
-        if (!device) {
-            core::Logger::error("Renderer", "Unable to acquire Metal device for shader binding table");
-            sbt.reset();
-            return false;
-        }
-
-#if RTR_RENDERER_HAS_RAYTRACING_HEADERS
-        id<MTLRayTracingPipelineState> pipelineState =
-            (__bridge id<MTLRayTracingPipelineState>)rayTracingPipeline.rawPipelineState();
-        if (!pipelineState) {
-            core::Logger::warn("Renderer", "Ray tracing pipeline unavailable; SBT allocation skipped");
-            sbt.reset();
-            return false;
-        }
-        (void)pipelineState;
-#else
-        (void)rayTracingPipeline;
-        core::Logger::warn("Renderer", "Ray tracing headers unavailable; SBT allocation skipped");
-        sbt.reset();
-        return false;
-#endif
-
-        if (sbt.isValid()) {
-            return true;
-        }
-
-        sbt.reset();
-
-        const std::size_t recordSize = 256U;  // Placeholder record stride until binding layout is defined.
-        auto allocateBuffer = [&](const char* usageLabel) -> id<MTLBuffer> {
-            id<MTLBuffer> buffer =
-                [device newBufferWithLength:recordSize options:MTLResourceStorageModeShared];
-            if (!buffer) {
-                core::Logger::error("Renderer", "Failed to allocate %s shader binding table buffer (%zu bytes)",
-                                    usageLabel, recordSize);
-            }
-            return buffer;
-        };
-
-        id<MTLBuffer> raygen = allocateBuffer("ray generation");
-        id<MTLBuffer> miss = allocateBuffer("miss");
-        id<MTLBuffer> hit = allocateBuffer("hit group");
-
-        if (!raygen || !miss || !hit) {
-            sbt.reset();
-            return false;
-        }
-
-        sbt.raygenRecord = raygen;
-        sbt.missRecord = miss;
-        sbt.hitGroupRecord = hit;
-        sbt.raygenStride = recordSize;
-        sbt.missStride = recordSize;
-        sbt.hitGroupStride = recordSize;
-
-        core::Logger::info("Renderer", "Allocated shader binding table buffers (%zu bytes each)", recordSize);
-        return true;
-    }
+    id<MTLBuffer> rayTracingUniformBuffer = nil;
+    uint32_t frameCounter = 0;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
-        return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid() && target.isValid() &&
-               sbt.isValid();
+        return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
     }
 
     [[nodiscard]] bool ensureFallbackPipeline() {
@@ -334,14 +262,139 @@ struct Renderer::Impl {
     }
 
     [[nodiscard]] bool dispatchRayTracingPass() {
-#if RTR_RENDERER_HAS_RAYTRACING_HEADERS
-        // Ray tracing dispatch will be implemented when headers are available in the toolchain.
-        core::Logger::warn("Renderer", "Ray tracing dispatch not implemented in current configuration");
-        return false;
-#else
-        core::Logger::info("Renderer", "Ray tracing headers unavailable; skipping hardware dispatch");
-        return false;
-#endif
+        if (!rayTracingPipeline.isValid()) {
+            core::Logger::warn("Renderer", "Compute ray tracing pipeline unavailable; skipping dispatch");
+            return false;
+        }
+
+        if (!ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight)) {
+            core::Logger::warn("Renderer", "Unable to prepare output target for ray tracing dispatch");
+            return false;
+        }
+
+        if (!ensureRayTracingResources(target.width, target.height)) {
+            core::Logger::error("Renderer", "Failed to prepare ray tracing resources");
+            return false;
+        }
+
+        if (!ensureRayTracingUniformBuffer(target.width, target.height)) {
+            core::Logger::error("Renderer", "Failed to prepare ray tracing uniform buffer");
+            return false;
+        }
+
+        updateRayTracingUniforms();
+
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)context.rawCommandQueue();
+        if (!queue) {
+            core::Logger::error("Renderer", "Command queue unavailable for ray tracing dispatch");
+            return false;
+        }
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        if (!commandBuffer) {
+            core::Logger::error("Renderer", "Failed to create command buffer for ray tracing dispatch");
+            return false;
+        }
+
+        id<MTLComputePipelineState> pipelineState =
+            (__bridge id<MTLComputePipelineState>)rayTracingPipeline.rawPipelineState();
+        if (!pipelineState) {
+            core::Logger::error("Renderer", "Ray tracing compute pipeline missing");
+            return false;
+        }
+
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+        if (!encoder) {
+            core::Logger::error("Renderer", "Failed to create compute encoder for ray tracing dispatch");
+            return false;
+        }
+
+        [encoder setComputePipelineState:pipelineState];
+        [encoder setBuffer:rayTracingUniformBuffer offset:0 atIndex:0];
+        if (resources.resourceBuffer != nil) {
+            [encoder setBuffer:resources.resourceBuffer offset:0 atIndex:1];
+        }
+        [encoder setTexture:target.colorTexture atIndex:0];
+        if (resources.accumulationTexture != nil) {
+            [encoder setTexture:resources.accumulationTexture atIndex:1];
+        }
+        if (resources.randomTexture != nil) {
+            [encoder setTexture:resources.randomTexture atIndex:2];
+        }
+
+        const NSUInteger threadWidth = 8;
+        const NSUInteger threadHeight = 8;
+        MTLSize threadsPerThreadgroup = MTLSizeMake(threadWidth, threadHeight, 1);
+        MTLSize threadsPerGrid = MTLSizeMake(target.width, target.height, 1);
+        [encoder dispatchThreads:threadsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+        [encoder endEncoding];
+
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        if (blitEncoder) {
+            MTLOrigin origin = MTLOriginMake(0, 0, 0);
+            MTLSize size = MTLSizeMake(target.width, target.height, 1);
+            const std::size_t bytesPerRow = static_cast<std::size_t>(target.width) * target.bytesPerPixel;
+            const std::size_t bytesPerImage = static_cast<std::size_t>(target.width) * target.height * target.bytesPerPixel;
+            [blitEncoder copyFromTexture:target.colorTexture
+                              sourceSlice:0
+                              sourceLevel:0
+                             sourceOrigin:origin
+                               sourceSize:size
+                                 toBuffer:target.readbackBuffer
+                        destinationOffset:0
+                   destinationBytesPerRow:bytesPerRow
+                 destinationBytesPerImage:bytesPerImage];
+            [blitEncoder endEncoding];
+        }
+
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+        return true;
+    }
+
+    [[nodiscard]] bool ensureRayTracingUniformBuffer(std::uint32_t width, std::uint32_t height) {
+        if (!context.isValid()) {
+            return false;
+        }
+
+        if (rayTracingUniformBuffer != nil) {
+            return true;
+        }
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
+        if (!device) {
+            core::Logger::error("Renderer", "Unable to acquire Metal device for uniform buffer");
+            return false;
+        }
+
+        const NSUInteger length = sizeof(RayTracingUniforms);
+        rayTracingUniformBuffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
+        if (!rayTracingUniformBuffer) {
+            core::Logger::error("Renderer", "Failed to allocate ray tracing uniform buffer");
+            return false;
+        }
+
+        return true;
+    }
+
+    void updateRayTracingUniforms() {
+        if (!rayTracingUniformBuffer) {
+            return;
+        }
+
+        auto* uniforms = reinterpret_cast<RayTracingUniforms*>([rayTracingUniformBuffer contents]);
+        if (!uniforms) {
+            return;
+        }
+
+        uniforms->eye = simd_make_float4(0.0F, 0.0F, 2.0F, 1.0F);
+        uniforms->forward = simd_make_float4(0.0F, 0.0F, -1.0F, 0.0F);
+        uniforms->right = simd_make_float4(1.0F, 0.0F, 0.0F, 0.0F);
+        uniforms->up = simd_make_float4(0.0F, 1.0F, 0.0F, 0.0F);
+        uniforms->imagePlaneHalfExtents = simd_make_float2(1.0F, 1.0F);
+        uniforms->width = target.width;
+        uniforms->height = target.height;
+        uniforms->frameIndex = frameCounter;
     }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
@@ -393,6 +446,92 @@ struct Renderer::Impl {
         return true;
     }
 
+    [[nodiscard]] bool ensureRayTracingResources(std::uint32_t width, std::uint32_t height) {
+        if (!context.isValid()) {
+            return false;
+        }
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
+        if (!device) {
+            core::Logger::error("Renderer", "Unable to acquire Metal device for ray tracing resources");
+            resources.reset();
+            return false;
+        }
+
+        bool success = true;
+
+        if (resources.accumulationTexture == nil || resources.width != width || resources.height != height) {
+            MTLTextureDescriptor* accumulationDesc =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Float
+                                                                  width:width
+                                                                 height:height
+                                                              mipmapped:NO];
+            accumulationDesc.storageMode = MTLStorageModePrivate;
+            accumulationDesc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+            id<MTLTexture> accumulation = [device newTextureWithDescriptor:accumulationDesc];
+            if (!accumulation) {
+                core::Logger::error("Renderer", "Failed to allocate accumulation texture (%ux%u)", width, height);
+                success = false;
+            } else {
+                resources.accumulationTexture = accumulation;
+                resources.width = width;
+                resources.height = height;
+            }
+        }
+
+        if (resources.randomTexture == nil) {
+            const NSUInteger noiseSize = 128;
+            MTLTextureDescriptor* randomDesc =
+                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Float
+                                                                  width:noiseSize
+                                                                 height:noiseSize
+                                                              mipmapped:NO];
+            randomDesc.storageMode = MTLStorageModeShared;
+            randomDesc.usage = MTLTextureUsageShaderRead;
+            id<MTLTexture> randomTexture = [device newTextureWithDescriptor:randomDesc];
+            if (!randomTexture) {
+                core::Logger::error("Renderer", "Failed to allocate random texture");
+                success = false;
+            } else {
+                std::vector<float> noise(noiseSize * noiseSize * 4);
+                std::mt19937 rng(1337u);
+                std::uniform_real_distribution<float> dist(0.0F, 1.0F);
+                for (float& value : noise) {
+                    value = dist(rng);
+                }
+                MTLRegion region = MTLRegionMake2D(0, 0, noiseSize, noiseSize);
+                [randomTexture replaceRegion:region
+                                  mipmapLevel:0
+                                    withBytes:noise.data()
+                                  bytesPerRow:sizeof(float) * 4 * noiseSize];
+                resources.randomTexture = randomTexture;
+            }
+        }
+
+        if (resources.resourceBuffer == nil) {
+            const NSUInteger length = sizeof(std::uint32_t) * 4;
+            id<MTLBuffer> buffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
+            if (!buffer) {
+                core::Logger::error("Renderer", "Failed to allocate ray tracing resource buffer");
+                success = false;
+            } else {
+                resources.resourceBuffer = buffer;
+            }
+        }
+
+        if (resources.resourceBuffer != nil) {
+            auto* data = static_cast<std::uint32_t*>([resources.resourceBuffer contents]);
+            if (data) {
+                data[0] = static_cast<std::uint32_t>(bottomLevelStructures.size());
+                data[1] = resources.width;
+                data[2] = resources.height;
+                data[3] = frameCounter;
+            }
+        }
+
+        return success;
+    }
+
     void buildDiagnosticAccelerationStructure() {
         std::array<simd_float3, 3> positions = {
             simd_make_float3(0.0F, 0.0F, 0.0F),
@@ -435,12 +574,12 @@ struct Renderer::Impl {
                 core::Logger::info("Renderer", "Built diagnostic TLAS (%zu bytes)", tlas->sizeInBytes());
                 topLevelStructure = std::move(*tlas);
                 const bool targetReady = ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight);
-                const bool sbtReady = ensureShaderBindingTable();
+                const bool pipelineReady = ensureRayTracingResources(kDiagnosticWidth, kDiagnosticHeight);
                 if (!targetReady) {
                     core::Logger::warn("Renderer", "Failed to prepare ray tracing target after TLAS build");
                 }
-                if (!sbtReady) {
-                    core::Logger::warn("Renderer", "Failed to prepare shader binding table after TLAS build");
+                if (!pipelineReady) {
+                    core::Logger::warn("Renderer", "Failed to prepare ray tracing resources after TLAS build");
                 }
             } else {
                 core::Logger::warn("Renderer", "Diagnostic TLAS build skipped");
