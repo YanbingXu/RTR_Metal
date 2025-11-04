@@ -15,15 +15,19 @@
 #include "RTRMetalEngine/Rendering/RayTracingPipeline.hpp"
 #include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <random>
 #include <utility>
 #include <vector>
 
+#include "RTRMetalEngine/Scene/CornellBox.hpp"
 #include "RTRMetalEngine/Scene/Scene.hpp"
 #include "RTRMetalEngine/Scene/SceneBuilder.hpp"
 
@@ -34,6 +38,12 @@ namespace {
 constexpr std::uint32_t kDiagnosticWidth = 512;
 constexpr std::uint32_t kDiagnosticHeight = 512;
 constexpr std::size_t kRayTracingPixelStride = sizeof(float) * 4;  // RGBA32F
+
+uint8_t floatToSRGBByte(float value) {
+    const float clamped = std::clamp(value, 0.0f, 1.0f);
+    const long rounded = std::lroundf(clamped * 255.0f);
+    return static_cast<uint8_t>(std::clamp<long>(rounded, 0, 255));
+}
 
 }  // namespace
 
@@ -65,6 +75,8 @@ struct RayTracingResources {
     id<MTLTexture> accumulationTexture = nil;
     id<MTLTexture> randomTexture = nil;
     id<MTLBuffer> resourceBuffer = nil;
+    BufferHandle instanceBuffer;
+    BufferHandle materialBuffer;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     NSUInteger resourceHeaderSize = 0;
@@ -74,6 +86,8 @@ struct RayTracingResources {
         accumulationTexture = nil;
         randomTexture = nil;
         resourceBuffer = nil;
+        instanceBuffer = {};
+        materialBuffer = {};
         width = 0;
         height = 0;
         resourceHeaderSize = 0;
@@ -98,7 +112,9 @@ struct Renderer::Impl {
                 if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
                     core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
                 }
-                buildDiagnosticAccelerationStructure();
+                if (!initializeScene()) {
+                    core::Logger::warn("Renderer", "Scene initialization failed; falling back to gradient pipeline");
+                }
             }
         }
     }
@@ -119,6 +135,8 @@ struct Renderer::Impl {
         }
         const bool targetReady = target.isValid() ? true : ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight);
 
+        bool rendered = false;
+
         if (isRayTracingReady()) {
             core::Logger::info("Renderer",
                                "Ray tracing target ready (%ux%u RGBA32F)",
@@ -129,6 +147,8 @@ struct Renderer::Impl {
                 if (!dispatchFallbackGradient()) {
                     core::Logger::warn("Renderer", "Fallback gradient dispatch failed");
                 }
+            } else {
+                rendered = true;
             }
         } else {
             core::Logger::info("Renderer", "Ray tracing not ready; executing fallback gradient");
@@ -136,6 +156,10 @@ struct Renderer::Impl {
                 core::Logger::warn("Renderer", "Fallback gradient dispatch skipped");
             }
         }
+        if (rendered) {
+            writeRayTracingOutput("renderer_output.ppm");
+        }
+
         frameCounter++;
         std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
     }
@@ -154,6 +178,8 @@ struct Renderer::Impl {
     std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
     std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
+    std::vector<RayTracingInstanceResource> instanceResources;
+    std::vector<RayTracingMaterialResource> materialResources;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
@@ -365,6 +391,19 @@ struct Renderer::Impl {
         } else {
             [encoder setBuffer:nil offset:0 atIndex:4];
             [encoder setBuffer:nil offset:0 atIndex:5];
+        }
+        id<MTLBuffer> instanceBuffer = (__bridge id<MTLBuffer>)resources.instanceBuffer.nativeHandle();
+        if (instanceBuffer) {
+            [encoder setBuffer:instanceBuffer offset:0 atIndex:6];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:6];
+        }
+
+        id<MTLBuffer> materialBuffer = (__bridge id<MTLBuffer>)resources.materialBuffer.nativeHandle();
+        if (materialBuffer) {
+            [encoder setBuffer:materialBuffer offset:0 atIndex:7];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:7];
         }
         [encoder setTexture:target.colorTexture atIndex:0];
         if (resources.accumulationTexture != nil) {
@@ -651,72 +690,214 @@ struct Renderer::Impl {
                     meshEntries[i] = entry;
                 }
 
+                header->instanceCount = static_cast<std::uint32_t>(
+                    std::min<std::size_t>(instanceResources.size(),
+                                           static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->materialCount = static_cast<std::uint32_t>(
+                    std::min<std::size_t>(materialResources.size(),
+                                           static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+
                 const NSUInteger bytesToMark = static_cast<NSUInteger>(headerSize + meshCount * meshEntrySize);
                 [resources.resourceBuffer didModifyRange:NSMakeRange(0, bytesToMark)];
                 resources.meshCount = meshCount;
             }
         }
 
+        auto uploadBuffer = [&](BufferHandle& handle, const void* data, std::size_t length, const char* label) {
+            if (length == 0) {
+                handle = {};
+                return;
+            }
+
+            if (!handle.isValid() || handle.length() < length) {
+                handle = bufferAllocator.createBuffer(length, data, label);
+            } else {
+                id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
+                if (buffer && data) {
+                    std::memcpy([buffer contents], data, length);
+                    [buffer didModifyRange:NSMakeRange(0, length)];
+                }
+            }
+        };
+
+        uploadBuffer(resources.instanceBuffer,
+                     instanceResources.data(),
+                     instanceResources.size() * sizeof(RayTracingInstanceResource),
+                     "rtr.instances");
+
+        uploadBuffer(resources.materialBuffer,
+                     materialResources.data(),
+                     materialResources.size() * sizeof(RayTracingMaterialResource),
+                     "rtr.materials");
+
         return success;
     }
 
-    void buildDiagnosticAccelerationStructure() {
-        std::array<simd_float3, 3> positions = {
-            simd_make_float3(0.0F, 0.0F, 0.0F),
-            simd_make_float3(0.5F, 0.0F, 0.0F),
-            simd_make_float3(0.0F, 0.5F, 0.0F)};
-        std::array<std::uint32_t, 3> indices = {0, 1, 2};
-
-        scene::Scene scene;
-        scene::SceneBuilder builder(scene);
-        auto meshHandle = builder.addTriangleMesh(positions, indices);
-        if (!meshHandle.isValid()) {
-            core::Logger::error("Renderer", "Failed to create diagnostic mesh");
-            return;
-        }
-        builder.addDefaultMaterial();
-        scene.addInstance(meshHandle, scene::MaterialHandle{0}, matrix_identity_float4x4);
-
-        const auto uploadIndex = geometryStore.uploadMesh(scene.meshes()[meshHandle.index], "diagnostic_triangle");
-        if (!uploadIndex.has_value()) {
-            core::Logger::warn("Renderer", "Geometry upload failed; skipping diagnostic AS build");
-            return;
-        }
-
-        void* queueHandle = context.rawCommandQueue();
-        const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
-        auto blas = asBuilder.buildBottomLevel(meshBuffers, "diagnostic_triangle", queueHandle);
-        if (blas.has_value()) {
-            core::Logger::info("Renderer", "Built diagnostic BLAS (%zu bytes)", blas->sizeInBytes());
-            bottomLevelStructures.push_back(std::move(*blas));
-
-            InstanceBuildInput instance{};
-            instance.structure = &bottomLevelStructures.back();
-            instance.transform = matrix_identity_float4x4;
-            instance.userID = 0;
-            instance.mask = 0xFF;
-
-            std::array<InstanceBuildInput, 1> instances = {instance};
-            auto tlas = asBuilder.buildTopLevel(instances, "diagnostic_scene", queueHandle);
-            if (tlas.has_value()) {
-                core::Logger::info("Renderer", "Built diagnostic TLAS (%zu bytes)", tlas->sizeInBytes());
-                topLevelStructure = std::move(*tlas);
-                const bool targetReady = ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight);
-                const bool pipelineReady = ensureRayTracingResources(kDiagnosticWidth, kDiagnosticHeight);
-                if (!targetReady) {
-                    core::Logger::warn("Renderer", "Failed to prepare ray tracing target after TLAS build");
-                }
-                if (!pipelineReady) {
-                    core::Logger::warn("Renderer", "Failed to prepare ray tracing resources after TLAS build");
-                }
-            } else {
-                core::Logger::warn("Renderer", "Diagnostic TLAS build skipped");
-            }
-        } else {
-            core::Logger::warn("Renderer", "Diagnostic BLAS build skipped");
-        }
-    }
+    bool initializeScene();
+    bool loadScene(const scene::Scene& scene);
+    void writeRayTracingOutput(const char* path) const;
 };
+
+bool Renderer::Impl::initializeScene() {
+    scene::Scene scene = scene::createCornellBoxScene();
+    if (!loadScene(scene)) {
+        core::Logger::warn("Renderer", "Falling back to gradient pipeline; scene load failed");
+        return false;
+    }
+    return true;
+}
+
+bool Renderer::Impl::loadScene(const scene::Scene& scene) {
+    bottomLevelStructures.clear();
+    topLevelStructure = AccelerationStructure{};
+    instanceResources.clear();
+    materialResources.clear();
+    target.reset();
+    resources.reset();
+
+    if (!context.isValid()) {
+        core::Logger::warn("Renderer", "Metal context invalid; cannot load scene");
+        return false;
+    }
+
+    void* queueHandle = context.rawCommandQueue();
+    if (!queueHandle) {
+        core::Logger::error("Renderer", "Command queue unavailable for scene load");
+        return false;
+    }
+
+    const auto& meshes = scene.meshes();
+    const auto& materials = scene.materials();
+    const auto& instances = scene.instances();
+
+    std::vector<std::size_t> meshUploadIndices(meshes.size(), static_cast<std::size_t>(-1));
+    std::vector<std::size_t> meshBLASIndices(meshes.size(), static_cast<std::size_t>(-1));
+
+    for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+        const std::string label = "scene_mesh_" + std::to_string(meshIndex);
+        const auto uploadIndex = geometryStore.uploadMesh(meshes[meshIndex], label);
+        if (!uploadIndex.has_value()) {
+            core::Logger::warn("Renderer", "Failed to upload mesh %zu", meshIndex);
+            continue;
+        }
+
+        meshUploadIndices[meshIndex] = *uploadIndex;
+        const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
+        auto blas = asBuilder.buildBottomLevel(meshBuffers, label, queueHandle);
+        if (!blas.has_value()) {
+            core::Logger::warn("Renderer", "Failed to build BLAS for mesh %zu", meshIndex);
+            continue;
+        }
+
+        meshBLASIndices[meshIndex] = bottomLevelStructures.size();
+        bottomLevelStructures.push_back(std::move(*blas));
+    }
+
+    if (bottomLevelStructures.empty()) {
+        core::Logger::warn("Renderer", "No BLAS structures available; scene load aborted");
+        return false;
+    }
+
+    std::vector<InstanceBuildInput> instanceInputs;
+    instanceInputs.reserve(instances.size());
+    instanceResources.clear();
+    instanceResources.reserve(instances.size());
+
+    for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
+        const auto& instance = instances[instanceIndex];
+        if (!instance.mesh.isValid() || instance.mesh.index >= meshBLASIndices.size()) {
+            continue;
+        }
+
+        const std::size_t blasIndex = meshBLASIndices[instance.mesh.index];
+        const std::size_t meshResourceIndex = meshUploadIndices[instance.mesh.index];
+        if (blasIndex == static_cast<std::size_t>(-1) || meshResourceIndex == static_cast<std::size_t>(-1)) {
+            continue;
+        }
+
+        InstanceBuildInput input{};
+        input.structure = &bottomLevelStructures[blasIndex];
+        input.transform = instance.transform;
+        input.userID = static_cast<std::uint32_t>(instanceInputs.size());
+        input.mask = 0xFF;
+        instanceInputs.push_back(input);
+
+        RayTracingInstanceResource resource{};
+        resource.objectToWorld = instance.transform;
+        resource.worldToObject = simd_inverse(instance.transform);
+        resource.meshIndex = static_cast<std::uint32_t>(meshResourceIndex);
+        resource.materialIndex = (instance.material.isValid() && instance.material.index < materials.size())
+                                     ? static_cast<std::uint32_t>(instance.material.index)
+                                     : 0U;
+        instanceResources.push_back(resource);
+    }
+
+    if (instanceInputs.empty()) {
+        core::Logger::warn("Renderer", "No valid instances for TLAS build");
+        return false;
+    }
+
+    auto tlas = asBuilder.buildTopLevel(instanceInputs, "scene_tlas", queueHandle);
+    if (!tlas.has_value()) {
+        core::Logger::warn("Renderer", "Failed to build TLAS for scene");
+        return false;
+    }
+    topLevelStructure = std::move(*tlas);
+
+    materialResources.clear();
+    materialResources.reserve(materials.size());
+    for (const auto& material : materials) {
+        RayTracingMaterialResource resource{};
+        resource.albedo = material.albedo;
+        resource.roughness = material.roughness;
+        resource.emission = material.emission;
+        resource.metallic = material.metallic;
+        resource.reflectivity = material.reflectivity;
+        resource.indexOfRefraction = material.indexOfRefraction;
+        materialResources.push_back(resource);
+    }
+
+    const bool pipelineReady = ensureRayTracingResources(kDiagnosticWidth, kDiagnosticHeight);
+    if (!pipelineReady) {
+        core::Logger::warn("Renderer", "Failed to allocate ray tracing resources for scene");
+    }
+
+    return topLevelStructure.isValid();
+}
+
+void Renderer::Impl::writeRayTracingOutput(const char* path) const {
+    if (!path || target.readbackBuffer == nil || target.width == 0 || target.height == 0) {
+        return;
+    }
+
+    const std::size_t pixelCount = static_cast<std::size_t>(target.width) * target.height;
+    const float* src = static_cast<const float*>([target.readbackBuffer contents]);
+    if (!src) {
+        return;
+    }
+
+    std::vector<uint8_t> bytes(pixelCount * 3);
+    for (std::size_t i = 0; i < pixelCount; ++i) {
+        const std::size_t base = i * 4;
+        bytes[i * 3 + 0] = floatToSRGBByte(src[base + 0]);
+        bytes[i * 3 + 1] = floatToSRGBByte(src[base + 1]);
+        bytes[i * 3 + 2] = floatToSRGBByte(src[base + 2]);
+    }
+
+    std::ofstream file(path, std::ios::binary);
+    if (!file) {
+        core::Logger::warn("Renderer", "Failed to write %s", path);
+        return;
+    }
+
+    file << "P6\n" << target.width << " " << target.height << "\n255\n";
+    file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!file) {
+        core::Logger::warn("Renderer", "Failed to flush %s", path);
+    } else {
+        core::Logger::info("Renderer", "Wrote ray tracing output to %s", path);
+    }
+}
 
 Renderer::Renderer(core::EngineConfig config)
     : impl_(std::make_unique<Impl>(std::move(config))) {}

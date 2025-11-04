@@ -42,6 +42,10 @@ inline float2 jitterForPixel(uint2 gid, constant MPSSamplingUniforms& sampling) 
     return float2(jitterX, jitterY);
 }
 
+inline float3 loadVertexPosition(const device uchar* base, uint stride, uint index) {
+    return *reinterpret_cast<const device float3*>(base + stride * index);
+}
+
 }  // namespace
 
 kernel void rayGenMain(texture2d<float, access::write> output [[texture(0)]],
@@ -72,8 +76,10 @@ kernel void closestHitMain(texture2d<float, access::write> output [[texture(0)]]
 kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(0)]],
                              device const RTRRayTracingResourceHeader* resourceHeader [[buffer(1)]],
                              device const RTRRayTracingMeshResource* meshResources [[buffer(2)]],
-                             device const float3* fallbackVertices [[buffer(4)]],
+                             device const uchar* fallbackVertexBytes [[buffer(4)]],
                              device const uint* fallbackIndices [[buffer(5)]],
+                             device const RTRRayTracingInstanceResource* instances [[buffer(6)]],
+                             device const RTRRayTracingMaterial* materials [[buffer(7)]],
                              texture2d<float, access::write> output [[texture(0)]],
                              texture2d<float, access::write> accumulation [[texture(1)]],
                              texture2d<float, access::read> randomTex [[texture(2)]],
@@ -90,8 +96,10 @@ kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(0
     const uint randomHeight = (resourceHeader != nullptr) ? resourceHeader->randomTextureHeight : 0u;
 
     (void)meshResources;
-    (void)fallbackVertices;
+    (void)fallbackVertexBytes;
     (void)fallbackIndices;
+    (void)instances;
+    (void)materials;
 
     const float geomBoost = geometryCount > 0 ? 0.5f : 0.0f;
 
@@ -117,8 +125,10 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(3)]]
                              constant RTRRayTracingUniforms& uniforms [[buffer(0)]],
                              device const RTRRayTracingResourceHeader* resourceHeader [[buffer(1)]],
                              device const RTRRayTracingMeshResource* meshResources [[buffer(2)]],
-                             device const float3* fallbackVertices [[buffer(4)]],
+                             device const uchar* fallbackVertexBytes [[buffer(4)]],
                              device const uint* fallbackIndices [[buffer(5)]],
+                             device const RTRRayTracingInstanceResource* instances [[buffer(6)]],
+                             device const RTRRayTracingMaterial* materials [[buffer(7)]],
                              texture2d<float, access::write> output [[texture(0)]],
                              texture2d<float, access::write> accumulation [[texture(1)]],
                              texture2d<float, access::read> randomTex [[texture(2)]],
@@ -163,40 +173,52 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(3)]]
                 float3(0.24f, 0.88f, 0.46f),
                 float3(0.46f, 0.32f, 0.92f),
             };
-            float3 hitColour = palette[0] * w + palette[1] * u + palette[2] * v;
+            float3 albedo = palette[0] * w + palette[1] * u + palette[2] * v;
+            float3 emission = float3(0.0f);
 
             float3 normal = normalize(float3(0.0f, 1.0f, 0.0f));
-            if (meshResources != nullptr && resourceHeader != nullptr && resourceHeader->geometryCount > 0) {
-                const RTRRayTracingMeshResource mesh = meshResources[0];
+            uint instanceIndex = 0;
+            if (instances && resourceHeader != nullptr && resourceHeader->instanceCount > 0) {
+                instanceIndex = min(query.get_committed_user_instance_id(), resourceHeader->instanceCount - 1u);
+            }
 
+            RTRRayTracingMeshResource mesh = {};
+            RTRRayTracingInstanceResource instance = {};
+            bool haveInstanceData = false;
+            if (meshResources != nullptr && resourceHeader != nullptr && resourceHeader->geometryCount > 0 && instances) {
+                instance = instances[instanceIndex];
+                haveInstanceData = true;
+                const uint meshIndex = min(instance.meshIndex, resourceHeader->geometryCount - 1u);
+                mesh = meshResources[meshIndex];
+                
                 const bool hasGPUAddresses = mesh.vertexBufferAddress != 0 && mesh.indexBufferAddress != 0;
-                const bool useFallbackVertices = mesh.fallbackVertexSlot != kInvalidSlot && fallbackVertices;
+                const bool useFallbackVertices = mesh.fallbackVertexSlot != kInvalidSlot && fallbackVertexBytes;
                 const bool useFallbackIndices = mesh.fallbackIndexSlot != kInvalidSlot && fallbackIndices;
 
-                const device float3* vertexData = nullptr;
+                const device uchar* vertexBytes = nullptr;
                 const device uint* indexData = nullptr;
                 if (hasGPUAddresses) {
-                    vertexData = reinterpret_cast<const device float3*>(mesh.vertexBufferAddress);
+                    vertexBytes = reinterpret_cast<const device uchar*>(mesh.vertexBufferAddress);
                     indexData = reinterpret_cast<const device uint*>(mesh.indexBufferAddress);
                 } else {
                     if (useFallbackVertices && mesh.fallbackVertexSlot == 0) {
-                        vertexData = fallbackVertices;
+                        vertexBytes = fallbackVertexBytes;
                     }
                     if (useFallbackIndices && mesh.fallbackIndexSlot == 0) {
                         indexData = fallbackIndices;
                     }
                 }
 
-                if (vertexData && indexData && mesh.indexCount >= 3 && mesh.vertexCount >= 3) {
+                if (vertexBytes && indexData && mesh.vertexStride > 0 && mesh.indexCount >= 3 && mesh.vertexCount >= 3) {
                     const uint base = min(primitiveID * 3u, mesh.indexCount - 3u);
                     const uint maxVertex = mesh.vertexCount - 1u;
                     const uint i0 = min(indexData[base + 0], maxVertex);
                     const uint i1 = min(indexData[base + 1], maxVertex);
                     const uint i2 = min(indexData[base + 2], maxVertex);
 
-                    const float3 p0 = vertexData[i0];
-                    const float3 p1 = vertexData[i1];
-                    const float3 p2 = vertexData[i2];
+                    const float3 p0 = loadVertexPosition(vertexBytes, mesh.vertexStride, i0);
+                    const float3 p1 = loadVertexPosition(vertexBytes, mesh.vertexStride, i1);
+                    const float3 p2 = loadVertexPosition(vertexBytes, mesh.vertexStride, i2);
                     const float3 e1 = p1 - p0;
                     const float3 e2 = p2 - p0;
                     const float3 maybeNormal = normalize(cross(e1, e2));
@@ -205,16 +227,37 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(3)]]
                     }
                 }
 
-                const uint materialIndex = mesh.materialIndex;
-                const float bias = (materialIndex & 1u) ? 0.08f : -0.05f;
-                hitColour = clamp(hitColour + bias, 0.0f, 1.0f);
+                const uint materialIndex = instance.materialIndex;
+                if (materials && resourceHeader->materialCount > 0) {
+                    const RTRRayTracingMaterial material = materials[min(materialIndex, resourceHeader->materialCount - 1u)];
+                    albedo = material.albedo;
+                    emission = material.emission;
+                }
             }
 
             const float distance = query.get_committed_distance();
             const float attenuation = clamp(exp(-distance * 0.2f), 0.15f, 1.0f);
-            const float diffuse = clamp(dot(normal, normalize(float3(0.25f, 0.85f, 0.6f))), 0.0f, 1.0f);
-            hitColour *= attenuation * (0.35f + 0.65f * diffuse);
-            colour = hitColour;
+            float3 worldNormal = normal;
+            if (haveInstanceData) {
+                const float3x3 objectToWorld3x3 = float3x3(instance.objectToWorld[0].xyz,
+                                                           instance.objectToWorld[1].xyz,
+                                                           instance.objectToWorld[2].xyz);
+                worldNormal = normalize(objectToWorld3x3 * normal);
+            }
+
+            float3 baseAlbedo = clamp(albedo, 0.0f, 1.0f);
+            float3 worldPosition = primaryRay.origin + primaryRay.direction * distance;
+            const float3 lightPosition = float3(0.0f, 0.95f, -1.0f);
+            const float3 lightColor = float3(15.0f, 14.0f, 13.0f);
+            const float3 toLight = lightPosition - worldPosition;
+            const float lightDistanceSq = max(dot(toLight, toLight), 1e-3f);
+            const float3 lightDir = normalize(toLight);
+            const float nDotL = clamp(dot(worldNormal, lightDir), 0.0f, 1.0f);
+            const float3 direct = (lightColor * nDotL) / lightDistanceSq;
+
+            const float3 ambient = baseAlbedo * 0.05f;
+            const float3 shading = baseAlbedo * direct * attenuation;
+            colour = clamp(ambient + shading + emission, 0.0f, 1.0f);
         } else {
             const float t = direction.y * 0.5f + 0.5f;
             const float3 skyTop = float3(0.45f, 0.55f, 0.85f);
