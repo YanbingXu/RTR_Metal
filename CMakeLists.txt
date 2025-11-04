@@ -70,7 +70,7 @@ add_library(RTRMetalEngine STATIC
     engine/src/Rendering/BufferAllocator.mm
     engine/src/Rendering/GeometryStore.cpp
     engine/src/Rendering/MetalContext.mm
-    engine/src/Rendering/Renderer.cpp
+    engine/src/Rendering/Renderer.mm
     engine/src/MPS/MPSPathTracer.mm
     engine/src/MPS/MPSRenderer.mm
     engine/src/MPS/MPSSceneConverter.cpp
@@ -111,6 +111,7 @@ set_source_files_properties(
     engine/src/Rendering/RayTracingPipeline.mm
     engine/src/MPS/MPSPathTracer.mm
     engine/src/MPS/MPSRenderer.mm
+    engine/src/Rendering/Renderer.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # Sample application -------------------------------------------------------
@@ -145,6 +146,7 @@ if(RTR_BUILD_TESTS)
         tests/src/rendering/BufferAllocatorTests.cpp
         tests/src/rendering/GeometryStoreTests.cpp
         tests/src/rendering/AccelerationStructureBuilderTests.cpp
+        tests/src/rendering/RendererTests.cpp
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp
         tests/src/scene/ScenesTests.cpp

@@ -18,6 +18,7 @@ public:
     Renderer& operator=(Renderer&&) noexcept;
 
     [[nodiscard]] const core::EngineConfig& config() const noexcept;
+    [[nodiscard]] bool isRayTracingReady() const noexcept;
     void renderFrame();
 
 private:
