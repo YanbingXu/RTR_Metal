@@ -1,4 +1,6 @@
-# 调试总结与关键修改
+# ~~调试总结与关键修改~~
+
+> **Deprecated:** 此文记录的“Ray Tracing Pipeline + SBT”调试步骤已被 compute-based 工作流取代，信息仅作存档参考。
 
 ## 当前状态
 - 引擎在 Apple M4 Pro 上成功识别到 `supportsRaytracing` 的 GPU，并能完成加速结构构建与命令调度。

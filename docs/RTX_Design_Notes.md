@@ -1,4 +1,6 @@
-# RTRMetal 引擎设计与实现笔记
+# ~~RTRMetal 引擎设计与实现笔记~~
+
+> **Deprecated:** 本文基于早期“Swift Package + `MTLRayTracingPipelineState`”设想，与当前 CMake + compute-based RT 架构不符，仅保留以供历史参考。
 
 ## 设计目标
 - 构建一个可在 macOS 14+、Apple Silicon GPU 上运行的实时光线追踪引擎。

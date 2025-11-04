@@ -13,13 +13,13 @@
 ## Stage 3: Ray Tracing Pipelines
 **Goal**: Deliver both hardware RT and MPS pipelines capable of rendering Cornell Box/off-screen scenes with ray-tracing features (reflections, shadows, refraction), plus supporting infrastructure for deterministic validation.
 
-### Stage 3A: Hardware RT Path (Metal Ray Tracing)
-**Goal**: Build BLAS/TLAS constructors, shader binding tables, and dispatch a hardware RT frame to an off-screen target.
+### Stage 3A: Hardware-Accelerated Compute Path (Metal Ray Tracing)
+**Goal**: Build BLAS/TLAS constructors and dispatch a compute-based ray tracing kernel that leverages hardware traversal to render diagnostic frames.
 **Success Criteria**:
-- Diagnostic Cornell Box renders through the hardware RT path on RT-capable devices, producing non-black frames with basic lighting.
-- TLAS build + instance management validated via logs/tests; SBT layout documented.
-- Renderer toggles between hardware RT and MPS backends at runtime with graceful fallback when headers/devices are missing.
-**Tests**: Capability-gated integration tests for TLAS/SBT creation, hash comparison on RT hardware, smoke test ensuring fallback when unavailable.
+- Diagnostic Cornell Box renders through the compute ray tracing pipeline on RT-capable devices, producing non-black frames with basic lighting.
+- TLAS/BLAS build + instance management validated via logs/tests; resource buffer layout and intersection/visible function usage documented.
+- Renderer toggles between compute RT and fallback backends at runtime with graceful degradation when `supportsRaytracing` is false.
+**Tests**: Capability-gated integration tests for TLAS creation and compute dispatch, hash comparison on RT hardware, smoke test ensuring fallback when unavailable.
 **Status**: In Progress
 
 ### Stage 3B: MPS Compute Path

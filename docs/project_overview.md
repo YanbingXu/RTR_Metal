@@ -3,21 +3,22 @@
 ## Goal Snapshot
 - Deliver a reusable hardware ray tracing engine targeting macOS 14+ on Apple Silicon.
 - Support two interchangeable backends:
-  - **Hardware RT Pipeline** built on Metal Ray Tracing APIs (TLAS/BLAS, shader binding tables, ray generation/miss/closest-hit programs).
+  - **Hardware-accelerated compute pipeline** built on Metal acceleration structures + compute kernels (TLAS/BLAS, linked/visible functions, `setAccelerationStructure:` dispatch).
   - **MPS Pipeline** that mirrors the reference `/Users/yanbing.xu/Desktop/MetalRayTracing` sample using compute shaders for ray tracing effects when native RT is unavailable or unstable.
 - Ship both an off-screen CLI renderer and an on-screen demo that can ingest Cornell Box assets and showcase reflections, refraction, soft shadows, and other ray-traced lighting features.
 - Maintain automated tests (hash/image checks, scene validation) to guard regression, plus documentation for onboarding and usage.
 
 ## Current Reality
-- Hardware RT work is blocked on inconsistent platform support (MacBook Pro M4 Pro); the renderer currently initialises the device and diagnostic BLAS but lacks TLAS/SBT/dispatch.
+- ~~Hardware RT work is blocked on inconsistent platform support (MacBook Pro M4 Pro); the renderer currently initialises the device and diagnostic BLAS but lacks TLAS/SBT/dispatch.~~
+- Compute-based hardware traversal is planned using TLAS/BLAS + ray tracing kernels; diagnostic BLAS/TLAS builds already exist and are being extended to drive compute dispatch.
 - MPS fallback path is active and under construction: GPU ray, shading, and accumulation kernels exist, with CPU shading retained for determinism and testing.
 - Scene ingestion supports synthetic prism and Cornell Box scenes via `SceneBuilder`/`GeometryStore` with deterministic hash tests.
 
 ## Desired End State
-1. **Hardware RT Pipeline**
-   - TLAS builder, shader table, and full ray dispatch writing to render targets.
+1. **Hardware-Accelerated Compute Pipeline**
+   - TLAS/BLAS builder, resource buffer layout, and compute dispatch writing to render targets.
    - Visual parity with the MPS path for shared shading models.
-   - Capability detection and graceful fallback when RT headers/devices are missing.
+   - Capability detection and graceful fallback when `supportsRaytracing` is missing.
 2. **MPS Pipeline**
    - Fully GPU-driven (ray → intersect → shade → accumulate) with optional CPU verification path.
    - Configurable sampling, accumulation reset, and deterministic hashes for regression.

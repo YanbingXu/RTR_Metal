@@ -1,4 +1,6 @@
-# 阶段 3 进展与下一步计划
+# ~~阶段 3 进展与下一步计划~~
+
+> **Deprecated:** 本文描述的 Stage 3 拆分与“Metal 原生硬件 RT”计划已被新的 compute-based 流程取代。请参考 `docs/OfficialMetalSampleStudy.md` 与 `IMPLEMENTATION_PLAN.md` 获取当前策略。
 
 ## 当前状态概览
 

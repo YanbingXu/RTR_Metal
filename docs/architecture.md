@@ -39,7 +39,8 @@ Metal GPU + Shaders
 - **SceneBuilder** – Convenience façade for constructing meshes from raw position/index arrays and registering default materials; tests validate mesh insertion and error handling.
 - **GeometryStore** – Uploads mesh vertex/index data to GPU buffers through `BufferAllocator`, preparing inputs for upcoming BLAS/TLAS builders.
 - **AccelerationStructureBuilder** – Queries Metal for BLAS memory requirements and (when hardware allows) builds diagnostic BLAS instances to validate the ray-tracing command path end-to-end.
-- **RayTracingPipeline** – Wraps `MTLRayTracingPipelineState` creation when the SDK exposes `MetalRayTracing.h`; otherwise falls back silently so the rest of the engine remains usable.
+- **RayTracingPipeline** – ~~Wraps `MTLRayTracingPipelineState` creation when the SDK exposes `MetalRayTracing.h`; otherwise falls back silently so the rest of the engine remains usable.~~
+- **RayTracingCompute** – Builds compute pipelines (with optional linked intersection/visible functions) that bind TLAS/BLAS via `setAccelerationStructure:` and execute hardware-accelerated traversal inside ray tracing kernels.
 - **MPSPathTracer** – Initializes an MPS-based backend (`MPSSupportsMTLDevice`) to provide a portable fallback/existing sample parity when hardware ray tracing APIs are unavailable.
 - Upcoming work will extend these types with GPU upload hooks, material textures, and acceleration-structure builders leveraging the math helpers already in place.
 
@@ -71,5 +72,6 @@ Metal GPU + Shaders
 
 1. Flesh out scene data structures and host-side resource upload flows tied to the new `BufferAllocator`.
 2. Implement BLAS/TLAS builders leveraging `Math::BoundingBox` and the forthcoming geometry store.
-3. Integrate the ray tracing pipeline (shader binding tables, dispatch) inside `Renderer`, replacing the current stub output.
-4. Build the interactive macOS sample that exercises renderer features end-to-end.
+3. ~~Integrate the ray tracing pipeline (shader binding tables, dispatch) inside `Renderer`, replacing the current stub output.~~
+4. Integrate the compute-based ray tracing pipeline (acceleration structure upload, resource buffers, dispatch) inside `Renderer`, replacing the current stub output.
+5. Build the interactive macOS sample that exercises renderer features end-to-end.
