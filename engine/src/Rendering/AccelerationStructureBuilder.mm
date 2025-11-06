@@ -53,7 +53,7 @@ std::optional<BottomLevelBuildInfo> AccelerationStructureBuilder::queryBottomLev
         return std::nullopt;
     }
 
-    if (!meshBuffers.vertexBuffer.isValid() || !meshBuffers.indexBuffer.isValid()) {
+    if (!meshBuffers.gpuVertexBuffer.isValid() || !meshBuffers.gpuIndexBuffer.isValid()) {
         core::Logger::error("ASBuilder", "Mesh buffers invalid for '%s'", label.c_str());
         return std::nullopt;
     }
@@ -64,8 +64,8 @@ std::optional<BottomLevelBuildInfo> AccelerationStructureBuilder::queryBottomLev
         return std::nullopt;
     }
 
-    id<MTLBuffer> vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.vertexBuffer.nativeHandle();
-    id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.indexBuffer.nativeHandle();
+    id<MTLBuffer> vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
+    id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
     if (!vertexBuffer || !indexBuffer) {
         core::Logger::error("ASBuilder", "Mesh buffers missing native handles for '%s'", label.c_str());
         return std::nullopt;
@@ -81,12 +81,14 @@ std::optional<BottomLevelBuildInfo> AccelerationStructureBuilder::queryBottomLev
         [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
     geometry.vertexBuffer = vertexBuffer;
     geometry.vertexStride = static_cast<NSUInteger>(meshBuffers.vertexStride);
+    geometry.vertexBufferOffset = 0;
 #if defined(__MAC_13_0) || defined(__IPHONE_16_0)
     geometry.vertexFormat = MTLAttributeFormatFloat3;
 #else
     geometry.vertexFormat = MTLVertexFormatFloat3;
 #endif
     geometry.indexBuffer = indexBuffer;
+    geometry.indexBufferOffset = 0;
     geometry.indexType = MTLIndexTypeUInt32;
     geometry.triangleCount = indexCount / 3;
     geometry.opaque = YES;
@@ -152,14 +154,16 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildBottomLe
 
     MTLAccelerationStructureTriangleGeometryDescriptor* geometry =
         [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
-    geometry.vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.vertexBuffer.nativeHandle();
+    geometry.vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
     geometry.vertexStride = static_cast<NSUInteger>(meshBuffers.vertexStride);
+    geometry.vertexBufferOffset = 0;
 #if defined(__MAC_13_0) || defined(__IPHONE_16_0)
     geometry.vertexFormat = MTLAttributeFormatFloat3;
 #else
     geometry.vertexFormat = MTLVertexFormatFloat3;
 #endif
-    geometry.indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.indexBuffer.nativeHandle();
+    geometry.indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
+    geometry.indexBufferOffset = 0;
     geometry.indexType = MTLIndexTypeUInt32;
     geometry.triangleCount = static_cast<NSUInteger>(meshBuffers.indexCount / 3);
     geometry.opaque = YES;
@@ -338,6 +342,8 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
         descriptor.accelerationStructureIndex = static_cast<uint32_t>(i);
         descriptor.userID = instance.userID;
     }
+
+    [instanceBuffer didModifyRange:NSMakeRange(0, sizes->instanceDescriptorBufferSize)];
 
     MTLInstanceAccelerationStructureDescriptor* descriptor =
         [MTLInstanceAccelerationStructureDescriptor descriptor];

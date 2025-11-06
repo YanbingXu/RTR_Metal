@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 
+#include "RTRMetalEngine/Scene/Scene.hpp"
+
 #include "RTRMetalEngine/Core/EngineConfig.hpp"
 
 namespace rtr::rendering {
@@ -20,6 +22,10 @@ public:
     [[nodiscard]] const core::EngineConfig& config() const noexcept;
     [[nodiscard]] bool isRayTracingReady() const noexcept;
     void renderFrame();
+    void setOutputPath(std::string path);
+    void setRenderSize(std::uint32_t width, std::uint32_t height);
+    bool loadScene(const scene::Scene& scene);
+    void setDebugMode(bool enabled);
 
 private:
     struct Impl;

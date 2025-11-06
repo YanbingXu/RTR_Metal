@@ -39,6 +39,9 @@ public:
     [[nodiscard]] BufferHandle createBuffer(std::size_t length,
                                            const void* initialData = nullptr,
                                            const char* label = nullptr) noexcept;
+    [[nodiscard]] BufferHandle createPrivateBuffer(std::size_t length,
+                                                   const void* initialData = nullptr,
+                                                   const char* label = nullptr) noexcept;
 
 private:
     MetalContext& context_;

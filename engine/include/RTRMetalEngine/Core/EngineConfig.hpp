@@ -8,7 +8,7 @@ namespace rtr::core {
 struct EngineConfig {
     std::string applicationName;
     std::string shaderLibraryPath;
-    std::string shadingMode = "auto";  // "auto", "cpu", or "gpu"
+    std::string shadingMode = "auto";  // "auto", "cpu" (fallback), or "gpu" (hardware)
     bool accumulationEnabled = true;
     std::uint32_t accumulationFrames = 0;  // 0 = unlimited
     std::uint32_t samplesPerPixel = 1;

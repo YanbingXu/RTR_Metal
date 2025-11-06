@@ -3,6 +3,7 @@
 #include <simd/simd.h>
 #ifndef __METAL_VERSION__
 #include <cstdint>
+#include <limits>
 #endif
 
 #ifdef __METAL_VERSION__
@@ -16,7 +17,7 @@ typedef struct RTRRayTracingUniforms {
     uint width;
     uint height;
     uint frameIndex;
-    uint padding;
+    uint flags;
 } RTRRayTracingUniforms;
 
 typedef struct RTRRayTracingResourceHeader {
@@ -37,8 +38,10 @@ typedef struct RTRRayTracingMeshResource {
     uint indexCount;
     uint vertexStride;
     uint materialIndex;
-    uint fallbackVertexSlot;
-    uint fallbackIndexSlot;
+    uint fallbackVertexOffset;
+    uint fallbackIndexOffset;
+    uint padding0;
+    uint padding1;
 } RTRRayTracingMeshResource;
 
 typedef struct RTRRayTracingInstanceResource {
@@ -73,7 +76,7 @@ struct RayTracingUniforms {
     uint32_t width = 0;
     uint32_t height = 0;
     uint32_t frameIndex = 0;
-    uint32_t padding = 0;
+    uint32_t flags = 0;
 };
 
 struct alignas(16) RayTracingResourceHeader {
@@ -94,8 +97,10 @@ struct alignas(16) RayTracingMeshResource {
     std::uint32_t indexCount = 0;
     std::uint32_t vertexStride = 0;
     std::uint32_t materialIndex = 0;
-    std::uint32_t fallbackVertexSlot = 0;
-    std::uint32_t fallbackIndexSlot = 0;
+    std::uint32_t fallbackVertexOffset = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t fallbackIndexOffset = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
 };
 
 struct alignas(16) RayTracingInstanceResource {

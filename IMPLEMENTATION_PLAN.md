@@ -1,3 +1,6 @@
+> Status checkpoint (2025-11-06): Stage 1–3A complete; Stage 3B active; Stage 3C and Stage 4 queued.
+> Refer to [AGENTS.md](AGENTS.md) for contributor workflow guidance and entry points into the codebase.
+
 ## Stage 1: Project Shell & Tooling
 **Goal**: Replace Swift package with CMake-based C++ project scaffold, shared engine/static library target, sample app target, and shader build integration stubs.
 **Success Criteria**: CMake config generates build files; `metal` shader compilation hooks exist; placeholder engine library builds and links into sample.
@@ -20,7 +23,7 @@
 - TLAS/BLAS build + instance management validated via logs/tests; resource buffer layout and intersection/visible function usage documented.
 - Renderer toggles between compute RT and fallback backends at runtime with graceful degradation when `supportsRaytracing` is false.
 **Tests**: Capability-gated integration tests for TLAS creation and compute dispatch, hash comparison on RT hardware, smoke test ensuring fallback when unavailable.
-**Status**: In Progress
+**Status**: Complete
 
 ### Stage 3B: MPS Compute Path
 **Goal**: Mirror the reference MPS-based path tracer using compute shaders for ray generation, shading, and accumulation to cover machines without stable hardware RT.

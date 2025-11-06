@@ -467,6 +467,10 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
     const bool requestCpu = !allowGpu || shadingMode_ == ShadingMode::CpuOnly;
     const bool logDifferences = requestCpu && requestGpu;
 
+    if (shadingMode_ != ShadingMode::CpuOnly && !allowGpu) {
+        core::Logger::warn("MPSRenderer", "GPU shading unavailable; falling back to CPU shading");
+    }
+
     const bool accumulateGpu = requestGpu && accumulationEnabled_;
 
     FrameComparison comparison;
@@ -506,6 +510,9 @@ bool MPSRenderer::renderFrameComparison(const char* cpuOutputPath,
                                         FrameComparison* outComparison) {
     FrameComparison comparison;
     const bool allowGpu = shadingMode_ != ShadingMode::CpuOnly && usesGPUShading();
+    if (shadingMode_ != ShadingMode::CpuOnly && !allowGpu) {
+        core::Logger::warn("MPSRenderer", "GPU shading unavailable; falling back to CPU shading for comparison");
+    }
     if (!computeFrame(comparison, true, true, allowGpu, false)) {
         return false;
     }
@@ -687,6 +694,9 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
 
     const bool gpuResourcesReady = usesGPUShading();
     bool requestGpu = enableGpuShading && gpuResourcesReady && gpuState_ && gpuState_->rayPipeline != nil;
+    if (enableGpuShading && !requestGpu) {
+        core::Logger::warn("MPSRenderer", "Requested GPU shading but reverting to CPU path due to unavailable GPU resources");
+    }
     bool doAccumulate = requestGpu && accumulateGpu && accumulationEnabled_;
 
     MPSSamplingUniforms samplingUniforms{};
