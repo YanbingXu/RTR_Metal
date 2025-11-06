@@ -14,7 +14,7 @@
 **Status**: Complete
 
 ## Stage 3: Ray Tracing Pipelines
-**Goal**: Deliver both hardware RT and MPS pipelines capable of rendering Cornell Box/off-screen scenes with ray-tracing features (reflections, shadows, refraction), plus supporting infrastructure for deterministic validation.
+**Goal**: Track the Apple reference implementation step by step—finish the hardware RT path (matching the official Cornell result) before touching the MPS fallback; only once hardware parity is achieved do we mirror the fallback pipeline.
 
 ### Stage 3A: Hardware-Accelerated Compute Path (Metal Ray Tracing)
 **Goal**: Build BLAS/TLAS constructors and dispatch a compute-based ray tracing kernel that leverages hardware traversal to render diagnostic frames.
@@ -25,16 +25,26 @@
 **Tests**: Capability-gated integration tests for TLAS creation and compute dispatch, hash comparison on RT hardware, smoke test ensuring fallback when unavailable.
 **Status**: Complete
 
-### Stage 3B: MPS Compute Path
-**Goal**: Mirror the reference MPS-based path tracer using compute shaders for ray generation, shading, and accumulation to cover machines without stable hardware RT.
+### Stage 3B: Hardware Rendering Polish
+**Goal**: Rebuild the hardware kernel to mirror the Apple sample (Cornell lighting, reflections, refraction) so we ship a complete hardware RT frame before considering fallbacks.
+**Success Criteria**:
+- Ray-gen kernel produces the Cornell reference image from `~/Desktop/metal_RTR_official_example`.
+- Material/enclosure data in `RTRRayTracing.metal` stays aligned with the reference shading code.
+- Renderer writes frame dumps via `writeRayTracingOutput`.
+- Docs outline hardware-only requirements and troubleshooting steps.
+**Tests**: Basic integration run on hardware RT devices (smoke) and unit coverage for resource packing.
+**Status**: In Progress — Cornell shading ported; capture hashes + doc updates pending
+
+### Stage 3C: MPS Compute Path
+**Goal**: After hardware parity, mirror the open-source `~/Desktop/MetalRayTracing` fallback sample using MPS compute shaders so non-hardware devices render the same Cornell frame.
 **Success Criteria**:
 - GPU shading kernels (ray, shade, accumulate, optional shadow/refraction passes) render Cornell/prism scenes with deterministic hashes.
 - Resolution/sample-count configurable; accumulation reset exposed (CLI + API).
 - CPU fallback retained for testing with unified comparison and tolerance thresholds.
 **Tests**: Frame hash/diff tests, multi-frame accumulation checks, scene-switch validation, capability probe skip logic.
-**Status**: In Progress
+**Status**: Not Started
 
-### Stage 3C: Examples & Scene Assets
+### Stage 3D: Examples & Scene Assets
 **Goal**: Provide off-screen and on-screen demos consuming shared renderer infrastructure and showcasing ray-traced effects.
 **Success Criteria**:
 - CLI tool renders Cornell Box and additional assets to disk (PNG/PPM) with recorded hashes and backend selection flags.

@@ -175,37 +175,20 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
         intersection_params params;
         params.assume_geometry_type(geometry_type::triangle);
         params.force_opacity(forced_opacity::opaque);
+
         intersection_query<triangle_data, instancing> query;
-        query.reset(primaryRay, scene, 0xFFu, params);
-        query.next();
-        const bool hitTriangle = query.get_committed_intersection_type() == intersection_type::triangle;
-        const float3 debugColour = hitTriangle ? float3(1.0f, 0.0f, 0.0f) : float3(0.0f, 0.0f, 1.0f);
-        output.write(float4(debugColour, 1.0f), gid);
-        if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
-            accumulation.write(float4(debugColour, 1.0f), gid);
+        query.reset(primaryRay, scene, ~0u, params);
+
+        // Drive traversal; without intersection functions Metal returns the committed result
+        // after the first call to next().
+        while (query.next()) {
+            // No custom intersection functions, so nothing to do inside the loop.
         }
-        return;
-    }
 
-#if 0
-    if (!is_null_instance_acceleration_structure(scene)) {
-        intersection_params params;
-        params.assume_geometry_type(geometry_type::triangle);
-        params.force_opacity(forced_opacity::opaque);
-
-        intersection_query<triangle_data, instancing> query(primaryRay, scene, ~0u, params);
-        (void)query.next();
-        const intersection_type committedType = query.get_committed_intersection_type();
-
-        if (committedType == intersection_type::triangle) {
+        if (query.get_committed_intersection_type() == intersection_type::triangle) {
             const uint primitiveID = query.get_committed_primitive_id();
             if (debugAlbedo) {
                 colour = float3(1.0f, 0.0f, 0.0f);
-                output.write(float4(colour, 1.0f), gid);
-                if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
-                    accumulation.write(float4(colour, 1.0f), gid);
-                }
-                return;
             }
             
             const float2 bary = query.get_committed_triangle_barycentric_coord();
@@ -361,7 +344,6 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
             }
         }
     }
-#endif
 
     const uint noiseW = (resourceHeader != nullptr && resourceHeader->randomTextureWidth > 0)
                             ? resourceHeader->randomTextureWidth
