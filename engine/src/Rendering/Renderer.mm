@@ -423,17 +423,50 @@ struct Renderer::Impl {
         }
 
         [encoder setComputePipelineState:pipelineState];
+        core::Logger::info("Renderer", "Using compute pipeline '%s' (requires AS: %s)",
+                           [[pipelineState label] UTF8String],
+                           rayTracingPipeline.requiresAccelerationStructure() ? "yes" : "no");
         if (rayTracingPipeline.requiresAccelerationStructure()) {
             id<MTLAccelerationStructure> accelerationStructure =
                 topLevelStructure.isValid() ? (__bridge id<MTLAccelerationStructure>)topLevelStructure.rawHandle() : nil;
             if (accelerationStructure) {
+                core::Logger::info("Renderer", "Binding TLAS %p", accelerationStructure);
                 if ([encoder respondsToSelector:@selector(setAccelerationStructure:atBufferIndex:)]) {
                     [encoder setAccelerationStructure:accelerationStructure atBufferIndex:0];
                 } else {
                     core::Logger::warn("Renderer", "Compute encoder missing setAccelerationStructure API; TLAS not bound");
                 }
+
+                if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
+                    [encoder useResource:accelerationStructure usage:MTLResourceUsageRead];
+                }
             } else {
                 core::Logger::warn("Renderer", "TLAS unavailable; ray tracing kernel may miss scene data");
+                core::Logger::warn("Renderer", "TLAS unavailable; ray tracing kernel may miss scene data");
+            }
+        }
+
+        if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
+            for (const auto& blas : bottomLevelStructures) {
+                if (!blas.isValid()) {
+                    continue;
+                }
+                id<MTLAccelerationStructure> blasHandle = (__bridge id<MTLAccelerationStructure>)blas.rawHandle();
+                if (blasHandle) {
+                    [encoder useResource:blasHandle usage:MTLResourceUsageRead];
+                }
+            }
+
+            const auto& uploadedMeshes = geometryStore.uploadedMeshes();
+            for (const auto& meshBuffers : uploadedMeshes) {
+                id<MTLBuffer> gpuVertex = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
+                if (gpuVertex) {
+                    [encoder useResource:gpuVertex usage:MTLResourceUsageRead];
+                }
+                id<MTLBuffer> gpuIndex = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
+                if (gpuIndex) {
+                    [encoder useResource:gpuIndex usage:MTLResourceUsageRead];
+                }
             }
         }
 
@@ -697,7 +730,7 @@ struct Renderer::Impl {
         std::vector<std::uint8_t> fallbackVertexData;
         std::vector<std::uint32_t> fallbackIndexData;
         const std::uint32_t kInvalidOffset = std::numeric_limits<std::uint32_t>::max();
-        const bool supportsGPUAddress = false;  // TODO: enable once GPU addresses are validated for path tracing
+        const bool supportsGPUAddress = context.supportsRayTracing();
 
         if (meshCount > 0) {
             std::size_t estimatedVertexBytes = 0;
@@ -764,20 +797,22 @@ struct Renderer::Impl {
                     entry.fallbackVertexOffset = kInvalidOffset;
                     entry.fallbackIndexOffset = kInvalidOffset;
 
-                    id<MTLBuffer> vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuVertexBuffer.nativeHandle();
-                    id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuIndexBuffer.nativeHandle();
+                    id<MTLBuffer> gpuVertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
+                    id<MTLBuffer> gpuIndexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
+                    id<MTLBuffer> cpuVertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuVertexBuffer.nativeHandle();
+                    id<MTLBuffer> cpuIndexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuIndexBuffer.nativeHandle();
 
-                    if (supportsGPUAddress && vertexBuffer) {
-                        entry.vertexBufferAddress = vertexBuffer.gpuAddress;
+                    if (supportsGPUAddress && gpuVertexBuffer) {
+                        entry.vertexBufferAddress = gpuVertexBuffer.gpuAddress;
                     }
-                    if (supportsGPUAddress && indexBuffer) {
-                        entry.indexBufferAddress = indexBuffer.gpuAddress;
+                    if (supportsGPUAddress && gpuIndexBuffer) {
+                        entry.indexBufferAddress = gpuIndexBuffer.gpuAddress;
                     }
 
                     const bool needsFallback = entry.vertexBufferAddress == 0ULL || entry.indexBufferAddress == 0ULL;
-                    if (needsFallback && vertexBuffer && indexBuffer) {
-                        const auto* vertexBytes = static_cast<const std::uint8_t*>([vertexBuffer contents]);
-                        const auto* indexBytes = static_cast<const std::uint32_t*>([indexBuffer contents]);
+                    if (needsFallback && cpuVertexBuffer && cpuIndexBuffer) {
+                        const auto* vertexBytes = static_cast<const std::uint8_t*>([cpuVertexBuffer contents]);
+                        const auto* indexBytes = static_cast<const std::uint32_t*>([cpuIndexBuffer contents]);
                         if (vertexBytes && indexBytes) {
                             const std::size_t vertexByteLength = meshBuffers.vertexStride * meshBuffers.vertexCount;
                             const std::size_t indexElementCount = meshBuffers.indexCount;
@@ -972,10 +1007,22 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     instanceInputs.reserve(instances.size());
     instanceResources.clear();
     instanceResources.reserve(instances.size());
+    std::size_t emissiveInstanceCount = 0;
 
     for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
         const auto& instance = instances[instanceIndex];
         if (!instance.mesh.isValid() || instance.mesh.index >= meshBLASIndices.size()) {
+            continue;
+        }
+
+        bool isEmissive = false;
+        if (instance.material.isValid() && instance.material.index < materials.size()) {
+            const auto& material = materials[instance.material.index];
+            const auto emission = material.emission;
+            isEmissive = emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f;
+        }
+        if (isEmissive) {
+            emissiveInstanceCount++;
             continue;
         }
 
@@ -1000,6 +1047,12 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                                      ? static_cast<std::uint32_t>(instance.material.index)
                                      : 0U;
         instanceResources.push_back(resource);
+    }
+
+    if (emissiveInstanceCount > 0) {
+        core::Logger::info("Renderer",
+                           "Skipped %zu emissive instance(s) when building TLAS (handled analytically)",
+                           emissiveInstanceCount);
     }
 
     if (instanceInputs.empty()) {

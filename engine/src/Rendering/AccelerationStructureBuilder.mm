@@ -336,11 +336,23 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
 
         auto& descriptor = descriptors[i];
         descriptor.transformationMatrix = makePackedTransform(instance.transform);
-        descriptor.options = MTLAccelerationStructureInstanceOptionNone;
+        descriptor.options = MTLAccelerationStructureInstanceOptionDisableTriangleCulling;
         descriptor.mask = instance.mask;
         descriptor.intersectionFunctionTableOffset = instance.intersectionFunctionTableOffset;
         descriptor.accelerationStructureIndex = static_cast<uint32_t>(i);
         descriptor.userID = instance.userID;
+        if (i < 8) {
+            const MTLPackedFloat3 translation = descriptor.transformationMatrix.columns[3];
+            core::Logger::info("ASBuilder",
+                               "TLAS instance[%zu]: userID=%u mask=0x%02X options=0x%X translate=(%.3f, %.3f, %.3f)",
+                               i,
+                               descriptor.userID,
+                               descriptor.mask,
+                               descriptor.options,
+                               static_cast<double>(translation.x),
+                               static_cast<double>(translation.y),
+                               static_cast<double>(translation.z));
+        }
     }
 
     [instanceBuffer didModifyRange:NSMakeRange(0, sizes->instanceDescriptorBufferSize)];
