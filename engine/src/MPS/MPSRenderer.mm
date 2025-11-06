@@ -467,7 +467,11 @@ bool MPSRenderer::renderFrame(const char* outputPath) {
     const bool requestCpu = !allowGpu || shadingMode_ == ShadingMode::CpuOnly;
     const bool logDifferences = requestCpu && requestGpu;
 
-    const bool accumulateGpu = requestGpu;
+    if (shadingMode_ != ShadingMode::CpuOnly && !allowGpu) {
+        core::Logger::warn("MPSRenderer", "GPU shading unavailable; falling back to CPU shading");
+    }
+
+    const bool accumulateGpu = requestGpu && accumulationEnabled_;
 
     FrameComparison comparison;
     if (!computeFrame(comparison, logDifferences, requestCpu, requestGpu, accumulateGpu)) {
@@ -506,6 +510,9 @@ bool MPSRenderer::renderFrameComparison(const char* cpuOutputPath,
                                         FrameComparison* outComparison) {
     FrameComparison comparison;
     const bool allowGpu = shadingMode_ != ShadingMode::CpuOnly && usesGPUShading();
+    if (shadingMode_ != ShadingMode::CpuOnly && !allowGpu) {
+        core::Logger::warn("MPSRenderer", "GPU shading unavailable; falling back to CPU shading for comparison");
+    }
     if (!computeFrame(comparison, true, true, allowGpu, false)) {
         return false;
     }
@@ -650,7 +657,7 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
         return false;
     }
 
-    auto dispatchRayKernel = [&]() -> bool {
+    auto dispatchRayKernel = [&](const MPSSamplingUniforms& samplingUniforms) -> bool {
         if (!gpuState_ || gpuState_->rayPipeline == nil) {
             return false;
         }
@@ -670,6 +677,7 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
         [computeEncoder setComputePipelineState:gpuState_->rayPipeline];
         [computeEncoder setBuffer:rayBuffer offset:0 atIndex:0];
         [computeEncoder setBytes:&cameraUniforms_ length:sizeof(cameraUniforms_) atIndex:1];
+        [computeEncoder setBytes:&samplingUniforms length:sizeof(samplingUniforms) atIndex:2];
 
         const NSUInteger threadWidth = gpuState_->rayPipeline.threadExecutionWidth;
         const NSUInteger threadHeight = gpuState_->rayPipeline.maxTotalThreadsPerThreadgroup / threadWidth;
@@ -686,15 +694,34 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
 
     const bool gpuResourcesReady = usesGPUShading();
     bool requestGpu = enableGpuShading && gpuResourcesReady && gpuState_ && gpuState_->rayPipeline != nil;
-    bool doAccumulate = requestGpu && accumulateGpu;
+    if (enableGpuShading && !requestGpu) {
+        core::Logger::warn("MPSRenderer", "Requested GPU shading but reverting to CPU path due to unavailable GPU resources");
+    }
+    bool doAccumulate = requestGpu && accumulateGpu && accumulationEnabled_;
+
+    MPSSamplingUniforms samplingUniforms{};
+    samplingUniforms.samplesPerPixel =
+        (samplesPerPixel_ == 0) ? 0U : std::max(samplesPerPixel_, static_cast<std::uint32_t>(1));
+    samplingUniforms.baseSeed = baseSeed_;
+    if (doAccumulate) {
+        if (samplesPerPixel_ == 0) {
+            samplingUniforms.sampleIndex = gpuFrameIndex_;
+        } else {
+            const std::uint32_t maxSampleIndex = samplesPerPixel_ > 0 ? (samplesPerPixel_ - 1U) : 0U;
+            samplingUniforms.sampleIndex = std::min(gpuFrameIndex_, maxSampleIndex);
+        }
+    } else {
+        samplingUniforms.sampleIndex = 0;
+    }
 
     bool raysGeneratedWithGPU = false;
     if (requestGpu) {
-        raysGeneratedWithGPU = dispatchRayKernel();
+        raysGeneratedWithGPU = dispatchRayKernel(samplingUniforms);
         if (!raysGeneratedWithGPU) {
             core::Logger::warn("MPSRenderer", "Failed to dispatch GPU ray kernel; falling back to CPU rays");
             requestGpu = false;
             doAccumulate = false;
+            samplingUniforms.sampleIndex = 0;
         }
     }
 

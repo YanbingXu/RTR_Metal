@@ -27,16 +27,26 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
 
     const std::string vertexLabel = label + ".vb";
     const std::string indexLabel = label + ".ib";
+    const std::string gpuVertexLabel = label + ".vb.gpu";
+    const std::string gpuIndexLabel = label + ".ib.gpu";
 
-    BufferHandle vertexBuffer = allocator_.createBuffer(vertexLength, vertices.data(), vertexLabel.c_str());
-    BufferHandle indexBuffer = allocator_.createBuffer(indexLength, indices.data(), indexLabel.c_str());
+    BufferHandle cpuVertexBuffer = allocator_.createBuffer(vertexLength, vertices.data(), vertexLabel.c_str());
+    BufferHandle cpuIndexBuffer = allocator_.createBuffer(indexLength, indices.data(), indexLabel.c_str());
+    BufferHandle gpuVertexBuffer = allocator_.createPrivateBuffer(vertexLength, vertices.data(), gpuVertexLabel.c_str());
+    BufferHandle gpuIndexBuffer = allocator_.createPrivateBuffer(indexLength, indices.data(), gpuIndexLabel.c_str());
 
-    if (!vertexBuffer.isValid() || !indexBuffer.isValid()) {
+    if (!cpuVertexBuffer.isValid() || !cpuIndexBuffer.isValid() || !gpuVertexBuffer.isValid() || !gpuIndexBuffer.isValid()) {
         core::Logger::error("GeometryStore", "Failed to upload mesh '%s'", label.c_str());
         return std::nullopt;
     }
 
-    meshes_.emplace_back(std::move(vertexBuffer), std::move(indexBuffer), indices.size(), sizeof(scene::Vertex));
+    meshes_.emplace_back(std::move(gpuVertexBuffer),
+                         std::move(gpuIndexBuffer),
+                         std::move(cpuVertexBuffer),
+                         std::move(cpuIndexBuffer),
+                         vertices.size(),
+                         indices.size(),
+                         sizeof(scene::Vertex));
     return meshes_.size() - 1;
 }
 

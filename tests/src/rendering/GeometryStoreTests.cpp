@@ -36,8 +36,10 @@ TEST(GeometryStore, HandlesContextAvailabilityGracefully) {
         ASSERT_TRUE(result.has_value());
         EXPECT_EQ(store.uploadedMeshes().size(), 1U);
         const auto& buffers = store.uploadedMeshes().front();
-        EXPECT_TRUE(buffers.vertexBuffer.isValid());
-        EXPECT_TRUE(buffers.indexBuffer.isValid());
+        EXPECT_TRUE(buffers.gpuVertexBuffer.isValid());
+        EXPECT_TRUE(buffers.gpuIndexBuffer.isValid());
+        EXPECT_TRUE(buffers.cpuVertexBuffer.isValid());
+        EXPECT_TRUE(buffers.cpuIndexBuffer.isValid());
         EXPECT_EQ(buffers.indexCount, indices.size());
         EXPECT_EQ(buffers.vertexStride, sizeof(rtr::scene::Vertex));
     } else {

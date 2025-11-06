@@ -47,6 +47,31 @@ MeshHandle addAxisAlignedBox(SceneBuilder& builder,
                                    std::span<const std::uint32_t>(indices.data(), indices.size()));
 }
 
+void addCeilingLight(SceneBuilder& builder, Scene& scene) {
+    const float lightHalfWidth = 0.25f;
+    const float lightHalfDepth = 0.18f;
+    const float ceilingY = 1.0f;
+    const float lightZ = -1.0f;
+
+    const simd_float3 p0 = simd_make_float3(-lightHalfWidth, ceilingY - 0.001f, -lightHalfDepth - lightZ);
+    const simd_float3 p1 = simd_make_float3(lightHalfWidth, ceilingY - 0.001f, -lightHalfDepth - lightZ);
+    const simd_float3 p2 = simd_make_float3(lightHalfWidth, ceilingY - 0.001f, lightHalfDepth - lightZ);
+    const simd_float3 p3 = simd_make_float3(-lightHalfWidth, ceilingY - 0.001f, lightHalfDepth - lightZ);
+
+    const std::array<simd_float3, 4> positions = {p0, p1, p2, p3};
+    const std::array<std::uint32_t, 6> indices = {0, 1, 2, 0, 2, 3};
+
+    auto mesh = builder.addTriangleMesh(positions, indices);
+
+    Material lightMaterial{};
+    lightMaterial.albedo = {1.0f, 0.98f, 0.92f};
+    lightMaterial.emission = {18.0f, 17.5f, 17.0f};
+    lightMaterial.roughness = 0.2f;
+
+    auto lightHandle = scene.addMaterial(lightMaterial);
+    scene.addInstance(mesh, lightHandle, matrix_identity_float4x4);
+}
+
 }  // namespace
 
 Scene createCornellBoxScene() {
@@ -75,7 +100,7 @@ Scene createCornellBoxScene() {
                                 simd_make_float3(roomHalfWidth, roomHalfHeight, 0.0f),
                                 simd_make_float3(-roomHalfWidth, roomHalfHeight, 0.0f));
     Material ceilingMaterial{};
-    ceilingMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    ceilingMaterial.albedo = {0.78f, 0.78f, 0.78f};
     auto ceilingMatHandle = scene.addMaterial(ceilingMaterial);
     scene.addInstance(ceilingMesh, ceilingMatHandle, matrix_identity_float4x4);
 
@@ -98,6 +123,7 @@ Scene createCornellBoxScene() {
                              simd_make_float3(-roomHalfWidth, roomHalfHeight, 0.0f));
     Material leftMaterial{};
     leftMaterial.albedo = {0.63f, 0.065f, 0.05f};
+    leftMaterial.roughness = 0.45f;
     auto leftMatHandle = scene.addMaterial(leftMaterial);
     scene.addInstance(leftMesh, leftMatHandle, matrix_identity_float4x4);
 
@@ -109,6 +135,7 @@ Scene createCornellBoxScene() {
                               simd_make_float3(roomHalfWidth, roomHalfHeight, -roomDepth));
     Material rightMaterial{};
     rightMaterial.albedo = {0.14f, 0.45f, 0.091f};
+    rightMaterial.roughness = 0.45f;
     auto rightMatHandle = scene.addMaterial(rightMaterial);
     scene.addInstance(rightMesh, rightMatHandle, matrix_identity_float4x4);
 
@@ -117,7 +144,8 @@ Scene createCornellBoxScene() {
     const simd_float3 shortMax = simd_make_float3(-0.1f, -roomHalfHeight + 0.6f, -0.7f);
     auto boxMesh = addAxisAlignedBox(builder, shortMin, shortMax);
     Material blockMaterial{};
-    blockMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    blockMaterial.albedo = {0.73f, 0.73f, 0.73f};
+    blockMaterial.roughness = 0.35f;
     auto blockMatHandle = scene.addMaterial(blockMaterial);
     scene.addInstance(boxMesh, blockMatHandle, matrix_identity_float4x4);
 
@@ -126,6 +154,8 @@ Scene createCornellBoxScene() {
     const simd_float3 tallMax = simd_make_float3(0.6f, -roomHalfHeight + 0.8f, -1.0f);
     auto tallBoxMesh = addAxisAlignedBox(builder, tallMin, tallMax);
     scene.addInstance(tallBoxMesh, blockMatHandle, matrix_identity_float4x4);
+
+    addCeilingLight(builder, scene);
 
     return scene;
 }

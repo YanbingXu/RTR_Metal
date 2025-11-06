@@ -106,6 +106,7 @@ When multiple valid approaches exist, choose based on:
 
 ### Learning the Codebase
 
+- Start with [`AGENTS.md`](../AGENTS.md) for a current snapshot of modules, build flow, and contributor expectations.
 - Find 3 similar features/components
 - Identify common patterns and conventions
 - Use same libraries/utilities when possible

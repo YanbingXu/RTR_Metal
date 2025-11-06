@@ -15,14 +15,22 @@
 #include "RTRMetalEngine/Rendering/RayTracingPipeline.hpp"
 #include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
 
+#include <algorithm>
 #include <array>
+#include <cctype>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <fstream>
 #include <iostream>
+#include <limits>
 #include <random>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
+#include "RTRMetalEngine/Scene/CornellBox.hpp"
 #include "RTRMetalEngine/Scene/Scene.hpp"
 #include "RTRMetalEngine/Scene/SceneBuilder.hpp"
 
@@ -33,6 +41,44 @@ namespace {
 constexpr std::uint32_t kDiagnosticWidth = 512;
 constexpr std::uint32_t kDiagnosticHeight = 512;
 constexpr std::size_t kRayTracingPixelStride = sizeof(float) * 4;  // RGBA32F
+
+uint8_t floatToSRGBByte(float value) {
+    const float clamped = std::clamp(value, 0.0f, 1.0f);
+    const long rounded = std::lroundf(clamped * 255.0f);
+    return static_cast<uint8_t>(std::clamp<long>(rounded, 0, 255));
+}
+
+enum class RayTracingShadingMode {
+    Auto,
+    HardwareOnly,
+    GradientOnly,
+};
+
+std::string_view shadingModeLabel(RayTracingShadingMode mode) {
+    switch (mode) {
+    case RayTracingShadingMode::Auto:
+        return "auto";
+    case RayTracingShadingMode::HardwareOnly:
+        return "hardware";
+    case RayTracingShadingMode::GradientOnly:
+        return "gradient";
+    }
+    return "auto";
+}
+
+RayTracingShadingMode parseShadingMode(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (value == "gpu" || value == "hardware" || value == "rt") {
+        return RayTracingShadingMode::HardwareOnly;
+    }
+    if (value == "cpu" || value == "fallback" || value == "gradient") {
+        return RayTracingShadingMode::GradientOnly;
+    }
+    return RayTracingShadingMode::Auto;
+}
 
 }  // namespace
 
@@ -64,34 +110,53 @@ struct RayTracingResources {
     id<MTLTexture> accumulationTexture = nil;
     id<MTLTexture> randomTexture = nil;
     id<MTLBuffer> resourceBuffer = nil;
+    BufferHandle instanceBuffer;
+    BufferHandle materialBuffer;
+    BufferHandle fallbackVertexBuffer;
+    BufferHandle fallbackIndexBuffer;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
+    NSUInteger resourceHeaderSize = 0;
+    std::size_t meshCount = 0;
 
     void reset() {
         accumulationTexture = nil;
         randomTexture = nil;
         resourceBuffer = nil;
+        instanceBuffer = {};
+        materialBuffer = {};
+        fallbackVertexBuffer = {};
+        fallbackIndexBuffer = {};
         width = 0;
         height = 0;
+        resourceHeaderSize = 0;
+        meshCount = 0;
     }
 };
+
+constexpr std::size_t kUniformRingSize = 3;
 
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
         : config(std::move(cfg)), context(), bufferAllocator(context), geometryStore(bufferAllocator),
-          asBuilder(context) {
+          asBuilder(context), shadingMode(parseShadingMode(config.shadingMode)) {
         if (!context.isValid()) {
             core::Logger::error("Renderer", "Metal context initialization failed");
         } else {
             core::Logger::info("Renderer", "Renderer configured for %s", config.applicationName.c_str());
             context.logDeviceInfo();
-            if (!asBuilder.isRayTracingSupported()) {
-                core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
+            if (shadingMode == RayTracingShadingMode::GradientOnly) {
+                core::Logger::info("Renderer",
+                                   "Gradient-only shading mode selected; skipping hardware ray tracing setup");
             } else {
-                if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
+                if (!asBuilder.isRayTracingSupported()) {
+                    core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
+                } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
                     core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
                 }
-                buildDiagnosticAccelerationStructure();
+            }
+            if (!initializeScene()) {
+                core::Logger::warn("Renderer", "Scene initialization failed; falling back to gradient pipeline");
             }
         }
     }
@@ -100,7 +165,9 @@ struct Renderer::Impl {
         target.reset();
         fallbackRayGenState = nil;
         resources.reset();
-        rayTracingUniformBuffer = nil;
+        for (std::size_t i = 0; i < uniformBuffers.size(); ++i) {
+            uniformBuffers[i] = nil;
+        }
     }
 
     void renderFrame() {
@@ -108,25 +175,49 @@ struct Renderer::Impl {
             core::Logger::warn("Renderer", "Skipping frame: Metal context invalid");
             return;
         }
-        const bool targetReady = target.isValid() ? true : ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight);
 
-        if (isRayTracingReady()) {
+        const std::uint32_t requestedWidth = std::max<std::uint32_t>(1u, targetWidth);
+        const std::uint32_t requestedHeight = std::max<std::uint32_t>(1u, targetHeight);
+        if (!target.matches(requestedWidth, requestedHeight)) {
+            ensureOutputTarget(requestedWidth, requestedHeight);
+        }
+
+        bool wroteImage = false;
+        const bool hardwareDesired = wantsHardwareRayTracing() && rayTracingPipeline.isValid();
+
+        if (hardwareDesired && isRayTracingReady()) {
             core::Logger::info("Renderer",
-                               "Ray tracing target ready (%ux%u RGBA32F)",
+                               "Dispatching hardware ray tracing (%ux%u, mode=%s)",
                                target.width,
-                               target.height);
-            if (!dispatchRayTracingPass()) {
-                core::Logger::warn("Renderer", "Ray tracing dispatch unavailable; attempting fallback gradient");
-                if (!dispatchFallbackGradient()) {
-                    core::Logger::warn("Renderer", "Fallback gradient dispatch failed");
-                }
+                               target.height,
+                               std::string(shadingModeLabel(shadingMode)).c_str());
+            if (dispatchRayTracingPass()) {
+                wroteImage = true;
+            } else {
+                core::Logger::warn("Renderer",
+                                   "Hardware ray tracing dispatch failed; %s fallback %s",
+                                   allowsGradientFallback() ? "attempting" : "skipping",
+                                   allowsGradientFallback() ? "gradient" : "(disabled)");
             }
-        } else {
-            core::Logger::info("Renderer", "Ray tracing not ready; executing fallback gradient");
-            if (!targetReady || !dispatchFallbackGradient()) {
-                core::Logger::warn("Renderer", "Fallback gradient dispatch skipped");
+        } else if (hardwareDesired && shadingMode == RayTracingShadingMode::HardwareOnly) {
+            core::Logger::error("Renderer",
+                                "Hardware-only mode requested but ray tracing resources are unavailable");
+        }
+
+        if (!wroteImage && allowsGradientFallback()) {
+            if (!dispatchFallbackGradient()) {
+                core::Logger::warn("Renderer", "Fallback gradient dispatch failed");
+            } else {
+                wroteImage = true;
             }
         }
+
+        if (wroteImage) {
+            writeRayTracingOutput();
+        } else {
+            core::Logger::warn("Renderer", "No renderable output produced this frame");
+        }
+
         frameCounter++;
         std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
     }
@@ -142,11 +233,27 @@ struct Renderer::Impl {
     RayTracingTarget target;
     RayTracingResources resources;
     id<MTLComputePipelineState> fallbackRayGenState = nil;
-    id<MTLBuffer> rayTracingUniformBuffer = nil;
+    std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
+    std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
+    std::vector<RayTracingInstanceResource> instanceResources;
+    std::vector<RayTracingMaterialResource> materialResources;
+    std::string outputPath = "renderer_output.ppm";
+    std::uint32_t targetWidth = kDiagnosticWidth;
+    std::uint32_t targetHeight = kDiagnosticHeight;
+    bool debugAlbedo = false;
+    RayTracingShadingMode shadingMode = RayTracingShadingMode::Auto;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
+    }
+
+    [[nodiscard]] bool wantsHardwareRayTracing() const noexcept {
+        return shadingMode != RayTracingShadingMode::GradientOnly;
+    }
+
+    [[nodiscard]] bool allowsGradientFallback() const noexcept {
+        return shadingMode != RayTracingShadingMode::HardwareOnly;
     }
 
     [[nodiscard]] bool ensureFallbackPipeline() {
@@ -196,7 +303,7 @@ struct Renderer::Impl {
     }
 
     [[nodiscard]] bool dispatchFallbackGradient() {
-        if (!ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight)) {
+        if (!ensureOutputTarget(targetWidth, targetHeight)) {
             core::Logger::warn("Renderer", "Fallback dispatch skipped: no output target");
             return false;
         }
@@ -267,7 +374,7 @@ struct Renderer::Impl {
             return false;
         }
 
-        if (!ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight)) {
+        if (!ensureOutputTarget(targetWidth, targetHeight)) {
             core::Logger::warn("Renderer", "Unable to prepare output target for ray tracing dispatch");
             return false;
         }
@@ -282,7 +389,13 @@ struct Renderer::Impl {
             return false;
         }
 
-        updateRayTracingUniforms();
+        id<MTLBuffer> uniformBuffer = acquireUniformBufferForFrame();
+        if (!uniformBuffer) {
+            core::Logger::error("Renderer", "Uniform buffer unavailable for ray tracing dispatch");
+            return false;
+        }
+
+        updateRayTracingUniforms(uniformBuffer);
 
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)context.rawCommandQueue();
         if (!queue) {
@@ -310,9 +423,52 @@ struct Renderer::Impl {
         }
 
         [encoder setComputePipelineState:pipelineState];
-        [encoder setBuffer:rayTracingUniformBuffer offset:0 atIndex:0];
+        if (rayTracingPipeline.requiresAccelerationStructure()) {
+            id<MTLAccelerationStructure> accelerationStructure =
+                topLevelStructure.isValid() ? (__bridge id<MTLAccelerationStructure>)topLevelStructure.rawHandle() : nil;
+            if (accelerationStructure) {
+                if ([encoder respondsToSelector:@selector(setAccelerationStructure:atBufferIndex:)]) {
+                    [encoder setAccelerationStructure:accelerationStructure atBufferIndex:0];
+                } else {
+                    core::Logger::warn("Renderer", "Compute encoder missing setAccelerationStructure API; TLAS not bound");
+                }
+            } else {
+                core::Logger::warn("Renderer", "TLAS unavailable; ray tracing kernel may miss scene data");
+            }
+        }
+
+        [encoder setBuffer:uniformBuffer offset:0 atIndex:1];
         if (resources.resourceBuffer != nil) {
-            [encoder setBuffer:resources.resourceBuffer offset:0 atIndex:1];
+            [encoder setBuffer:resources.resourceBuffer offset:0 atIndex:2];
+            const NSUInteger meshOffset = resources.resourceHeaderSize;
+            const NSUInteger bufferLength = [resources.resourceBuffer length];
+            const NSUInteger offset = meshOffset < bufferLength ? meshOffset : 0;
+            [encoder setBuffer:resources.resourceBuffer offset:offset atIndex:3];
+        }
+        if (resources.fallbackVertexBuffer.isValid()) {
+            id<MTLBuffer> fallbackVertices = (__bridge id<MTLBuffer>)resources.fallbackVertexBuffer.nativeHandle();
+            [encoder setBuffer:fallbackVertices offset:0 atIndex:4];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:4];
+        }
+        if (resources.fallbackIndexBuffer.isValid()) {
+            id<MTLBuffer> fallbackIndices = (__bridge id<MTLBuffer>)resources.fallbackIndexBuffer.nativeHandle();
+            [encoder setBuffer:fallbackIndices offset:0 atIndex:5];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:5];
+        }
+        id<MTLBuffer> instanceBuffer = (__bridge id<MTLBuffer>)resources.instanceBuffer.nativeHandle();
+        if (instanceBuffer) {
+            [encoder setBuffer:instanceBuffer offset:0 atIndex:6];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:6];
+        }
+
+        id<MTLBuffer> materialBuffer = (__bridge id<MTLBuffer>)resources.materialBuffer.nativeHandle();
+        if (materialBuffer) {
+            [encoder setBuffer:materialBuffer offset:0 atIndex:7];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:7];
         }
         [encoder setTexture:target.colorTexture atIndex:0];
         if (resources.accumulationTexture != nil) {
@@ -352,37 +508,55 @@ struct Renderer::Impl {
         return true;
     }
 
-    [[nodiscard]] bool ensureRayTracingUniformBuffer(std::uint32_t width, std::uint32_t height) {
+    [[nodiscard]] bool ensureRayTracingUniformBuffer(std::uint32_t /*width*/, std::uint32_t /*height*/) {
         if (!context.isValid()) {
             return false;
         }
 
-        if (rayTracingUniformBuffer != nil) {
-            return true;
-        }
-
         id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
         if (!device) {
-            core::Logger::error("Renderer", "Unable to acquire Metal device for uniform buffer");
+            core::Logger::error("Renderer", "Unable to acquire Metal device for uniform buffers");
             return false;
         }
 
-        const NSUInteger length = sizeof(RayTracingUniforms);
-        rayTracingUniformBuffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
-        if (!rayTracingUniformBuffer) {
-            core::Logger::error("Renderer", "Failed to allocate ray tracing uniform buffer");
-            return false;
+        bool allValid = true;
+        for (std::size_t i = 0; i < uniformBuffers.size(); ++i) {
+            if (uniformBuffers[i] != nil) {
+                continue;
+            }
+
+            id<MTLBuffer> buffer = [device newBufferWithLength:sizeof(RayTracingUniforms)
+                                                        options:MTLResourceStorageModeShared];
+            if (!buffer) {
+                core::Logger::error("Renderer", "Failed to allocate uniform buffer %zu", i);
+                allValid = false;
+                break;
+            }
+
+            NSString* label = [NSString stringWithFormat:@"rtr.uniform[%zu]", i];
+            [buffer setLabel:label];
+            uniformBuffers[i] = buffer;
         }
 
-        return true;
+        return allValid && uniformBuffers[0] != nil;
     }
 
-    void updateRayTracingUniforms() {
-        if (!rayTracingUniformBuffer) {
+    [[nodiscard]] id<MTLBuffer> acquireUniformBufferForFrame() {
+        if (uniformBuffers.empty()) {
+            return nil;
+        }
+
+        const std::size_t index = uniformBufferCursor;
+        uniformBufferCursor = (uniformBufferCursor + 1) % uniformBuffers.size();
+        return uniformBuffers[index];
+    }
+
+    void updateRayTracingUniforms(id<MTLBuffer> buffer) {
+        if (!buffer) {
             return;
         }
 
-        auto* uniforms = reinterpret_cast<RayTracingUniforms*>([rayTracingUniformBuffer contents]);
+        auto* uniforms = reinterpret_cast<RayTracingUniforms*>([buffer contents]);
         if (!uniforms) {
             return;
         }
@@ -395,6 +569,13 @@ struct Renderer::Impl {
         uniforms->width = target.width;
         uniforms->height = target.height;
         uniforms->frameIndex = frameCounter;
+        uniforms->flags = debugAlbedo ? 0x1u : 0u;
+
+        if (debugAlbedo) {
+            core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->flags);
+        }
+
+        [buffer didModifyRange:NSMakeRange(0, sizeof(RayTracingUniforms))];
     }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
@@ -508,87 +689,418 @@ struct Renderer::Impl {
             }
         }
 
-        if (resources.resourceBuffer == nil) {
-            const NSUInteger length = sizeof(std::uint32_t) * 4;
-            id<MTLBuffer> buffer = [device newBufferWithLength:length options:MTLResourceStorageModeShared];
+        const auto& uploadedMeshes = geometryStore.uploadedMeshes();
+        const std::size_t meshCount = uploadedMeshes.size();
+        const std::size_t headerSize = sizeof(RayTracingResourceHeader);
+        const std::size_t meshEntrySize = sizeof(RayTracingMeshResource);
+
+        std::vector<std::uint8_t> fallbackVertexData;
+        std::vector<std::uint32_t> fallbackIndexData;
+        const std::uint32_t kInvalidOffset = std::numeric_limits<std::uint32_t>::max();
+        const bool supportsGPUAddress = false;  // TODO: enable once GPU addresses are validated for path tracing
+
+        if (meshCount > 0) {
+            std::size_t estimatedVertexBytes = 0;
+            std::size_t estimatedIndexCount = 0;
+            for (const auto& mesh : uploadedMeshes) {
+                estimatedVertexBytes += mesh.vertexStride * mesh.vertexCount;
+                estimatedIndexCount += mesh.indexCount;
+            }
+            fallbackVertexData.reserve(estimatedVertexBytes);
+            fallbackIndexData.reserve(estimatedIndexCount);
+        }
+
+        std::size_t requiredLength = headerSize + meshCount * meshEntrySize;
+        if (requiredLength == 0) {
+            requiredLength = headerSize;
+        }
+
+        if (resources.resourceBuffer == nil || static_cast<std::size_t>([resources.resourceBuffer length]) < requiredLength) {
+            id<MTLBuffer> buffer = [device newBufferWithLength:requiredLength options:MTLResourceStorageModeShared];
             if (!buffer) {
-                core::Logger::error("Renderer", "Failed to allocate ray tracing resource buffer");
+                core::Logger::error("Renderer", "Failed to allocate ray tracing resource buffer (%zu bytes)",
+                                    requiredLength);
                 success = false;
             } else {
+                NSString* label = @"rtr.resourcePointers";
+                [buffer setLabel:label];
                 resources.resourceBuffer = buffer;
+                resources.resourceHeaderSize = static_cast<NSUInteger>(headerSize);
             }
         }
 
         if (resources.resourceBuffer != nil) {
-            auto* data = static_cast<std::uint32_t*>([resources.resourceBuffer contents]);
-            if (data) {
-                data[0] = static_cast<std::uint32_t>(bottomLevelStructures.size());
-                data[1] = resources.width;
-                data[2] = resources.height;
-                data[3] = frameCounter;
+            resources.resourceHeaderSize = static_cast<NSUInteger>(headerSize);
+            auto* header = reinterpret_cast<RayTracingResourceHeader*>([resources.resourceBuffer contents]);
+            if (header) {
+                *header = {};
+                header->geometryCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                    meshCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->randomTextureWidth = resources.randomTexture != nil
+                                               ? static_cast<std::uint32_t>([resources.randomTexture width])
+                                               : 0U;
+                header->randomTextureHeight = resources.randomTexture != nil
+                                                ? static_cast<std::uint32_t>([resources.randomTexture height])
+                                                : 0U;
+
+                auto* meshEntries = reinterpret_cast<RayTracingMeshResource*>(
+                    reinterpret_cast<std::uint8_t*>(header) + headerSize);
+
+                if (meshCount == 0) {
+                    core::Logger::warn("Renderer", "No uploaded meshes available for ray tracing scene");
+                }
+
+                for (std::size_t i = 0; i < meshCount; ++i) {
+                    const auto& meshBuffers = uploadedMeshes[i];
+                    RayTracingMeshResource entry{};
+                    entry.vertexCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                        meshBuffers.vertexCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                    entry.indexCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                        meshBuffers.indexCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                    entry.vertexStride = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(meshBuffers.vertexStride,
+                                              static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                    entry.materialIndex = 0U;
+                    entry.fallbackVertexOffset = kInvalidOffset;
+                    entry.fallbackIndexOffset = kInvalidOffset;
+
+                    id<MTLBuffer> vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuVertexBuffer.nativeHandle();
+                    id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuIndexBuffer.nativeHandle();
+
+                    if (supportsGPUAddress && vertexBuffer) {
+                        entry.vertexBufferAddress = vertexBuffer.gpuAddress;
+                    }
+                    if (supportsGPUAddress && indexBuffer) {
+                        entry.indexBufferAddress = indexBuffer.gpuAddress;
+                    }
+
+                    const bool needsFallback = entry.vertexBufferAddress == 0ULL || entry.indexBufferAddress == 0ULL;
+                    if (needsFallback && vertexBuffer && indexBuffer) {
+                        const auto* vertexBytes = static_cast<const std::uint8_t*>([vertexBuffer contents]);
+                        const auto* indexBytes = static_cast<const std::uint32_t*>([indexBuffer contents]);
+                        if (vertexBytes && indexBytes) {
+                            const std::size_t vertexByteLength = meshBuffers.vertexStride * meshBuffers.vertexCount;
+                            const std::size_t indexElementCount = meshBuffers.indexCount;
+                            const std::size_t vertexAlignment = 16;
+
+                            std::size_t vertexOffset = fallbackVertexData.size();
+                            const std::size_t padding = (vertexAlignment - (vertexOffset % vertexAlignment)) % vertexAlignment;
+                            fallbackVertexData.insert(fallbackVertexData.end(), padding, static_cast<std::uint8_t>(0));
+                            vertexOffset = fallbackVertexData.size();
+                            fallbackVertexData.insert(fallbackVertexData.end(),
+                                                      vertexBytes,
+                                                      vertexBytes + vertexByteLength);
+                            if (vertexOffset <= kInvalidOffset && vertexByteLength <= kInvalidOffset) {
+                                entry.fallbackVertexOffset = static_cast<std::uint32_t>(vertexOffset);
+                            }
+
+                            const std::size_t indexOffset = fallbackIndexData.size();
+                            fallbackIndexData.insert(fallbackIndexData.end(), indexBytes, indexBytes + indexElementCount);
+                            if (indexOffset <= kInvalidOffset) {
+                                entry.fallbackIndexOffset = static_cast<std::uint32_t>(indexOffset);
+                            }
+                        }
+                    }
+
+                    meshEntries[i] = entry;
+
+                    core::Logger::info("Renderer",
+                                        "Mesh[%zu]: vtx=%u idx=%u stride=%u gpuAddr(v=%llx, i=%llx) fallback(v=%u, i=%u)",
+                                        i,
+                                        entry.vertexCount,
+                                        entry.indexCount,
+                                        entry.vertexStride,
+                                        static_cast<unsigned long long>(entry.vertexBufferAddress),
+                                        static_cast<unsigned long long>(entry.indexBufferAddress),
+                                        entry.fallbackVertexOffset,
+                                        entry.fallbackIndexOffset);
+                }
+
+                header->instanceCount = static_cast<std::uint32_t>(
+                    std::min<std::size_t>(instanceResources.size(),
+                                           static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->materialCount = static_cast<std::uint32_t>(
+                    std::min<std::size_t>(materialResources.size(),
+                                           static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+
+                const NSUInteger bytesToMark = static_cast<NSUInteger>(headerSize + meshCount * meshEntrySize);
+                [resources.resourceBuffer didModifyRange:NSMakeRange(0, bytesToMark)];
+                resources.meshCount = meshCount;
             }
         }
+
+        auto uploadBuffer = [&](BufferHandle& handle, const void* data, std::size_t length, const char* label) {
+            if (length == 0) {
+                handle = {};
+                return;
+            }
+
+            if (!handle.isValid() || handle.length() < length) {
+                handle = bufferAllocator.createBuffer(length, data, label);
+            } else {
+                id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
+                if (buffer && data) {
+                    std::memcpy([buffer contents], data, length);
+                    [buffer didModifyRange:NSMakeRange(0, length)];
+                }
+            }
+        };
+
+        uploadBuffer(resources.fallbackVertexBuffer,
+                     fallbackVertexData.empty() ? nullptr : fallbackVertexData.data(),
+                     fallbackVertexData.size(),
+                     "rtr.fallbackVertices");
+
+        uploadBuffer(resources.fallbackIndexBuffer,
+                     fallbackIndexData.empty() ? nullptr : fallbackIndexData.data(),
+                     fallbackIndexData.size() * sizeof(std::uint32_t),
+                     "rtr.fallbackIndices");
+
+        core::Logger::info("Renderer",
+                           "Ray tracing resources: fallback vertices=%zu bytes, fallback indices=%zu elements",
+                           fallbackVertexData.size(),
+                           fallbackIndexData.size());
+        if (!fallbackVertexData.empty()) {
+            const float* vertexFloats = reinterpret_cast<const float*>(fallbackVertexData.data());
+            core::Logger::info("Renderer",
+                               "First fallback vertex position = (%.3f, %.3f, %.3f)",
+                               vertexFloats[0],
+                               vertexFloats[1],
+                               vertexFloats[2]);
+        }
+        if (!fallbackIndexData.empty()) {
+            core::Logger::info("Renderer",
+                               "First fallback triangle indices = (%u, %u, %u)",
+                               fallbackIndexData[0],
+                               fallbackIndexData[1],
+                               fallbackIndexData[2]);
+        }
+
+        uploadBuffer(resources.instanceBuffer,
+                     instanceResources.data(),
+                     instanceResources.size() * sizeof(RayTracingInstanceResource),
+                     "rtr.instances");
+
+        uploadBuffer(resources.materialBuffer,
+                     materialResources.data(),
+                     materialResources.size() * sizeof(RayTracingMaterialResource),
+                     "rtr.materials");
 
         return success;
     }
 
-    void buildDiagnosticAccelerationStructure() {
-        std::array<simd_float3, 3> positions = {
-            simd_make_float3(0.0F, 0.0F, 0.0F),
-            simd_make_float3(0.5F, 0.0F, 0.0F),
-            simd_make_float3(0.0F, 0.5F, 0.0F)};
-        std::array<std::uint32_t, 3> indices = {0, 1, 2};
-
-        scene::Scene scene;
-        scene::SceneBuilder builder(scene);
-        auto meshHandle = builder.addTriangleMesh(positions, indices);
-        if (!meshHandle.isValid()) {
-            core::Logger::error("Renderer", "Failed to create diagnostic mesh");
-            return;
-        }
-        builder.addDefaultMaterial();
-        scene.addInstance(meshHandle, scene::MaterialHandle{0}, matrix_identity_float4x4);
-
-        const auto uploadIndex = geometryStore.uploadMesh(scene.meshes()[meshHandle.index], "diagnostic_triangle");
-        if (!uploadIndex.has_value()) {
-            core::Logger::warn("Renderer", "Geometry upload failed; skipping diagnostic AS build");
-            return;
-        }
-
-        void* queueHandle = context.rawCommandQueue();
-        const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
-        auto blas = asBuilder.buildBottomLevel(meshBuffers, "diagnostic_triangle", queueHandle);
-        if (blas.has_value()) {
-            core::Logger::info("Renderer", "Built diagnostic BLAS (%zu bytes)", blas->sizeInBytes());
-            bottomLevelStructures.push_back(std::move(*blas));
-
-            InstanceBuildInput instance{};
-            instance.structure = &bottomLevelStructures.back();
-            instance.transform = matrix_identity_float4x4;
-            instance.userID = 0;
-            instance.mask = 0xFF;
-
-            std::array<InstanceBuildInput, 1> instances = {instance};
-            auto tlas = asBuilder.buildTopLevel(instances, "diagnostic_scene", queueHandle);
-            if (tlas.has_value()) {
-                core::Logger::info("Renderer", "Built diagnostic TLAS (%zu bytes)", tlas->sizeInBytes());
-                topLevelStructure = std::move(*tlas);
-                const bool targetReady = ensureOutputTarget(kDiagnosticWidth, kDiagnosticHeight);
-                const bool pipelineReady = ensureRayTracingResources(kDiagnosticWidth, kDiagnosticHeight);
-                if (!targetReady) {
-                    core::Logger::warn("Renderer", "Failed to prepare ray tracing target after TLAS build");
-                }
-                if (!pipelineReady) {
-                    core::Logger::warn("Renderer", "Failed to prepare ray tracing resources after TLAS build");
-                }
-            } else {
-                core::Logger::warn("Renderer", "Diagnostic TLAS build skipped");
-            }
-        } else {
-            core::Logger::warn("Renderer", "Diagnostic BLAS build skipped");
-        }
-    }
+    bool initializeScene();
+    bool loadSceneInternal(const scene::Scene& scene);
+    void writeRayTracingOutput() const;
+    void setOutputPathInternal(std::string path);
+    void setRenderSizeInternal(std::uint32_t width, std::uint32_t height);
+    void setDebugModeInternal(bool enabled) { debugAlbedo = enabled; }
 };
+
+bool Renderer::Impl::initializeScene() {
+    scene::Scene scene = scene::createCornellBoxScene();
+    if (!loadSceneInternal(scene)) {
+        core::Logger::warn("Renderer", "Falling back to gradient pipeline; scene load failed");
+        return false;
+    }
+    return true;
+}
+
+bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
+    bottomLevelStructures.clear();
+    topLevelStructure = AccelerationStructure{};
+    instanceResources.clear();
+    materialResources.clear();
+    target.reset();
+    resources.reset();
+
+    if (!wantsHardwareRayTracing()) {
+        core::Logger::info("Renderer",
+                            "Gradient-only mode active; skipping acceleration structure build for scene");
+        return true;
+    }
+
+    core::Logger::info("Renderer", "Loading scene with %zu meshes, %zu materials, %zu instances",
+                       scene.meshes().size(),
+                       scene.materials().size(),
+                       scene.instances().size());
+
+    if (!context.isValid()) {
+        core::Logger::warn("Renderer", "Metal context invalid; cannot load scene");
+        return false;
+    }
+
+    void* queueHandle = context.rawCommandQueue();
+    if (!queueHandle) {
+        core::Logger::error("Renderer", "Command queue unavailable for scene load");
+        return false;
+    }
+
+    const auto& meshes = scene.meshes();
+    const auto& materials = scene.materials();
+    const auto& instances = scene.instances();
+
+    std::vector<std::size_t> meshUploadIndices(meshes.size(), static_cast<std::size_t>(-1));
+    std::vector<std::size_t> meshBLASIndices(meshes.size(), static_cast<std::size_t>(-1));
+
+    for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+        const std::string label = "scene_mesh_" + std::to_string(meshIndex);
+        const auto uploadIndex = geometryStore.uploadMesh(meshes[meshIndex], label);
+        if (!uploadIndex.has_value()) {
+            core::Logger::warn("Renderer", "Failed to upload mesh %zu", meshIndex);
+            continue;
+        }
+
+        meshUploadIndices[meshIndex] = *uploadIndex;
+        const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
+        auto blas = asBuilder.buildBottomLevel(meshBuffers, label, queueHandle);
+        if (!blas.has_value()) {
+            core::Logger::warn("Renderer", "Failed to build BLAS for mesh %zu", meshIndex);
+            continue;
+        }
+
+        meshBLASIndices[meshIndex] = bottomLevelStructures.size();
+        bottomLevelStructures.push_back(std::move(*blas));
+    }
+
+    if (bottomLevelStructures.empty()) {
+        core::Logger::warn("Renderer", "No BLAS structures available; scene load aborted");
+        return false;
+    }
+
+    std::vector<InstanceBuildInput> instanceInputs;
+    instanceInputs.reserve(instances.size());
+    instanceResources.clear();
+    instanceResources.reserve(instances.size());
+
+    for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
+        const auto& instance = instances[instanceIndex];
+        if (!instance.mesh.isValid() || instance.mesh.index >= meshBLASIndices.size()) {
+            continue;
+        }
+
+        const std::size_t blasIndex = meshBLASIndices[instance.mesh.index];
+        const std::size_t meshResourceIndex = meshUploadIndices[instance.mesh.index];
+        if (blasIndex == static_cast<std::size_t>(-1) || meshResourceIndex == static_cast<std::size_t>(-1)) {
+            continue;
+        }
+
+        InstanceBuildInput input{};
+        input.structure = &bottomLevelStructures[blasIndex];
+        input.transform = instance.transform;
+        input.userID = static_cast<std::uint32_t>(instanceInputs.size());
+        input.mask = 0xFF;
+        instanceInputs.push_back(input);
+
+        RayTracingInstanceResource resource{};
+        resource.objectToWorld = instance.transform;
+        resource.worldToObject = simd_inverse(instance.transform);
+        resource.meshIndex = static_cast<std::uint32_t>(meshResourceIndex);
+        resource.materialIndex = (instance.material.isValid() && instance.material.index < materials.size())
+                                     ? static_cast<std::uint32_t>(instance.material.index)
+                                     : 0U;
+        instanceResources.push_back(resource);
+    }
+
+    if (instanceInputs.empty()) {
+        core::Logger::warn("Renderer", "No valid instances for TLAS build");
+        return false;
+    }
+
+    auto tlas = asBuilder.buildTopLevel(instanceInputs, "scene_tlas", queueHandle);
+    if (!tlas.has_value()) {
+        core::Logger::warn("Renderer", "Failed to build TLAS for scene");
+        return false;
+    }
+    topLevelStructure = std::move(*tlas);
+    core::Logger::info("Renderer", "TLAS built: size=%zu bytes", topLevelStructure.sizeInBytes());
+
+    materialResources.clear();
+    materialResources.reserve(materials.size());
+    for (const auto& material : materials) {
+        RayTracingMaterialResource resource{};
+        resource.albedo = material.albedo;
+        resource.roughness = material.roughness;
+        resource.emission = material.emission;
+        resource.metallic = material.metallic;
+        resource.reflectivity = material.reflectivity;
+        resource.indexOfRefraction = material.indexOfRefraction;
+        materialResources.push_back(resource);
+    }
+
+    const bool pipelineReady = ensureRayTracingResources(targetWidth, targetHeight);
+    if (!pipelineReady) {
+        core::Logger::warn("Renderer", "Failed to allocate ray tracing resources for scene");
+    }
+
+    return topLevelStructure.isValid();
+}
+
+void Renderer::Impl::writeRayTracingOutput() const {
+    if (outputPath.empty() || target.readbackBuffer == nil || target.width == 0 || target.height == 0) {
+        return;
+    }
+
+    const std::size_t pixelCount = static_cast<std::size_t>(target.width) * target.height;
+    const float* src = static_cast<const float*>([target.readbackBuffer contents]);
+    if (!src) {
+        return;
+    }
+
+    float minValue = std::numeric_limits<float>::max();
+    float maxValue = std::numeric_limits<float>::lowest();
+    const std::size_t sampleCount = std::min<std::size_t>(pixelCount * 4, 16);
+    for (std::size_t i = 0; i < pixelCount * 4; ++i) {
+        minValue = std::min(minValue, src[i]);
+        maxValue = std::max(maxValue, src[i]);
+    }
+    core::Logger::info("Renderer",
+                       "First pixel RGBA = (%.4f, %.4f, %.4f, %.4f); min=%.4f max=%.4f",
+                       src[0], src[1], src[2], src[3], minValue, maxValue);
+
+    std::vector<uint8_t> bytes(pixelCount * 3);
+    for (std::size_t i = 0; i < pixelCount; ++i) {
+        const std::size_t base = i * 4;
+        bytes[i * 3 + 0] = floatToSRGBByte(src[base + 0]);
+        bytes[i * 3 + 1] = floatToSRGBByte(src[base + 1]);
+        bytes[i * 3 + 2] = floatToSRGBByte(src[base + 2]);
+    }
+
+    std::ofstream file(outputPath, std::ios::binary);
+    if (!file) {
+        core::Logger::warn("Renderer", "Failed to write %s", outputPath.c_str());
+        return;
+    }
+
+    file << "P6\n" << target.width << " " << target.height << "\n255\n";
+    file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+    if (!file) {
+        core::Logger::warn("Renderer", "Failed to flush %s", outputPath.c_str());
+    } else {
+        core::Logger::info("Renderer", "Wrote ray tracing output to %s", outputPath.c_str());
+    }
+}
+
+void Renderer::Impl::setOutputPathInternal(std::string path) {
+    if (path.empty()) {
+        outputPath = "renderer_output.ppm";
+    } else {
+        outputPath = std::move(path);
+    }
+}
+
+void Renderer::Impl::setRenderSizeInternal(std::uint32_t width, std::uint32_t height) {
+    const std::uint32_t sanitizedWidth = std::max<std::uint32_t>(1u, width);
+    const std::uint32_t sanitizedHeight = std::max<std::uint32_t>(1u, height);
+    if (sanitizedWidth == targetWidth && sanitizedHeight == targetHeight) {
+        return;
+    }
+
+    targetWidth = sanitizedWidth;
+    targetHeight = sanitizedHeight;
+    target.reset();
+    resources.reset();
+}
 
 Renderer::Renderer(core::EngineConfig config)
     : impl_(std::make_unique<Impl>(std::move(config))) {}
@@ -603,5 +1115,15 @@ const core::EngineConfig& Renderer::config() const noexcept { return impl_->conf
 bool Renderer::isRayTracingReady() const noexcept { return impl_->isRayTracingReady(); }
 
 void Renderer::renderFrame() { impl_->renderFrame(); }
+
+void Renderer::setOutputPath(std::string path) { impl_->setOutputPathInternal(std::move(path)); }
+
+void Renderer::setRenderSize(std::uint32_t width, std::uint32_t height) {
+    impl_->setRenderSizeInternal(width, height);
+}
+
+bool Renderer::loadScene(const scene::Scene& scene) { return impl_->loadSceneInternal(scene); }
+
+void Renderer::setDebugMode(bool enabled) { impl_->setDebugModeInternal(enabled); }
 
 }  // namespace rtr::rendering

@@ -85,6 +85,11 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
   - Off-screen CLI + on-screen demo rendering Cornell Box–class scenes with reflections/shadows/refraction and automated validation (hash/logs).
   - Unified resource/shading architecture across backends (scene upload, geometry/material buffers, intersection/visible function tables, accumulation/random textures).
 
+- **example result **
+  - render result with reflections and shadow, global illumination, lighting and material, color bleeding be like:
+    ![example_render](Snipaste_2025-10-30_16-04-08.jpg)
+
+
 - **Development Plan**
   1. *Compute Ray Tracing Pipeline* – implement `raytracingKernel` (with linked/visible functions) and bind TLAS/BLAS on the compute encoder.
   2. *Resources & Buffers* – add per-frame uniform ring buffer, resource pointer buffers, accumulation/random textures; refactor renderer to consume them.

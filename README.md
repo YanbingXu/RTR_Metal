@@ -42,7 +42,10 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 
 ## Running
 
-- Sample: `./build/RTRMetalSample`
+- Sample: `./build/RTRMetalSample [--output=FILE] [--scene=cornell|reflective|glass] [--resolution=WxH] [--frames=N] [--mode=auto|hardware|fallback] [--hash] [--debug-albedo]`
+- `reflective` 和 `glass` 场景需要在 `assets/` 下提供 `mario.obj`（可从官方 MetalRayTracing 示例拷贝），否则会退回简易几何体。
+- 调试可使用 `--debug-albedo` 直接输出材质反照率，便于验证资源管线。
+- `--mode=hardware` 会强制尝试硬件 RT，`--mode=fallback` 则直接使用渐变调试输出；默认 `auto` 会在硬件失败时自动退回。
 - MPS Sample: `./build/RTRMetalMPSSample [--cpu|--gpu] [--compare] [--reset-accum] [--no-accum|--accum] [--accum-frames=N] [--resolution=WxH] [--output=<file>] [--cpu-output=<file>] [--gpu-output=<file>]`
 - Tests: `cd build && ctest --output-on-failure`
 
@@ -65,6 +68,7 @@ Project direction, architecture, and working agreements live in:
 - [`docs/Development_Guidelines.md`](docs/Development_Guidelines.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
+- [`AGENTS.md`](AGENTS.md) – Contributor quick-start covering structure, build/test flow, and review expectations
 
 The optional keys `accumulation = on|off`, `accumulationFrames = <n>`, `samplesPerPixel = <n>`, and `sampleSeed = <n>` can be added to `config/engine.ini` to provide defaults for the sample apps, and the CLI flags above override those values when present.
 
