@@ -22,10 +22,16 @@ public:
     [[nodiscard]] const core::EngineConfig& config() const noexcept;
     [[nodiscard]] bool isRayTracingReady() const noexcept;
     void renderFrame();
+    [[nodiscard]] bool renderFrameInteractive();
     void setOutputPath(std::string path);
     void setRenderSize(std::uint32_t width, std::uint32_t height);
     bool loadScene(const scene::Scene& scene);
     void setDebugMode(bool enabled);
+    void setShadingMode(const std::string& mode);
+
+    [[nodiscard]] void* deviceHandle() const noexcept;
+    [[nodiscard]] void* commandQueueHandle() const noexcept;
+    [[nodiscard]] void* currentColorTexture() const noexcept;
 
 private:
     struct Impl;

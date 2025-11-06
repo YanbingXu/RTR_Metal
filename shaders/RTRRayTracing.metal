@@ -484,3 +484,30 @@ kernel void mpsAccumulateKernel(device float4* accumulation [[buffer(0)]],
     accumulation[gid] = blended;
     current[gid] = blended;
 }
+
+struct RTRDisplayVertexOutput {
+    float4 position [[position]];
+    float2 texcoord;
+};
+
+vertex RTRDisplayVertexOutput RTRDisplayVertex(uint vertexId [[vertex_id]]) {
+    const float2 positions[3] = {
+        {-1.0f, -1.0f},
+        { 3.0f, -1.0f},
+        {-1.0f,  3.0f},
+    };
+    RTRDisplayVertexOutput output;
+    output.position = float4(positions[vertexId], 0.0f, 1.0f);
+    output.texcoord = float2((positions[vertexId].x + 1.0f) * 0.5f,
+                             1.0f - (positions[vertexId].y + 1.0f) * 0.5f);
+    return output;
+}
+
+fragment float4 RTRDisplayFragment(RTRDisplayVertexOutput in [[stage_in]],
+                                   texture2d<float, access::sample> source [[texture(0)]]) {
+    constexpr sampler textureSampler(filter::linear,
+                                     address::clamp_to_edge,
+                                     coord::normalized);
+    const float3 colour = clamp(source.sample(textureSampler, in.texcoord).xyz, 0.0f, 1.0f);
+    return float4(colour, 1.0f);
+}

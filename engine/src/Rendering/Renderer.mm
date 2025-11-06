@@ -170,27 +170,32 @@ struct Renderer::Impl {
         }
     }
 
-    void renderFrame() {
+    bool renderFrameInternal(bool writeOutput) {
         if (!context.isValid()) {
             core::Logger::warn("Renderer", "Skipping frame: Metal context invalid");
-            return;
+            return false;
         }
 
         const std::uint32_t requestedWidth = std::max<std::uint32_t>(1u, targetWidth);
         const std::uint32_t requestedHeight = std::max<std::uint32_t>(1u, targetHeight);
         if (!target.matches(requestedWidth, requestedHeight)) {
-            ensureOutputTarget(requestedWidth, requestedHeight);
+            if (!ensureOutputTarget(requestedWidth, requestedHeight)) {
+                return false;
+            }
         }
 
         bool wroteImage = false;
         const bool hardwareDesired = wantsHardwareRayTracing() && rayTracingPipeline.isValid();
+        const bool logFrame = writeOutput || frameCounter == 0;
 
         if (hardwareDesired && isRayTracingReady()) {
-            core::Logger::info("Renderer",
-                               "Dispatching hardware ray tracing (%ux%u, mode=%s)",
-                               target.width,
-                               target.height,
-                               std::string(shadingModeLabel(shadingMode)).c_str());
+            if (logFrame) {
+                core::Logger::info("Renderer",
+                                   "Dispatching hardware ray tracing (%ux%u, mode=%s)",
+                                   target.width,
+                                   target.height,
+                                   std::string(shadingModeLabel(shadingMode)).c_str());
+            }
             if (dispatchRayTracingPass()) {
                 wroteImage = true;
             } else {
@@ -213,13 +218,23 @@ struct Renderer::Impl {
         }
 
         if (wroteImage) {
-            writeRayTracingOutput();
-        } else {
+            if (writeOutput) {
+                writeRayTracingOutput();
+            }
+        } else if (logFrame) {
             core::Logger::warn("Renderer", "No renderable output produced this frame");
         }
 
         frameCounter++;
-        std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
+        if (writeOutput) {
+            std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
+        }
+
+        return wroteImage;
+    }
+
+    [[nodiscard]] void* currentColorTextureHandle() const noexcept {
+        return (__bridge void*)target.colorTexture;
     }
 
     core::EngineConfig config;
@@ -930,6 +945,24 @@ struct Renderer::Impl {
     void setOutputPathInternal(std::string path);
     void setRenderSizeInternal(std::uint32_t width, std::uint32_t height);
     void setDebugModeInternal(bool enabled) { debugAlbedo = enabled; }
+
+    void setShadingModeInternal(const std::string& value) {
+        const RayTracingShadingMode newMode = parseShadingMode(value);
+        config.shadingMode = value;
+        if (newMode == shadingMode) {
+            return;
+        }
+
+        shadingMode = newMode;
+
+        if (shadingMode != RayTracingShadingMode::GradientOnly && !rayTracingPipeline.isValid()) {
+            if (!asBuilder.isRayTracingSupported()) {
+                core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
+            } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
+                core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed for shading mode switch");
+            }
+        }
+    }
 };
 
 bool Renderer::Impl::initializeScene() {
@@ -1167,7 +1200,9 @@ const core::EngineConfig& Renderer::config() const noexcept { return impl_->conf
 
 bool Renderer::isRayTracingReady() const noexcept { return impl_->isRayTracingReady(); }
 
-void Renderer::renderFrame() { impl_->renderFrame(); }
+void Renderer::renderFrame() { impl_->renderFrameInternal(true); }
+
+bool Renderer::renderFrameInteractive() { return impl_->renderFrameInternal(false); }
 
 void Renderer::setOutputPath(std::string path) { impl_->setOutputPathInternal(std::move(path)); }
 
@@ -1178,5 +1213,13 @@ void Renderer::setRenderSize(std::uint32_t width, std::uint32_t height) {
 bool Renderer::loadScene(const scene::Scene& scene) { return impl_->loadSceneInternal(scene); }
 
 void Renderer::setDebugMode(bool enabled) { impl_->setDebugModeInternal(enabled); }
+
+void Renderer::setShadingMode(const std::string& mode) { impl_->setShadingModeInternal(mode); }
+
+void* Renderer::deviceHandle() const noexcept { return impl_->context.rawDeviceHandle(); }
+
+void* Renderer::commandQueueHandle() const noexcept { return impl_->context.rawCommandQueue(); }
+
+void* Renderer::currentColorTexture() const noexcept { return impl_->currentColorTextureHandle(); }
 
 }  // namespace rtr::rendering

@@ -10,6 +10,7 @@ include(FetchContent)
 # Build options
 option(RTR_BUILD_SAMPLE "Build RTR sample application" ON)
 option(RTR_BUILD_MPS_SAMPLE "Build MPS sample application" ON)
+option(RTR_BUILD_ONSCREEN_SAMPLE "Build RTR on-screen sample (MetalKit UI)" ON)
 option(RTR_ENABLE_MPS "Enable MPS path tracing backend" ON)
 option(RTR_BUILD_TESTS "Build RTR unit tests" ON)
 
@@ -127,6 +128,23 @@ if(RTR_BUILD_MPS_SAMPLE)
     add_executable(RTRMetalMPSSample sample/src/mps_main.mm)
     target_link_libraries(RTRMetalMPSSample PRIVATE RTRMetalEngine)
     add_dependencies(RTRMetalMPSSample RTRMetalShaders)
+endif()
+
+if(RTR_BUILD_ONSCREEN_SAMPLE)
+    add_executable(RTRMetalOnScreenSample MACOSX_BUNDLE
+        sample/src/onscreen/main.mm
+        sample/src/onscreen/AppDelegate.h
+        sample/src/onscreen/AppDelegate.mm
+        sample/src/onscreen/ViewController.h
+        sample/src/onscreen/ViewController.mm)
+    target_link_libraries(RTRMetalOnScreenSample PRIVATE RTRMetalEngine "-framework Cocoa" "-framework MetalKit" "-framework QuartzCore")
+    target_compile_features(RTRMetalOnScreenSample PRIVATE cxx_std_20)
+    add_dependencies(RTRMetalOnScreenSample RTRMetalShaders)
+    add_custom_command(TARGET RTRMetalOnScreenSample POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${RTR_METALLIB}
+                $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources/RTRShaders.metallib)
 endif()
 
 # Tests --------------------------------------------------------------------

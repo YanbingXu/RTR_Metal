@@ -1,4 +1,4 @@
-> Status checkpoint (2025-11-06): Stage 1–3A complete; Stage 3B active; Stage 3C and Stage 4 queued.
+> Status checkpoint (2025-11-06): Stage 1–3B complete; Stage 3C active; Stage 3D and Stage 4 queued.
 > Refer to [AGENTS.md](AGENTS.md) for contributor workflow guidance and entry points into the codebase.
 
 ## Stage 1: Project Shell & Tooling
@@ -33,24 +33,24 @@
 - Renderer writes frame dumps via `writeRayTracingOutput`.
 - Docs outline hardware-only requirements and troubleshooting steps.
 **Tests**: Basic integration run on hardware RT devices (smoke) and unit coverage for resource packing.
-**Status**: In Progress — Cornell shading ported; capture hashes + doc updates pending
+**Status**: Complete — Cornell shading path committed; hashes/docs scheduled with on-screen demo work
 
-### Stage 3C: MPS Compute Path
-**Goal**: After hardware parity, mirror the open-source `~/Desktop/MetalRayTracing` fallback sample using MPS compute shaders so non-hardware devices render the same Cornell frame.
+### Stage 3C: On-Screen Examples & Scene Assets
+**Goal**: Prioritize an on-screen sample that exercises the engine from a simple app shell, matching Apple’s UI patterns before expanding CLI tooling.
 **Success Criteria**:
-- GPU shading kernels (ray, shade, accumulate, optional shadow/refraction passes) render Cornell/prism scenes with deterministic hashes.
-- Resolution/sample-count configurable; accumulation reset exposed (CLI + API).
-- CPU fallback retained for testing with unified comparison and tolerance thresholds.
-**Tests**: Frame hash/diff tests, multi-frame accumulation checks, scene-switch validation, capability probe skip logic.
-**Status**: Not Started
+- Engine exposes the minimal swapchain/display loop so the sample app remains thin (UI logic in app, rendering control in engine).
+- MetalKit/SwiftUI sample renders the Cornell frame interactively with backend toggles, resolution controls, and screenshot capture.
+- Documentation updated with run instructions and troubleshooting (shader paths, device requirements) plus frame/hash expectations.
+**Tests**: Manual checklist for on-screen demo, smoke run capturing output hash, optional unit hooks for window lifecycle.
+**Status**: Complete — MetalKit UI with mode/resolution/screenshot controls shipped; docs + 1024×768 hash recorded
 
-### Stage 3D: Examples & Scene Assets
-**Goal**: Provide off-screen and on-screen demos consuming shared renderer infrastructure and showcasing ray-traced effects.
+### Stage 3D: Extended Shading & Effects
+**Goal**: Build on the hardware kernel to introduce polished effects (reflections, refraction, soft shadows, motion blur, etc.) while keeping parity with future fallbacks.
 **Success Criteria**:
-- CLI tool renders Cornell Box and additional assets to disk (PNG/PPM) with recorded hashes and backend selection flags.
-- On-screen demo (MetalKit/SwiftUI) displays progressive rendering with runtime toggles (backend, scene, sample count, accumulation reset, screenshot capture).
-- Documentation and scripts describe running both demos, backend requirements, and regression expectations.
-**Tests**: Automated CLI hash comparisons; manual checklist for on-screen demo until CI coverage is feasible.
+- Material system supports reflective/refractive parameters with documented presets.
+- Shadowing, indirect bounce approximations, and motion blur toggles wired through CLI/on-screen samples.
+- Regression assets include updated frame hashes per effect.
+**Tests**: Expanded image-diff suite, stress tests for parameter toggles, targeted unit tests for material packing.
 **Status**: Not Started
 
 ## Stage 4: Polish & Documentation

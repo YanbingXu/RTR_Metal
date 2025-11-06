@@ -6,7 +6,7 @@ RTR Metal is being rebuilt as a C++20 + Metal hardware ray tracing engine that t
 
 - ✅ **Stage 1** – CMake scaffold, shader build integration, sample + test binaries
 - ✅ **Stage 2** – Core math/utilities, configuration & logging, Metal context, buffer allocator, scene + geometry upload
-- 🚧 **Stage 3** – Acceleration structure sizing/building foundations and ray tracing shader stubs underway
+- 🚧 **Stage 3** – Hardware shading locked; Stage&nbsp;3C on-screen demo polish in progress
 
 Remaining stages cover the ray tracing pipeline and AppKit sample per [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
 
@@ -47,6 +47,7 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 - 调试可使用 `--debug-albedo` 直接输出材质反照率，便于验证资源管线。
 - `--mode=hardware` 会强制尝试硬件 RT，`--mode=fallback` 则直接使用渐变调试输出；默认 `auto` 会在硬件失败时自动退回。
 - MPS Sample: `./build/RTRMetalMPSSample [--cpu|--gpu] [--compare] [--reset-accum] [--no-accum|--accum] [--accum-frames=N] [--resolution=WxH] [--output=<file>] [--cpu-output=<file>] [--gpu-output=<file>]`
+- On-Screen Sample: build with `cmake --build build --target RTRMetalOnScreenSample` (or `cmake-build-debug` when using CLion) and run `open build/RTRMetalOnScreenSample.app`. The overlay toolbar provides mode selection (`auto|hardware|gradient`), resolution presets (plus a dynamic entry when resizing the window), and a screenshot button that writes `~/Pictures/RTR_<timestamp>.ppm`. Reference hash for the Cornell default is `0x72FDA1309C1E4FB1` (1024×768 single-sample).
 - Tests: `cd build && ctest --output-on-failure`
 
 Both binaries currently emit console output only; rendering integration arrives in later stages.
@@ -69,6 +70,7 @@ Project direction, architecture, and working agreements live in:
 - [`docs/architecture.md`](docs/architecture.md)
 - [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
 - [`AGENTS.md`](AGENTS.md) – Contributor quick-start covering structure, build/test flow, and review expectations
+- [`docs/Stage3C_OnScreenDemo.md`](docs/Stage3C_OnScreenDemo.md) – Notes covering the interactive sample and current reference hashes
 
 The optional keys `accumulation = on|off`, `accumulationFrames = <n>`, `samplesPerPixel = <n>`, and `sampleSeed = <n>` can be added to `config/engine.ini` to provide defaults for the sample apps, and the CLI flags above override those values when present.
 
