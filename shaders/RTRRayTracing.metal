@@ -45,8 +45,71 @@ inline float2 jitterForPixel(uint2 gid, constant MPSSamplingUniforms& sampling) 
     return float2(jitterX, jitterY);
 }
 
-inline float3 loadVertexPosition(const device uchar* base, uint stride, uint index) {
-    return *reinterpret_cast<const device float3*>(base + stride * index);
+struct RTRVertexSample {
+    float3 position;
+    float3 normal;
+    float2 texcoord;
+};
+
+inline RTRVertexSample loadVertexSample(const device uchar* base, uint stride, uint index) {
+    const device uchar* bytes = base + stride * index;
+    RTRVertexSample sample;
+    sample.position = *reinterpret_cast<const device float3*>(bytes);
+    sample.normal = *reinterpret_cast<const device float3*>(bytes + 16);
+    sample.texcoord = *reinterpret_cast<const device float2*>(bytes + 32);
+    return sample;
+}
+
+inline float wrapCoordinate(float value) {
+    value = value - floor(value);
+    return (value < 0.0f) ? value + 1.0f : value;
+}
+
+inline float4 readTextureTexel(const RTRRayTracingTextureResource info,
+                               uint x,
+                               uint y,
+                               device const float* pixels) {
+    const uint base = info.dataOffset + (y * info.rowPitch + x) * 4u;
+    return float4(pixels[base + 0], pixels[base + 1], pixels[base + 2], pixels[base + 3]);
+}
+
+inline float4 sampleTexture(uint textureIndex,
+                            constant RTRRayTracingTextureResource* infos,
+                            uint textureCount,
+                            device const float* pixels,
+                            float2 uv) {
+    if (textureIndex == RTR_INVALID_TEXTURE_INDEX || infos == nullptr || pixels == nullptr) {
+        return float4(1.0f);
+    }
+    if (textureIndex >= textureCount) {
+        return float4(1.0f);
+    }
+
+    const RTRRayTracingTextureResource info = infos[textureIndex];
+    if (info.width == 0 || info.height == 0 || info.rowPitch == 0) {
+        return float4(1.0f);
+    }
+
+    const float width = static_cast<float>(info.width);
+    const float height = static_cast<float>(info.height);
+    const float2 wrapped = float2(wrapCoordinate(uv.x), wrapCoordinate(uv.y));
+    const float sampleX = wrapped.x * (width - 1.0f);
+    const float sampleY = (1.0f - wrapped.y) * (height - 1.0f);
+
+    const uint x0 = static_cast<uint>(floor(sampleX));
+    const uint y0 = static_cast<uint>(floor(sampleY));
+    const uint x1 = min(x0 + 1u, info.width - 1u);
+    const uint y1 = min(y0 + 1u, info.height - 1u);
+    const float tx = fract(sampleX);
+    const float ty = fract(sampleY);
+
+    const float4 t00 = readTextureTexel(info, x0, y0, pixels);
+    const float4 t10 = readTextureTexel(info, x1, y0, pixels);
+    const float4 t01 = readTextureTexel(info, x0, y1, pixels);
+    const float4 t11 = readTextureTexel(info, x1, y1, pixels);
+    const float4 a = mix(t00, t10, tx);
+    const float4 b = mix(t01, t11, tx);
+    return mix(a, b, ty);
 }
 
 }  // namespace
@@ -142,6 +205,8 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
                              device const uint* fallbackIndices [[buffer(5)]],
                              device const RTRRayTracingInstanceResource* instances [[buffer(6)]],
                              device const RTRRayTracingMaterial* materials [[buffer(7)]],
+                             constant RTRRayTracingTextureResource* textureInfos [[buffer(8)]],
+                             device const float* texturePixels [[buffer(9)]],
                              texture2d<float, access::write> output [[texture(0)]],
                              texture2d<float, access::write> accumulation [[texture(1)]],
                              texture2d<float, access::read> randomTex [[texture(2)]],
@@ -151,6 +216,7 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
     }
 
     const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
+    const uint textureCount = (resourceHeader != nullptr) ? resourceHeader->textureCount : 0u;
     const bool debugAlbedo = (uniforms.flags & 0x1u) != 0u;
     const float2 pixel = float2(gid) + 0.5f;
     const float2 ndc = (pixel / dims - 0.5f) * 2.0f;
@@ -214,7 +280,11 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
             RTRRayTracingInstanceResource instance = {};
             RTRRayTracingMaterial materialProps = {};
             materialProps.albedo = float3(1.0f);
+            materialProps.textureIndex = RTR_INVALID_TEXTURE_INDEX;
+            materialProps.materialFlags = 0u;
             bool haveInstanceData = false;
+            float2 interpolatedUV = float2(0.0f);
+            bool hasValidUV = false;
             if (meshResources != nullptr && resourceHeader != nullptr && resourceHeader->geometryCount > 0 && instances) {
                 instance = instances[instanceIndex];
                 haveInstanceData = true;
@@ -246,28 +316,46 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
                     const uint i1 = min(indexData[base + 1], maxVertex);
                     const uint i2 = min(indexData[base + 2], maxVertex);
 
-                    const float3 p0 = loadVertexPosition(vertexBytes, mesh.vertexStride, i0);
-                    const float3 p1 = loadVertexPosition(vertexBytes, mesh.vertexStride, i1);
-                    const float3 p2 = loadVertexPosition(vertexBytes, mesh.vertexStride, i2);
+                    const RTRVertexSample v0 = loadVertexSample(vertexBytes, mesh.vertexStride, i0);
+                    const RTRVertexSample v1 = loadVertexSample(vertexBytes, mesh.vertexStride, i1);
+                    const RTRVertexSample v2 = loadVertexSample(vertexBytes, mesh.vertexStride, i2);
+                    const float3 p0 = v0.position;
+                    const float3 p1 = v1.position;
+                    const float3 p2 = v2.position;
                     const float3 e1 = p1 - p0;
                     const float3 e2 = p2 - p0;
-                    const float3 maybeNormal = normalize(cross(e1, e2));
-                    if (all(isfinite(maybeNormal))) {
-                        normal = maybeNormal;
+                    const float3 faceNormal = normalize(cross(e1, e2));
+                    float3 interpolatedNormal = normalize(v0.normal * w + v1.normal * u + v2.normal * v);
+                    if (!all(isfinite(interpolatedNormal)) || length(interpolatedNormal) < 1e-3f) {
+                        interpolatedNormal = faceNormal;
+                    }
+                    if (all(isfinite(interpolatedNormal))) {
+                        normal = interpolatedNormal;
+                    } else if (all(isfinite(faceNormal))) {
+                        normal = faceNormal;
+                    }
+
+                    const float2 uv0 = v0.texcoord;
+                    const float2 uv1 = v1.texcoord;
+                    const float2 uv2 = v2.texcoord;
+                    float2 uvInterp = uv0 * w + uv1 * u + uv2 * v;
+                    if (all(isfinite(uvInterp))) {
+                        interpolatedUV = uvInterp;
+                        hasValidUV = true;
                     }
                 }
 
-                const uint materialIndex = instance.materialIndex;
-                if (materials && resourceHeader->materialCount > 0) {
-                    materialProps = materials[min(materialIndex, resourceHeader->materialCount - 1u)];
-                    albedo = materialProps.albedo;
-                    emission = materialProps.emission;
-                }
+            const uint materialIndex = instance.materialIndex;
+            if (materials && resourceHeader->materialCount > 0) {
+                materialProps = materials[min(materialIndex, resourceHeader->materialCount - 1u)];
+                albedo = materialProps.albedo;
+                emission = materialProps.emission;
             }
+        }
 
-            const float distance = query.get_committed_distance();
-            const float attenuation = clamp(exp(-distance * 0.08f), 0.25f, 1.0f);
-            float3 worldNormal = normal;
+        const float distance = query.get_committed_distance();
+        const float attenuation = clamp(exp(-distance * 0.08f), 0.25f, 1.0f);
+        float3 worldNormal = normal;
             if (haveInstanceData) {
                 const float3x3 objectToWorld3x3 = float3x3(instance.objectToWorld[0].xyz,
                                                            instance.objectToWorld[1].xyz,
@@ -276,6 +364,14 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
             }
 
             float3 baseAlbedo = clamp(albedo, 0.0f, 1.0f);
+            if (materialProps.textureIndex != RTR_INVALID_TEXTURE_INDEX && hasValidUV) {
+                const float4 textureSample = sampleTexture(materialProps.textureIndex,
+                                                          textureInfos,
+                                                          textureCount,
+                                                          texturePixels,
+                                                          interpolatedUV);
+                baseAlbedo *= textureSample.xyz;
+            }
             float3 worldPosition = primaryRay.origin + primaryRay.direction * distance;
 
             const float3 lightPosition = float3(0.0f, 0.92f, -1.05f);

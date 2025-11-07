@@ -24,11 +24,11 @@ typedef struct RTRRayTracingResourceHeader {
     uint geometryCount;
     uint instanceCount;
     uint materialCount;
+    uint textureCount;
     uint randomTextureWidth;
     uint randomTextureHeight;
     uint padding0;
     uint padding1;
-    uint padding2;
 } RTRRayTracingResourceHeader;
 
 typedef struct RTRRayTracingMeshResource {
@@ -53,6 +53,15 @@ typedef struct RTRRayTracingInstanceResource {
     uint padding1;
 } RTRRayTracingInstanceResource;
 
+#define RTR_INVALID_TEXTURE_INDEX 0xFFFFFFFFu
+
+typedef struct RTRRayTracingTextureResource {
+    uint width;
+    uint height;
+    uint rowPitch;
+    uint dataOffset;
+} RTRRayTracingTextureResource;
+
 typedef struct RTRRayTracingMaterial {
     float3 albedo;
     float roughness;
@@ -60,12 +69,15 @@ typedef struct RTRRayTracingMaterial {
     float metallic;
     float reflectivity;
     float indexOfRefraction;
-    float padding[2];
+    uint textureIndex;
+    uint materialFlags;
 } RTRRayTracingMaterial;
 
 #else
 
 namespace rtr::rendering {
+
+inline constexpr std::uint32_t kInvalidTextureIndex = std::numeric_limits<std::uint32_t>::max();
 
 struct RayTracingUniforms {
     simd_float4 eye{0.0F, 0.0F, 2.0F, 1.0F};
@@ -83,11 +95,11 @@ struct alignas(16) RayTracingResourceHeader {
     std::uint32_t geometryCount = 0;
     std::uint32_t instanceCount = 0;
     std::uint32_t materialCount = 0;
+    std::uint32_t textureCount = 0;
     std::uint32_t randomTextureWidth = 0;
     std::uint32_t randomTextureHeight = 0;
     std::uint32_t padding0 = 0;
     std::uint32_t padding1 = 0;
-    std::uint32_t padding2 = 0;
 };
 
 struct alignas(16) RayTracingMeshResource {
@@ -112,6 +124,13 @@ struct alignas(16) RayTracingInstanceResource {
     std::uint32_t padding1 = 0;
 };
 
+struct alignas(16) RayTracingTextureResource {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::uint32_t rowPitch = 0;
+    std::uint32_t dataOffset = 0;
+};
+
 struct alignas(16) RayTracingMaterialResource {
     simd_float3 albedo{1.0F, 1.0F, 1.0F};
     float roughness = 0.5F;
@@ -119,13 +138,15 @@ struct alignas(16) RayTracingMaterialResource {
     float metallic = 0.0F;
     float reflectivity = 0.0F;
     float indexOfRefraction = 1.5F;
-    float padding[2] = {0.0F, 0.0F};
+    std::uint32_t textureIndex = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t materialFlags = 0;
 };
 
 static_assert(sizeof(RayTracingResourceHeader) % 16 == 0, "RayTracingResourceHeader must be 16-byte aligned");
 static_assert(sizeof(RayTracingMeshResource) % 16 == 0, "RayTracingMeshResource must be 16-byte aligned");
 static_assert(sizeof(RayTracingInstanceResource) % 16 == 0, "RayTracingInstanceResource must be 16-byte aligned");
 static_assert(sizeof(RayTracingMaterialResource) % 16 == 0, "RayTracingMaterialResource must be 16-byte aligned");
+static_assert(sizeof(RayTracingTextureResource) % 16 == 0, "RayTracingTextureResource must be 16-byte aligned");
 
 }  // namespace rtr::rendering
 

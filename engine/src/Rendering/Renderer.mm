@@ -6,6 +6,7 @@
 
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
 
+#include "RTRMetalEngine/Core/ImageLoader.hpp"
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructure.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructureBuilder.hpp"
@@ -22,11 +23,14 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <random>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -112,12 +116,15 @@ struct RayTracingResources {
     id<MTLBuffer> resourceBuffer = nil;
     BufferHandle instanceBuffer;
     BufferHandle materialBuffer;
+    BufferHandle textureInfoBuffer;
+    BufferHandle textureDataBuffer;
     BufferHandle fallbackVertexBuffer;
     BufferHandle fallbackIndexBuffer;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     NSUInteger resourceHeaderSize = 0;
     std::size_t meshCount = 0;
+    std::size_t textureCount = 0;
 
     void reset() {
         accumulationTexture = nil;
@@ -125,12 +132,15 @@ struct RayTracingResources {
         resourceBuffer = nil;
         instanceBuffer = {};
         materialBuffer = {};
+        textureInfoBuffer = {};
+        textureDataBuffer = {};
         fallbackVertexBuffer = {};
         fallbackIndexBuffer = {};
         width = 0;
         height = 0;
         resourceHeaderSize = 0;
         meshCount = 0;
+        textureCount = 0;
     }
 };
 
@@ -253,6 +263,8 @@ struct Renderer::Impl {
     uint32_t frameCounter = 0;
     std::vector<RayTracingInstanceResource> instanceResources;
     std::vector<RayTracingMaterialResource> materialResources;
+    std::vector<RayTracingTextureResource> textureResources;
+    std::vector<float> texturePixels;
     std::string outputPath = "renderer_output.ppm";
     std::uint32_t targetWidth = kDiagnosticWidth;
     std::uint32_t targetHeight = kDiagnosticHeight;
@@ -517,6 +529,18 @@ struct Renderer::Impl {
             [encoder setBuffer:materialBuffer offset:0 atIndex:7];
         } else {
             [encoder setBuffer:nil offset:0 atIndex:7];
+        }
+        id<MTLBuffer> textureInfoBuffer = (__bridge id<MTLBuffer>)resources.textureInfoBuffer.nativeHandle();
+        if (textureInfoBuffer) {
+            [encoder setBuffer:textureInfoBuffer offset:0 atIndex:8];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:8];
+        }
+        id<MTLBuffer> textureDataBuffer = (__bridge id<MTLBuffer>)resources.textureDataBuffer.nativeHandle();
+        if (textureDataBuffer) {
+            [encoder setBuffer:textureDataBuffer offset:0 atIndex:9];
+        } else {
+            [encoder setBuffer:nil offset:0 atIndex:9];
         }
         [encoder setTexture:target.colorTexture atIndex:0];
         if (resources.accumulationTexture != nil) {
@@ -784,6 +808,12 @@ struct Renderer::Impl {
                 *header = {};
                 header->geometryCount = static_cast<std::uint32_t>(std::min<std::size_t>(
                     meshCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->instanceCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                    instanceResources.size(), static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->materialCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                    materialResources.size(), static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
+                header->textureCount = static_cast<std::uint32_t>(std::min<std::size_t>(
+                    textureResources.size(), static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
                 header->randomTextureWidth = resources.randomTexture != nil
                                                ? static_cast<std::uint32_t>([resources.randomTexture width])
                                                : 0U;
@@ -935,6 +965,18 @@ struct Renderer::Impl {
                      materialResources.data(),
                      materialResources.size() * sizeof(RayTracingMaterialResource),
                      "rtr.materials");
+
+        uploadBuffer(resources.textureInfoBuffer,
+                     textureResources.empty() ? nullptr : textureResources.data(),
+                     textureResources.size() * sizeof(RayTracingTextureResource),
+                     "rtr.textureInfo");
+
+        uploadBuffer(resources.textureDataBuffer,
+                     texturePixels.empty() ? nullptr : texturePixels.data(),
+                     texturePixels.size() * sizeof(float),
+                     "rtr.textureData");
+
+        resources.textureCount = textureResources.size();
 
         return success;
     }
@@ -1103,6 +1145,53 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
     materialResources.clear();
     materialResources.reserve(materials.size());
+    textureResources.clear();
+    texturePixels.clear();
+
+    std::unordered_map<std::string, std::uint32_t> textureLookup;
+    textureLookup.reserve(materials.size());
+
+    auto canonicalisePath = [](const std::string& path) -> std::string {
+        if (path.empty()) {
+            return path;
+        }
+        std::error_code ec;
+        std::filesystem::path fsPath(path);
+        std::filesystem::path resolved = std::filesystem::weakly_canonical(fsPath, ec);
+        if (ec) {
+            resolved = fsPath.lexically_normal();
+        }
+        return resolved.string();
+    };
+
+    auto registerTexture = [&](const std::string& texturePath) -> std::optional<std::uint32_t> {
+        if (texturePath.empty()) {
+            return std::nullopt;
+        }
+        const std::string key = canonicalisePath(texturePath);
+        const auto found = textureLookup.find(key);
+        if (found != textureLookup.end()) {
+            return found->second;
+        }
+
+        core::ImageData imageData{};
+        if (!core::ImageLoader::loadRGBA32F(std::filesystem::path(key), imageData)) {
+            return std::nullopt;
+        }
+
+        RayTracingTextureResource texture{};
+        texture.width = imageData.width;
+        texture.height = imageData.height;
+        texture.rowPitch = imageData.width;
+        texture.dataOffset = static_cast<std::uint32_t>(texturePixels.size());
+        textureResources.push_back(texture);
+        texturePixels.insert(texturePixels.end(), imageData.pixels.begin(), imageData.pixels.end());
+
+        const std::uint32_t textureIndex = static_cast<std::uint32_t>(textureResources.size() - 1);
+        textureLookup.emplace(key, textureIndex);
+        return textureIndex;
+    };
+
     for (const auto& material : materials) {
         RayTracingMaterialResource resource{};
         resource.albedo = material.albedo;
@@ -1111,8 +1200,21 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         resource.metallic = material.metallic;
         resource.reflectivity = material.reflectivity;
         resource.indexOfRefraction = material.indexOfRefraction;
+        resource.textureIndex = kInvalidTextureIndex;
+        if (!material.albedoTexturePath.empty()) {
+            const auto textureIndex = registerTexture(material.albedoTexturePath);
+            if (textureIndex.has_value()) {
+                resource.textureIndex = *textureIndex;
+            } else {
+                core::Logger::warn("Renderer",
+                                   "Failed to load texture '%s' for material",
+                                   material.albedoTexturePath.c_str());
+            }
+        }
         materialResources.push_back(resource);
     }
+
+    resources.textureCount = textureResources.size();
 
     const bool pipelineReady = ensureRayTracingResources(targetWidth, targetHeight);
     if (!pipelineReady) {

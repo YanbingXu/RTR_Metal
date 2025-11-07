@@ -65,6 +65,7 @@ add_library(RTRMetalEngine STATIC
     engine/src/Core/FileSystem.cpp
     engine/src/Core/Math.cpp
     engine/src/Core/Logger.cpp
+    engine/src/Core/ImageLoader.mm
     engine/src/Core/placeholder.cpp
     engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
@@ -98,12 +99,16 @@ target_compile_features(RTRMetalEngine PUBLIC cxx_std_20)
 find_library(RTR_METAL_FRAMEWORK Metal REQUIRED)
 find_library(RTR_FOUNDATION_FRAMEWORK Foundation REQUIRED)
 find_library(RTR_MPS_FRAMEWORK MetalPerformanceShaders REQUIRED)
+find_library(RTR_COREGRAPHICS_FRAMEWORK CoreGraphics REQUIRED)
+find_library(RTR_IMAGEIO_FRAMEWORK ImageIO REQUIRED)
 
 target_link_libraries(RTRMetalEngine
     PUBLIC
         ${RTR_METAL_FRAMEWORK}
         ${RTR_FOUNDATION_FRAMEWORK}
-        ${RTR_MPS_FRAMEWORK})
+        ${RTR_MPS_FRAMEWORK}
+        ${RTR_COREGRAPHICS_FRAMEWORK}
+        ${RTR_IMAGEIO_FRAMEWORK})
 
 set_source_files_properties(
     engine/src/Rendering/MetalContext.mm
@@ -113,6 +118,7 @@ set_source_files_properties(
     engine/src/Rendering/RayTracingPipeline.mm
     engine/src/MPS/MPSPathTracer.mm
     engine/src/MPS/MPSRenderer.mm
+    engine/src/Core/ImageLoader.mm
     engine/src/Rendering/Renderer.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 

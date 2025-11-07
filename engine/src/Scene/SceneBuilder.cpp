@@ -23,7 +23,21 @@ MeshHandle SceneBuilder::addTriangleMesh(std::span<const simd_float3> positions,
         vertices.push_back(vertex);
     }
 
-    return scene_.addMesh(Mesh{std::move(vertices), std::vector<std::uint32_t>(indices.begin(), indices.end())});
+    return addTriangleMesh(vertices, indices);
+}
+
+MeshHandle SceneBuilder::addTriangleMesh(std::span<const Vertex> vertices,
+                                         std::span<const std::uint32_t> indices) {
+    if (vertices.empty()) {
+        throw std::invalid_argument("Vertex array cannot be empty");
+    }
+    if (indices.empty() || indices.size() % 3 != 0) {
+        throw std::invalid_argument("Indices must contain complete triangles");
+    }
+
+    return scene_.addMesh(
+        Mesh{std::vector<Vertex>(vertices.begin(), vertices.end()),
+             std::vector<std::uint32_t>(indices.begin(), indices.end())});
 }
 
 MaterialHandle SceneBuilder::addDefaultMaterial() { return scene_.addMaterial(Material{}); }

@@ -55,16 +55,16 @@ void addBackdrop(SceneBuilder& builder, Scene& scene) {
     scene.addInstance(mesh, materialHandle, matrix_identity_float4x4);
 }
 
-void normaliseMesh(std::vector<simd_float3>& positions) {
-    if (positions.empty()) {
+void normaliseMesh(std::vector<Vertex>& vertices) {
+    if (vertices.empty()) {
         return;
     }
 
-    simd_float3 minPoint = positions.front();
-    simd_float3 maxPoint = positions.front();
-    for (const auto& p : positions) {
-        minPoint = simd_min(minPoint, p);
-        maxPoint = simd_max(maxPoint, p);
+    simd_float3 minPoint = vertices.front().position;
+    simd_float3 maxPoint = vertices.front().position;
+    for (const auto& vertex : vertices) {
+        minPoint = simd_min(minPoint, vertex.position);
+        maxPoint = simd_max(maxPoint, vertex.position);
     }
 
     const simd_float3 centre = (minPoint + maxPoint) * 0.5F;
@@ -72,8 +72,8 @@ void normaliseMesh(std::vector<simd_float3>& positions) {
     const float largest = std::max({extent.x, extent.y, extent.z, 1e-3F});
     const float scale = 1.0F / largest;
 
-    for (auto& p : positions) {
-        p = (p - centre) * scale;
+    for (auto& vertex : vertices) {
+        vertex.position = (vertex.position - centre) * scale;
     }
 }
 
@@ -82,16 +82,16 @@ bool addOBJInstance(SceneBuilder& builder,
                     const simd_float4x4& transform,
                     const Material& material,
                     Scene& scene) {
-    std::vector<simd_float3> positions;
+    std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
-    if (!loadOBJMesh(assetPath, positions, indices)) {
+    if (!loadOBJMesh(assetPath, vertices, indices)) {
         rtr::core::Logger::warn("DemoScenes", "Failed to load %s", assetPath.string().c_str());
         return false;
     }
 
-    normaliseMesh(positions);
+    normaliseMesh(vertices);
 
-    auto mesh = builder.addTriangleMesh(std::span<const simd_float3>(positions.data(), positions.size()),
+    auto mesh = builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
                                         std::span<const std::uint32_t>(indices.data(), indices.size()));
     auto matHandle = scene.addMaterial(material);
     scene.addInstance(mesh, matHandle, transform);

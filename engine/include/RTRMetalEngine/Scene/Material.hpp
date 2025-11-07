@@ -1,6 +1,7 @@
 #pragma once
 
 #include <simd/simd.h>
+#include <string>
 
 namespace rtr::scene {
 
@@ -12,6 +13,7 @@ struct Material {
     float reflectivity = 0.0F;
     float indexOfRefraction = 1.5F;
     float padding[1] = {0.0F};
+    std::string albedoTexturePath;
 };
 
 }  // namespace rtr::scene

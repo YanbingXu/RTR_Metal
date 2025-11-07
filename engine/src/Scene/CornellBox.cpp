@@ -52,6 +52,58 @@ MeshHandle addAxisAlignedBox(SceneBuilder& builder,
                                    std::span<const std::uint32_t>(indices.data(), indices.size()));
 }
 
+MeshHandle addTexturedBox(SceneBuilder& builder,
+                          const simd_float3& minCorner,
+                          const simd_float3& maxCorner) {
+    const simd_float3 p000 = simd_make_float3(minCorner.x, minCorner.y, minCorner.z);
+    const simd_float3 p100 = simd_make_float3(maxCorner.x, minCorner.y, minCorner.z);
+    const simd_float3 p110 = simd_make_float3(maxCorner.x, maxCorner.y, minCorner.z);
+    const simd_float3 p010 = simd_make_float3(minCorner.x, maxCorner.y, minCorner.z);
+    const simd_float3 p001 = simd_make_float3(minCorner.x, minCorner.y, maxCorner.z);
+    const simd_float3 p101 = simd_make_float3(maxCorner.x, minCorner.y, maxCorner.z);
+    const simd_float3 p111 = simd_make_float3(maxCorner.x, maxCorner.y, maxCorner.z);
+    const simd_float3 p011 = simd_make_float3(minCorner.x, maxCorner.y, maxCorner.z);
+
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+    vertices.reserve(24);
+    indices.reserve(36);
+
+    const std::array<simd_float2, 4> faceUVs = {
+        simd_make_float2(0.0f, 0.0f),
+        simd_make_float2(1.0f, 0.0f),
+        simd_make_float2(1.0f, 1.0f),
+        simd_make_float2(0.0f, 1.0f),
+    };
+
+    auto emitFace = [&](const std::array<simd_float3, 4>& corners, const simd_float3& normal) {
+        const std::uint32_t baseIndex = static_cast<std::uint32_t>(vertices.size());
+        for (std::size_t i = 0; i < corners.size(); ++i) {
+            Vertex vertex{};
+            vertex.position = corners[i];
+            vertex.normal = normal;
+            vertex.texcoord = faceUVs[i];
+            vertices.push_back(vertex);
+        }
+        indices.push_back(baseIndex + 0);
+        indices.push_back(baseIndex + 1);
+        indices.push_back(baseIndex + 2);
+        indices.push_back(baseIndex + 0);
+        indices.push_back(baseIndex + 2);
+        indices.push_back(baseIndex + 3);
+    };
+
+    emitFace({p000, p100, p110, p010}, simd_make_float3(0.0f, 0.0f, -1.0f));  // back
+    emitFace({p101, p001, p011, p111}, simd_make_float3(0.0f, 0.0f, 1.0f));   // front
+    emitFace({p001, p000, p010, p011}, simd_make_float3(-1.0f, 0.0f, 0.0f));  // left
+    emitFace({p100, p101, p111, p110}, simd_make_float3(1.0f, 0.0f, 0.0f));   // right
+    emitFace({p001, p101, p100, p000}, simd_make_float3(0.0f, -1.0f, 0.0f));  // bottom
+    emitFace({p010, p110, p111, p011}, simd_make_float3(0.0f, 1.0f, 0.0f));   // top
+
+    return builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
+                                   std::span<const std::uint32_t>(indices.data(), indices.size()));
+}
+
 void addCeilingLight(SceneBuilder& builder, Scene& scene) {
     const float lightHalfWidth = 0.25f;
     const float lightHalfDepth = 0.18f;
@@ -136,32 +188,32 @@ void addMario(SceneBuilder& builder,
         return;
     }
 
-    std::vector<simd_float3> positions;
+    std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
-    if (!loadOBJMesh(marioPath, positions, indices)) {
+    if (!loadOBJMesh(marioPath, vertices, indices)) {
         rtr::core::Logger::warn("CornellBox", "Failed to load %s", marioPath.string().c_str());
         return;
     }
 
-    simd_float3 minPoint = positions.front();
-    simd_float3 maxPoint = positions.front();
-    for (const auto& p : positions) {
-        minPoint = simd_min(minPoint, p);
-        maxPoint = simd_max(maxPoint, p);
+    simd_float3 minPoint = vertices.front().position;
+    simd_float3 maxPoint = vertices.front().position;
+    for (const auto& v : vertices) {
+        minPoint = simd_min(minPoint, v.position);
+        maxPoint = simd_max(maxPoint, v.position);
     }
     const simd_float3 centre = (minPoint + maxPoint) * 0.5f;
     const simd_float3 extent = maxPoint - minPoint;
     const float largest = std::max({extent.x, extent.y, extent.z, 1e-3f});
     const float scale = 0.62f / largest;
-    for (auto& p : positions) {
-        p = (p - centre) * scale;
+    for (auto& vertex : vertices) {
+        vertex.position = (vertex.position - centre) * scale;
     }
 
-    simd_float3 scaledMin = positions.front();
-    simd_float3 scaledMax = positions.front();
-    for (const auto& p : positions) {
-        scaledMin = simd_min(scaledMin, p);
-        scaledMax = simd_max(scaledMax, p);
+    simd_float3 scaledMin = vertices.front().position;
+    simd_float3 scaledMax = vertices.front().position;
+    for (const auto& v : vertices) {
+        scaledMin = simd_min(scaledMin, v.position);
+        scaledMax = simd_max(scaledMax, v.position);
     }
     const float supportLift = (supportY - scaledMin.y) + 0.01f;
 
@@ -169,8 +221,14 @@ void addMario(SceneBuilder& builder,
     marioMaterial.albedo = {0.9f, 0.35f, 0.3f};
     marioMaterial.roughness = 0.35f;
     marioMaterial.reflectivity = 0.2f;
+    const auto marioTexture = assetRoot / "mario.png";
+    if (std::filesystem::exists(marioTexture)) {
+        marioMaterial.albedoTexturePath = marioTexture.string();
+    } else {
+        rtr::core::Logger::warn("CornellBox", "Mario texture missing at %s", marioTexture.string().c_str());
+    }
 
-    auto mesh = builder.addTriangleMesh(std::span<const simd_float3>(positions.data(), positions.size()),
+    auto mesh = builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
                                         std::span<const std::uint32_t>(indices.data(), indices.size()));
     auto matHandle = scene.addMaterial(marioMaterial);
     const simd_float3 marioTranslation = simd_make_float3(0.2f, supportLift, -0.95f);
@@ -280,10 +338,20 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     const simd_float3 crateMin = simd_make_float3(0.05f, floorY, -0.9f);
     const simd_float3 crateMax = simd_make_float3(0.65f, floorY + 0.48f, -0.35f);
 
-    auto crateMesh = addAxisAlignedBox(builder, crateMin, crateMax);
+    auto crateMesh = addTexturedBox(builder, crateMin, crateMax);
     Material crateMaterial{};
-    crateMaterial.albedo = {0.45f, 0.32f, 0.2f};
+    crateMaterial.albedo = {0.8f, 0.7f, 0.6f};
     crateMaterial.roughness = 0.6f;
+    if (!assetRoot.empty()) {
+        const auto crateTexture = assetRoot / "crate.jpg";
+        if (std::filesystem::exists(crateTexture)) {
+            crateMaterial.albedoTexturePath = crateTexture.string();
+        } else {
+            rtr::core::Logger::warn("CornellBox",
+                                    "Crate texture missing at %s",
+                                    crateTexture.string().c_str());
+        }
+    }
     auto crateMatHandle = scene.addMaterial(crateMaterial);
     scene.addInstance(crateMesh, crateMatHandle, matrix_identity_float4x4);
     const float crateTopY = crateMax.y;
