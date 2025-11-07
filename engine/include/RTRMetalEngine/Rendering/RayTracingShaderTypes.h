@@ -6,6 +6,9 @@
 #include <limits>
 #endif
 
+#define RTR_RAY_FLAG_DEBUG 0x1u
+#define RTR_RAY_FLAG_ACCUMULATE 0x2u
+
 #ifdef __METAL_VERSION__
 
 typedef struct RTRRayTracingUniforms {

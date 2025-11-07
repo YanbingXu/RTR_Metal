@@ -65,6 +65,77 @@ inline float wrapCoordinate(float value) {
     return (value < 0.0f) ? value + 1.0f : value;
 }
 
+inline float3 accumulateColor(texture2d<float, access::read_write> accumulation,
+                              uint2 gid,
+                              constant RTRRayTracingUniforms& uniforms,
+                              float3 sample,
+                              bool allowAccumulation) {
+    if (accumulation.get_width() == 0 || accumulation.get_height() == 0) {
+        return sample;
+    }
+
+    if (!allowAccumulation) {
+        return sample;
+    }
+
+    if (uniforms.frameIndex == 0u) {
+        accumulation.write(float4(sample, 1.0f), gid);
+        return sample;
+    }
+
+    float4 previous = accumulation.read(gid);
+    const float prevSamples = max(previous.w, 1.0f);
+    const float newSamples = prevSamples + 1.0f;
+    const float3 blended = (previous.xyz * prevSamples + sample) / newSamples;
+    accumulation.write(float4(blended, newSamples), gid);
+    return blended;
+}
+
+inline float2 pseudoRandom(uint2 gid, uint frameIndex) {
+    const uint base = mixBits(gid.x * 73856093u ^ gid.y * 19349663u ^ ((frameIndex + 1u) * 83492791u));
+    const uint hashX = mixBits(base ^ 0x9e3779b9u);
+    const uint hashY = mixBits(base ^ 0x7f4a7c15u);
+    const float rx = (static_cast<float>(hashX & 0xFFFFFFu) + 0.5f) / 16777216.0f;
+    const float ry = (static_cast<float>(hashY & 0xFFFFFFu) + 0.5f) / 16777216.0f;
+    return float2(rx, ry);
+}
+
+inline bool traceShadowRay(instance_acceleration_structure scene,
+                           float3 origin,
+                           float3 direction,
+                           float maxDistance) {
+    if (is_null_instance_acceleration_structure(scene)) {
+        return false;
+    }
+    ray shadowRay(origin, direction, 0.001f, maxDistance);
+    intersection_params params;
+    params.assume_geometry_type(geometry_type::triangle);
+    params.force_opacity(forced_opacity::opaque);
+    intersection_query<triangle_data, instancing> shadowQuery;
+    shadowQuery.reset(shadowRay, scene, ~0u, params);
+    while (shadowQuery.next()) {}
+    return shadowQuery.get_committed_intersection_type() == intersection_type::triangle;
+}
+
+inline float distributionGGX(float nDotH, float alpha) {
+    const float a2 = alpha * alpha;
+    const float denom = (nDotH * nDotH) * (a2 - 1.0f) + 1.0f;
+    return a2 / max(3.14159265f * denom * denom, 1e-4f);
+}
+
+inline float geometrySchlickGGX(float nDotV, float k) {
+    return nDotV / (nDotV * (1.0f - k) + k);
+}
+
+inline float geometrySmith(float nDotV, float nDotL, float roughness) {
+    const float k = (roughness + 1.0f) * (roughness + 1.0f) / 8.0f;
+    return geometrySchlickGGX(nDotV, k) * geometrySchlickGGX(nDotL, k);
+}
+
+inline float3 fresnelSchlick(float cosTheta, float3 F0) {
+    return F0 + (float3(1.0f) - F0) * pow(clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
+}
+
 inline float4 readTextureTexel(const RTRRayTracingTextureResource info,
                                uint x,
                                uint y,
@@ -147,14 +218,15 @@ kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(1
                              device const RTRRayTracingInstanceResource* instances [[buffer(6)]],
                              device const RTRRayTracingMaterial* materials [[buffer(7)]],
                              texture2d<float, access::write> output [[texture(0)]],
-                             texture2d<float, access::write> accumulation [[texture(1)]],
+                             texture2d<float, access::read_write> accumulation [[texture(1)]],
                              texture2d<float, access::read> randomTex [[texture(2)]],
                              uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uniforms.width || gid.y >= uniforms.height) {
         return;
     }
 
-    const bool debugAlbedo = (uniforms.flags & 0x1u) != 0u;
+    const bool debugAlbedo = (uniforms.flags & RTR_RAY_FLAG_DEBUG) != 0u;
+    const bool accumulationEnabled = (uniforms.flags & RTR_RAY_FLAG_ACCUMULATE) != 0u;
     if (debugAlbedo) {
         const float4 debugColour = float4(1.0f, 0.0f, 0.0f, 1.0f);
         output.write(debugColour, gid);
@@ -189,11 +261,9 @@ kernel void rtGradientKernel(constant RTRRayTracingUniforms& uniforms [[buffer(1
 
     float3 colour = float3(uv * (0.5f + geomBoost * 0.5f), 0.35f + 0.4f * sin((float)uniforms.frameIndex * 0.1f + noise));
     colour = clamp(colour, 0.0f, 1.0f);
-    output.write(float4(colour, 1.0f), gid);
-
-    if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
-        accumulation.write(float4(colour, 1.0f), gid);
-    }
+    float3 finalColour = debugAlbedo ? colour
+                                     : accumulateColor(accumulation, gid, uniforms, colour, accumulationEnabled);
+    output.write(float4(finalColour, 1.0f), gid);
 }
 
 #if RTR_HAS_RAYTRACING
@@ -208,7 +278,7 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
                              constant RTRRayTracingTextureResource* textureInfos [[buffer(8)]],
                              device const float* texturePixels [[buffer(9)]],
                              texture2d<float, access::write> output [[texture(0)]],
-                             texture2d<float, access::write> accumulation [[texture(1)]],
+                             texture2d<float, access::read_write> accumulation [[texture(1)]],
                              texture2d<float, access::read> randomTex [[texture(2)]],
                              uint2 gid [[thread_position_in_grid]]) {
     if (gid.x >= uniforms.width || gid.y >= uniforms.height) {
@@ -217,7 +287,8 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
 
     const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
     const uint textureCount = (resourceHeader != nullptr) ? resourceHeader->textureCount : 0u;
-    const bool debugAlbedo = (uniforms.flags & 0x1u) != 0u;
+    const bool debugAlbedo = (uniforms.flags & RTR_RAY_FLAG_DEBUG) != 0u;
+    const bool accumulationEnabled = (uniforms.flags & RTR_RAY_FLAG_ACCUMULATE) != 0u;
     const float2 pixel = float2(gid) + 0.5f;
     const float2 ndc = (pixel / dims - 0.5f) * 2.0f;
 
@@ -354,7 +425,6 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
         }
 
         const float distance = query.get_committed_distance();
-        const float attenuation = clamp(exp(-distance * 0.08f), 0.25f, 1.0f);
         float3 worldNormal = normal;
             if (haveInstanceData) {
                 const float3x3 objectToWorld3x3 = float3x3(instance.objectToWorld[0].xyz,
@@ -370,37 +440,50 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
                                                           textureCount,
                                                           texturePixels,
                                                           interpolatedUV);
-                baseAlbedo *= textureSample.xyz;
+                baseAlbedo = clamp(textureSample.xyz, 0.0f, 1.0f);
             }
             float3 worldPosition = primaryRay.origin + primaryRay.direction * distance;
+            const float3 V = normalize(-primaryRay.direction);
 
             const float3 lightPosition = float3(0.0f, 0.92f, -1.05f);
-            const float3 lightRight = float3(0.32f, 0.0f, 0.0f);
-            const float3 lightForward = float3(0.0f, 0.0f, -0.28f);
+            const float3 lightRight = float3(0.25f, 0.0f, 0.0f);
+            const float3 lightForward = float3(0.0f, 0.0f, -0.18f);
 
-            const float3 toCentre = lightPosition - worldPosition;
-            float lightDistanceSq = max(dot(toCentre, toCentre), 1e-3f);
-            float3 lightDir = normalize(toCentre);
+            const float2 randSample = pseudoRandom(gid, uniforms.frameIndex + 1u);
+            const float3 samplePoint = lightPosition + lightRight * (randSample.x * 2.0f - 1.0f) +
+                                      lightForward * (randSample.y * 2.0f - 1.0f);
+            const float3 toSample = samplePoint - worldPosition;
+            const float distanceToLight = length(toSample);
+            float3 lightDir = toSample / max(distanceToLight, 1e-3f);
 
-            const float3 areaSampleOffset = normalize(worldNormal + float3(0.2f, 0.6f, -0.1f));
-            float3 samplePoint = lightPosition + lightRight * areaSampleOffset.x + lightForward * areaSampleOffset.z;
-            float3 sampleDir = normalize(samplePoint - worldPosition);
-            lightDir = mix(lightDir, sampleDir, 0.5f);
+            float shadowFactor = 1.0f;
+            if (!debugAlbedo) {
+                const float3 shadowOrigin = worldPosition + worldNormal * 0.002f;
+                if (traceShadowRay(scene, shadowOrigin, lightDir, distanceToLight - 0.01f)) {
+                    shadowFactor = 0.0f;
+                }
+            }
 
             const float nDotL = clamp(dot(worldNormal, lightDir), 0.0f, 1.0f);
-            const float3 lightColor = float3(23.0f, 22.5f, 21.5f);
-            const float3 direct = (lightColor * nDotL) / lightDistanceSq;
+            const float nDotV = clamp(dot(worldNormal, V), 0.0f, 1.0f);
+            float roughness = clamp(materialProps.roughness, 0.05f, 1.0f);
+            const float alpha = roughness * roughness;
+            const float3 F0 = mix(float3(0.04f), baseAlbedo, materialProps.metallic);
+            const float3 H = normalize(lightDir + V);
+            const float nDotH = max(dot(worldNormal, H), 0.0f);
+            const float vDotH = max(dot(V, H), 0.0f);
+            const float NDF = distributionGGX(nDotH, alpha);
+            const float G = geometrySmith(nDotV, nDotL, roughness);
+            const float3 F = fresnelSchlick(vDotH, F0);
+            const float3 specular = (NDF * G * F) / max(4.0f * nDotV * nDotL + 1e-4f, 1e-4f);
+            const float3 kS = F;
+            const float3 kD = (float3(1.0f) - kS) * (1.0f - materialProps.metallic);
+            const float3 diffuse = kD * baseAlbedo * (1.0f / 3.14159265f);
 
-            const float3 ambient = baseAlbedo * 0.52f;
-            const float bounceFactor = max(worldNormal.y * 0.5f + 0.5f, 0.0f);
-            const float3 bounce = baseAlbedo * float3(0.28f, 0.22f, 0.20f) * bounceFactor;
-            const float3 shading = baseAlbedo * direct * attenuation;
+            const float3 lightColor = float3(12.0f, 11.5f, 11.0f) / (distanceToLight * distanceToLight + 1e-3f);
+            const float3 direct = (diffuse + specular) * lightColor * nDotL * shadowFactor;
 
-            float3 colourDirect = ambient + bounce + shading + emission;
-
-            if (!debugAlbedo) {
-                colourDirect += float3(0.02f, 0.02f, 0.025f);
-            }
+            float3 colourDirect = direct + emission;
 
             if (!debugAlbedo) {
                 if (materialProps.reflectivity > 0.0f) {
@@ -425,41 +508,27 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
             if (debugAlbedo) {
                 colour = float3(1.0f, 0.0f, 0.0f);
             } else {
-                float3 mapped = colourDirect / (colourDirect + float3(1.0f));
-                mapped = clamp(mapped, 0.0f, 1.0f);
-                colour = pow(mapped, float3(1.0f / 2.2f));
+                colour = accumulateColor(accumulation, gid, uniforms, colourDirect, accumulationEnabled);
             }
         } else {
-            if (debugAlbedo) {
-                colour = float3(0.0f, 1.0f, 0.0f);
-            } else {
+            float3 skyColour = float3(0.1f, 0.12f, 0.2f);
+            if (!debugAlbedo) {
                 const float t = direction.y * 0.5f + 0.5f;
                 const float3 skyTop = float3(0.45f, 0.55f, 0.85f);
                 const float3 skyBottom = float3(0.1f, 0.12f, 0.2f);
-                colour = mix(skyBottom, skyTop, t);
+                skyColour = mix(skyBottom, skyTop, t);
             }
+            colour = debugAlbedo ? float3(0.0f, 1.0f, 0.0f)
+                                 : accumulateColor(accumulation, gid, uniforms, skyColour, accumulationEnabled);
         }
     }
 
-    const uint noiseW = (resourceHeader != nullptr && resourceHeader->randomTextureWidth > 0)
-                            ? resourceHeader->randomTextureWidth
-                            : randomTex.get_width();
-    const uint noiseH = (resourceHeader != nullptr && resourceHeader->randomTextureHeight > 0)
-                            ? resourceHeader->randomTextureHeight
-                            : randomTex.get_height();
-
-    if (noiseW > 0 && noiseH > 0) {
-        const uint2 noiseCoord = uint2(gid.x % noiseW, gid.y % noiseH);
-        const float noise = randomTex.read(noiseCoord).x;
-        colour *= clamp(0.8f + 0.2f * noise, 0.75f, 1.1f);
+    float3 mappedColour = colour;
+    if (!debugAlbedo) {
+        mappedColour = colour / (colour + float3(1.0f));
+        mappedColour = pow(clamp(mappedColour, 0.0f, 1.0f), float3(1.0f / 2.2f));
     }
-
-    colour = clamp(colour, 0.0f, 1.0f);
-    output.write(float4(colour, 1.0f), gid);
-
-    if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
-        accumulation.write(float4(colour, 1.0f), gid);
-    }
+    output.write(float4(mappedColour, 1.0f), gid);
 }
 #endif // RTR_HAS_RAYTRACING
 

@@ -5,6 +5,8 @@
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 
+#include <cmath>
+
 namespace rtr::core {
 
 namespace {
@@ -13,6 +15,13 @@ void releaseCFObject(CFTypeRef object) {
     if (object) {
         CFRelease(object);
     }
+}
+
+inline float srgbToLinear(float value) {
+    if (value <= 0.04045f) {
+        return value / 12.92f;
+    }
+    return powf((value + 0.055f) / 1.055f, 2.4f);
 }
 
 }  // namespace
@@ -86,8 +95,16 @@ bool ImageLoader::loadRGBA32F(const std::filesystem::path& path, ImageData& outI
     outImage.width = static_cast<std::uint32_t>(width);
     outImage.height = static_cast<std::uint32_t>(height);
     outImage.pixels.resize(width * height * 4);
-    for (std::size_t i = 0; i < temp.size(); ++i) {
-        outImage.pixels[i] = static_cast<float>(temp[i]) / 255.0f;
+    for (std::size_t i = 0; i < width * height; ++i) {
+        const std::size_t base = i * 4;
+        const float r = static_cast<float>(temp[base + 0]) / 255.0f;
+        const float g = static_cast<float>(temp[base + 1]) / 255.0f;
+        const float b = static_cast<float>(temp[base + 2]) / 255.0f;
+        const float a = static_cast<float>(temp[base + 3]) / 255.0f;
+        outImage.pixels[base + 0] = srgbToLinear(r);
+        outImage.pixels[base + 1] = srgbToLinear(g);
+        outImage.pixels[base + 2] = srgbToLinear(b);
+        outImage.pixels[base + 3] = a;
     }
 
     return true;

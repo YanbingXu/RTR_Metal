@@ -267,6 +267,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
         _currentWidth = static_cast<std::uint32_t>(size.width);
         _currentHeight = static_cast<std::uint32_t>(size.height);
         _renderer->setRenderSize(_currentWidth, _currentHeight);
+        _renderer->resetAccumulation();
         [self selectResolutionForWidth:_currentWidth height:_currentHeight];
     }
 }
@@ -329,6 +330,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     }
     const std::string mode(modeString.UTF8String);
     _renderer->setShadingMode(mode);
+    _renderer->resetAccumulation();
 }
 
 - (void)resolutionChanged:(id)sender {
@@ -343,6 +345,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     _currentHeight = height;
     _mtkView.drawableSize = CGSizeMake(width, height);
     _renderer->setRenderSize(width, height);
+    _renderer->resetAccumulation();
 }
 
 - (void)captureScreenshot:(id)sender {

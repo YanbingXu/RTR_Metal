@@ -28,6 +28,7 @@ public:
     bool loadScene(const scene::Scene& scene);
     void setDebugMode(bool enabled);
     void setShadingMode(const std::string& mode);
+    void resetAccumulation();
 
     [[nodiscard]] void* deviceHandle() const noexcept;
     [[nodiscard]] void* commandQueueHandle() const noexcept;

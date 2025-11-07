@@ -46,6 +46,25 @@ constexpr std::uint32_t kDiagnosticWidth = 512;
 constexpr std::uint32_t kDiagnosticHeight = 512;
 constexpr std::size_t kRayTracingPixelStride = sizeof(float) * 4;  // RGBA32F
 
+float srgbChannelToLinear(float value) {
+    if (value <= 0.0f) {
+        return 0.0f;
+    }
+    if (value >= 1.0f) {
+        return value;
+    }
+    if (value <= 0.04045f) {
+        return value / 12.92f;
+    }
+    return powf((value + 0.055f) / 1.055f, 2.4f);
+}
+
+simd_float3 srgbToLinear(simd_float3 colour) {
+    return simd_make_float3(srgbChannelToLinear(colour.x),
+                            srgbChannelToLinear(colour.y),
+                            srgbChannelToLinear(colour.z));
+}
+
 uint8_t floatToSRGBByte(float value) {
     const float clamped = std::clamp(value, 0.0f, 1.0f);
     const long rounded = std::lroundf(clamped * 255.0f);
@@ -261,6 +280,7 @@ struct Renderer::Impl {
     std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
     std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
+    bool accumulationInvalidated = false;
     std::vector<RayTracingInstanceResource> instanceResources;
     std::vector<RayTracingMaterialResource> materialResources;
     std::vector<RayTracingTextureResource> textureResources;
@@ -641,13 +661,32 @@ struct Renderer::Impl {
         uniforms->width = target.width;
         uniforms->height = target.height;
         uniforms->frameIndex = frameCounter;
-        uniforms->flags = debugAlbedo ? 0x1u : 0u;
+        std::uint32_t flags = 0u;
+        if (debugAlbedo) {
+            flags |= RTR_RAY_FLAG_DEBUG;
+        }
+        if (accumulationEnabledThisFrame()) {
+            flags |= RTR_RAY_FLAG_ACCUMULATE;
+        }
+        uniforms->flags = flags;
 
         if (debugAlbedo) {
             core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->flags);
         }
 
         [buffer didModifyRange:NSMakeRange(0, sizeof(RayTracingUniforms))];
+    }
+
+    void resetAccumulationInternal() {
+        frameCounter = 0;
+        accumulationInvalidated = true;
+    }
+
+    bool accumulationEnabledThisFrame() const {
+        if (!config.accumulationEnabled) {
+            return false;
+        }
+        return resources.accumulationTexture != nil;
     }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
@@ -709,6 +748,11 @@ struct Renderer::Impl {
             core::Logger::error("Renderer", "Unable to acquire Metal device for ray tracing resources");
             resources.reset();
             return false;
+        }
+
+        if (accumulationInvalidated) {
+            resources.accumulationTexture = nil;
+            accumulationInvalidated = false;
         }
 
         bool success = true;
@@ -986,7 +1030,13 @@ struct Renderer::Impl {
     void writeRayTracingOutput() const;
     void setOutputPathInternal(std::string path);
     void setRenderSizeInternal(std::uint32_t width, std::uint32_t height);
-    void setDebugModeInternal(bool enabled) { debugAlbedo = enabled; }
+    void setDebugModeInternal(bool enabled) {
+        if (debugAlbedo == enabled) {
+            return;
+        }
+        debugAlbedo = enabled;
+        resetAccumulationInternal();
+    }
 
     void setShadingModeInternal(const std::string& value) {
         const RayTracingShadingMode newMode = parseShadingMode(value);
@@ -1004,6 +1054,8 @@ struct Renderer::Impl {
                 core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed for shading mode switch");
             }
         }
+
+        resetAccumulationInternal();
     }
 };
 
@@ -1027,6 +1079,7 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     if (!wantsHardwareRayTracing()) {
         core::Logger::info("Renderer",
                             "Gradient-only mode active; skipping acceleration structure build for scene");
+        resetAccumulationInternal();
         return true;
     }
 
@@ -1194,7 +1247,7 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
     for (const auto& material : materials) {
         RayTracingMaterialResource resource{};
-        resource.albedo = material.albedo;
+        resource.albedo = srgbToLinear(material.albedo);
         resource.roughness = material.roughness;
         resource.emission = material.emission;
         resource.metallic = material.metallic;
@@ -1205,6 +1258,7 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
             const auto textureIndex = registerTexture(material.albedoTexturePath);
             if (textureIndex.has_value()) {
                 resource.textureIndex = *textureIndex;
+                resource.albedo = simd_make_float3(1.0f, 1.0f, 1.0f);
             } else {
                 core::Logger::warn("Renderer",
                                    "Failed to load texture '%s' for material",
@@ -1221,7 +1275,11 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         core::Logger::warn("Renderer", "Failed to allocate ray tracing resources for scene");
     }
 
-    return topLevelStructure.isValid();
+    const bool loaded = topLevelStructure.isValid();
+    if (loaded) {
+        resetAccumulationInternal();
+    }
+    return loaded;
 }
 
 void Renderer::Impl::writeRayTracingOutput() const {
@@ -1288,6 +1346,7 @@ void Renderer::Impl::setRenderSizeInternal(std::uint32_t width, std::uint32_t he
     targetHeight = sanitizedHeight;
     target.reset();
     resources.reset();
+    resetAccumulationInternal();
 }
 
 Renderer::Renderer(core::EngineConfig config)
@@ -1317,6 +1376,8 @@ bool Renderer::loadScene(const scene::Scene& scene) { return impl_->loadSceneInt
 void Renderer::setDebugMode(bool enabled) { impl_->setDebugModeInternal(enabled); }
 
 void Renderer::setShadingMode(const std::string& mode) { impl_->setShadingModeInternal(mode); }
+
+void Renderer::resetAccumulation() { impl_->resetAccumulationInternal(); }
 
 void* Renderer::deviceHandle() const noexcept { return impl_->context.rawDeviceHandle(); }
 
