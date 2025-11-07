@@ -19,6 +19,15 @@ using namespace metal::raytracing;
 
 namespace {
 
+constant uint kHaltonPrimes[] = {
+    2,   3,   5,   7,   11,  13,  17,  19,
+    23,  29,  31,  37,  41,  43,  47,  53,
+    59,  61,  67,  71,  73,  79,  83,  89
+};
+
+constant uint kMaxRayBounces = 3;
+constant uint kInvalidBufferOffset = 0xFFFFFFFFu;
+
 inline uint mixBits(uint value) {
     value ^= value >> 17;
     value *= 0xed5ad4bbU;
@@ -28,6 +37,22 @@ inline uint mixBits(uint value) {
     value *= 0x31848babU;
     value ^= value >> 14;
     return value;
+}
+
+inline float halton(uint index, uint dimension) {
+    const uint primeCount = static_cast<uint>(sizeof(kHaltonPrimes) / sizeof(uint));
+    const uint primeIndex = dimension % max(primeCount, 1u);
+    const uint base = kHaltonPrimes[primeIndex];
+    float invBase = 1.0f / static_cast<float>(base);
+    float fraction = 1.0f;
+    float result = 0.0f;
+    uint i = index;
+    while (i > 0u) {
+        fraction *= invBase;
+        result += fraction * static_cast<float>(i % base);
+        i /= base;
+    }
+    return result;
 }
 
 inline float2 jitterForPixel(uint2 gid, constant MPSSamplingUniforms& sampling) {
@@ -91,13 +116,47 @@ inline float3 accumulateColor(texture2d<float, access::read_write> accumulation,
     return blended;
 }
 
-inline float2 pseudoRandom(uint2 gid, uint frameIndex) {
+inline uint randomSeedForPixel(uint2 gid,
+                               texture2d<float, access::read> randomTex,
+                               uint randomWidth,
+                               uint randomHeight) {
+    uint seed = mixBits(gid.x * 73856093u ^ gid.y * 19349663u);
+    if (randomWidth > 0u && randomHeight > 0u &&
+        randomTex.get_width() > 0 && randomTex.get_height() > 0) {
+        const uint2 coord = uint2(gid.x % randomWidth, gid.y % randomHeight);
+        const float4 noise = randomTex.read(coord);
+        const uint nx = static_cast<uint>(clamp(noise.x, 0.0f, 1.0f) * 65535.0f);
+        const uint ny = static_cast<uint>(clamp(noise.y, 0.0f, 1.0f) * 65535.0f);
+        const uint nz = static_cast<uint>(clamp(noise.z, 0.0f, 1.0f) * 65535.0f);
+        seed ^= mixBits((nx & 0xFFFFu) | ((ny & 0xFFFFu) << 16));
+        seed ^= mixBits(nz);
+    }
+    return seed;
+}
+
+inline __attribute__((unused)) float2 pseudoRandom(uint2 gid, uint frameIndex) {
     const uint base = mixBits(gid.x * 73856093u ^ gid.y * 19349663u ^ ((frameIndex + 1u) * 83492791u));
     const uint hashX = mixBits(base ^ 0x9e3779b9u);
     const uint hashY = mixBits(base ^ 0x7f4a7c15u);
     const float rx = (static_cast<float>(hashX & 0xFFFFFFu) + 0.5f) / 16777216.0f;
     const float ry = (static_cast<float>(hashY & 0xFFFFFFu) + 0.5f) / 16777216.0f;
     return float2(rx, ry);
+}
+
+inline float3 sampleCosineWeightedHemisphere(float2 u) {
+    const float phi = 2.0f * 3.14159265f * u.x;
+    float cosPhi;
+    const float sinPhi = sincos(phi, cosPhi);
+    const float cosTheta = sqrt(u.y);
+    const float sinTheta = sqrt(max(1.0f - cosTheta * cosTheta, 0.0f));
+    return float3(sinTheta * cosPhi, cosTheta, sinTheta * sinPhi);
+}
+
+inline float3 alignHemisphereWithNormal(float3 sample, float3 normal) {
+    const float3 up = normal;
+    const float3 right = normalize(cross(up, float3(0.0072f, 1.0f, 0.0034f)));
+    const float3 forward = cross(right, up);
+    return sample.x * right + sample.y * up + sample.z * forward;
 }
 
 inline bool traceShadowRay(instance_acceleration_structure scene,
@@ -117,7 +176,48 @@ inline bool traceShadowRay(instance_acceleration_structure scene,
     return shadowQuery.get_committed_intersection_type() == intersection_type::triangle;
 }
 
-inline float distributionGGX(float nDotH, float alpha) {
+struct AreaLight {
+    float3 position;
+    float3 right;
+    float3 forward;
+    float3 normal;
+    float3 color;
+};
+
+inline AreaLight makeCornellAreaLight() {
+    AreaLight light;
+    light.position = float3(0.0f, 0.92f, -1.05f);
+    light.right = float3(0.25f, 0.0f, 0.0f);
+    light.forward = float3(0.0f, 0.0f, -0.18f);
+    light.normal = float3(0.0f, -1.0f, 0.0f);
+    light.color = float3(18.0f, 17.5f, 17.0f);
+    return light;
+}
+
+inline void sampleAreaLight(AreaLight light,
+                            float2 u,
+                            float3 position,
+                            thread float3& lightDir,
+                            thread float3& lightColor,
+                            thread float& lightDistance) {
+    const float2 mapped = u * 2.0f - 1.0f;
+    const float3 samplePoint = light.position + light.right * mapped.x + light.forward * mapped.y;
+    const float3 toSample = samplePoint - position;
+    lightDistance = length(toSample);
+    const float invDistance = 1.0f / max(lightDistance, 1e-3f);
+    lightDir = toSample * invDistance;
+    lightColor = light.color * (invDistance * invDistance);
+    lightColor *= clamp(dot(-lightDir, light.normal), 0.0f, 1.0f);
+}
+
+inline float3 sampleSkyColor(float3 direction) {
+    const float t = clamp(direction.y * 0.5f + 0.5f, 0.0f, 1.0f);
+    const float3 skyTop = float3(0.45f, 0.55f, 0.85f);
+    const float3 skyBottom = float3(0.1f, 0.12f, 0.2f);
+    return mix(skyBottom, skyTop, t);
+}
+
+inline __attribute__((unused)) float distributionGGX(float nDotH, float alpha) {
     const float a2 = alpha * alpha;
     const float denom = (nDotH * nDotH) * (a2 - 1.0f) + 1.0f;
     return a2 / max(3.14159265f * denom * denom, 1e-4f);
@@ -127,12 +227,12 @@ inline float geometrySchlickGGX(float nDotV, float k) {
     return nDotV / (nDotV * (1.0f - k) + k);
 }
 
-inline float geometrySmith(float nDotV, float nDotL, float roughness) {
+inline __attribute__((unused)) float geometrySmith(float nDotV, float nDotL, float roughness) {
     const float k = (roughness + 1.0f) * (roughness + 1.0f) / 8.0f;
     return geometrySchlickGGX(nDotV, k) * geometrySchlickGGX(nDotL, k);
 }
 
-inline float3 fresnelSchlick(float cosTheta, float3 F0) {
+inline __attribute__((unused)) float3 fresnelSchlick(float cosTheta, float3 F0) {
     return F0 + (float3(1.0f) - F0) * pow(clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
 }
 
@@ -181,6 +281,146 @@ inline float4 sampleTexture(uint textureIndex,
     const float4 a = mix(t00, t10, tx);
     const float4 b = mix(t01, t11, tx);
     return mix(a, b, ty);
+}
+
+struct SurfaceSample {
+    float3 worldPosition;
+    float3 worldNormal;
+    float3 baseAlbedo;
+    float3 emission;
+    RTRRayTracingMaterial material;
+};
+
+inline bool gatherSurfaceSample(instance_acceleration_structure scene,
+                                ray traceRay,
+                                device const RTRRayTracingResourceHeader* resourceHeader,
+                                device const RTRRayTracingMeshResource* meshResources,
+                                device const uchar* fallbackVertexBytes,
+                                device const uint* fallbackIndices,
+                                device const RTRRayTracingInstanceResource* instances,
+                                device const RTRRayTracingMaterial* materials,
+                                constant RTRRayTracingTextureResource* textureInfos,
+                                uint textureCount,
+                                device const float* texturePixels,
+                                thread SurfaceSample& sampleOut) {
+    if (is_null_instance_acceleration_structure(scene) || resourceHeader == nullptr || meshResources == nullptr ||
+        instances == nullptr) {
+        return false;
+    }
+
+    intersection_params params;
+    params.assume_geometry_type(geometry_type::triangle);
+    params.force_opacity(forced_opacity::opaque);
+    intersection_query<triangle_data, instancing> query;
+    query.reset(traceRay, scene, ~0u, params);
+    while (query.next()) {}
+
+    if (query.get_committed_intersection_type() != intersection_type::triangle) {
+        return false;
+    }
+
+    const uint instanceCount = resourceHeader->instanceCount;
+    const uint geometryCount = resourceHeader->geometryCount;
+    if (instanceCount == 0u || geometryCount == 0u) {
+        return false;
+    }
+
+    uint instanceIndex = min(query.get_committed_user_instance_id(), instanceCount - 1u);
+    uint meshIndex = 0u;
+    RTRRayTracingInstanceResource instance = {};
+    if (instances != nullptr) {
+        instance = instances[instanceIndex];
+        meshIndex = min(instance.meshIndex, geometryCount - 1u);
+    }
+
+    RTRRayTracingMeshResource mesh = meshResources[meshIndex];
+    const bool hasGPUAddresses = mesh.vertexBufferAddress != 0 && mesh.indexBufferAddress != 0;
+    const bool hasFallbackVertices = mesh.fallbackVertexOffset != kInvalidBufferOffset && fallbackVertexBytes != nullptr;
+    const bool hasFallbackIndices = mesh.fallbackIndexOffset != kInvalidBufferOffset && fallbackIndices != nullptr;
+
+    const device uchar* vertexBytes = nullptr;
+    const device uint* indexData = nullptr;
+    if (hasGPUAddresses) {
+        vertexBytes = reinterpret_cast<const device uchar*>(mesh.vertexBufferAddress);
+        indexData = reinterpret_cast<const device uint*>(mesh.indexBufferAddress);
+    } else {
+        if (hasFallbackVertices) {
+            vertexBytes = fallbackVertexBytes + mesh.fallbackVertexOffset;
+        }
+        if (hasFallbackIndices) {
+            indexData = fallbackIndices + mesh.fallbackIndexOffset;
+        }
+    }
+
+    if (!vertexBytes || !indexData || mesh.vertexStride == 0 || mesh.vertexCount < 3 || mesh.indexCount < 3) {
+        return false;
+    }
+
+    const uint primitiveID = query.get_committed_primitive_id();
+    const uint base = min(primitiveID * 3u, mesh.indexCount - 3u);
+    const uint maxVertex = mesh.vertexCount - 1u;
+    const uint i0 = min(indexData[base + 0], maxVertex);
+    const uint i1 = min(indexData[base + 1], maxVertex);
+    const uint i2 = min(indexData[base + 2], maxVertex);
+
+    const RTRVertexSample v0 = loadVertexSample(vertexBytes, mesh.vertexStride, i0);
+    const RTRVertexSample v1 = loadVertexSample(vertexBytes, mesh.vertexStride, i1);
+    const RTRVertexSample v2 = loadVertexSample(vertexBytes, mesh.vertexStride, i2);
+
+    const float2 bary = query.get_committed_triangle_barycentric_coord();
+    const float w = clamp(1.0f - bary.x - bary.y, 0.0f, 1.0f);
+    const float u = clamp(bary.x, 0.0f, 1.0f);
+    const float v = clamp(bary.y, 0.0f, 1.0f);
+
+    float3 objectNormal = normalize(v0.normal * w + v1.normal * u + v2.normal * v);
+    if (!all(isfinite(objectNormal)) || length_squared(objectNormal) < 1e-4f) {
+        const float3 e1 = v1.position - v0.position;
+        const float3 e2 = v2.position - v0.position;
+        objectNormal = normalize(cross(e1, e2));
+    }
+
+    float2 interpolatedUV = v0.texcoord * w + v1.texcoord * u + v2.texcoord * v;
+
+    const float distance = query.get_committed_distance();
+    const float3 worldPosition = traceRay.origin + traceRay.direction * distance;
+    float3 worldNormal = objectNormal;
+    if (instances != nullptr) {
+        const float3x3 objectToWorld3x3(instance.objectToWorld[0].xyz,
+                                        instance.objectToWorld[1].xyz,
+                                        instance.objectToWorld[2].xyz);
+        worldNormal = normalize(objectToWorld3x3 * objectNormal);
+    }
+
+    RTRRayTracingMaterial materialProps = {};
+    materialProps.albedo = float3(0.75f);
+    materialProps.roughness = 0.5f;
+    materialProps.metallic = 0.0f;
+    materialProps.reflectivity = 0.0f;
+    materialProps.indexOfRefraction = 1.5f;
+
+    const uint materialCount = resourceHeader->materialCount;
+    if (materials != nullptr && materialCount > 0u) {
+        uint materialIndex = mesh.materialIndex;
+        if (instance.materialIndex < materialCount) {
+            materialIndex = instance.materialIndex;
+        }
+        materialIndex = min(materialIndex, materialCount - 1u);
+        materialProps = materials[materialIndex];
+    }
+
+    float3 baseAlbedo = clamp(materialProps.albedo, 0.0f, 1.0f);
+    if (materialProps.textureIndex != RTR_INVALID_TEXTURE_INDEX && textureInfos != nullptr && texturePixels != nullptr) {
+        const float4 texSample = sampleTexture(materialProps.textureIndex, textureInfos, textureCount, texturePixels,
+                                              interpolatedUV);
+        baseAlbedo = clamp(texSample.xyz, 0.0f, 1.0f);
+    }
+
+    sampleOut.worldPosition = worldPosition;
+    sampleOut.worldNormal = worldNormal;
+    sampleOut.baseAlbedo = baseAlbedo;
+    sampleOut.emission = materialProps.emission;
+    sampleOut.material = materialProps;
+    return true;
 }
 
 }  // namespace
@@ -285,251 +525,142 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
         return;
     }
 
-    const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
-    const uint textureCount = (resourceHeader != nullptr) ? resourceHeader->textureCount : 0u;
     const bool debugAlbedo = (uniforms.flags & RTR_RAY_FLAG_DEBUG) != 0u;
     const bool accumulationEnabled = (uniforms.flags & RTR_RAY_FLAG_ACCUMULATE) != 0u;
-    const float2 pixel = float2(gid) + 0.5f;
+    if (debugAlbedo) {
+        const float4 debugColour = float4(1.0f, 0.0f, 0.0f, 1.0f);
+        output.write(debugColour, gid);
+        if (accumulation.get_width() == uniforms.width && accumulation.get_height() == uniforms.height) {
+            accumulation.write(debugColour, gid);
+        }
+        return;
+    }
+
+    const float2 dims = float2(max(uniforms.width, 1u), max(uniforms.height, 1u));
+    const uint textureCount = (resourceHeader != nullptr) ? resourceHeader->textureCount : 0u;
+    const uint randomWidth = (resourceHeader != nullptr) ? resourceHeader->randomTextureWidth : 0u;
+    const uint randomHeight = (resourceHeader != nullptr) ? resourceHeader->randomTextureHeight : 0u;
+    const uint noiseWidth = (randomWidth > 0u) ? randomWidth : randomTex.get_width();
+    const uint noiseHeight = (randomHeight > 0u) ? randomHeight : randomTex.get_height();
+    const uint haltonSeed = randomSeedForPixel(gid, randomTex, noiseWidth, noiseHeight);
+    const uint haltonIndex = haltonSeed + uniforms.frameIndex + 1u;
+    const float2 jitter = float2(halton(haltonIndex, 0u), halton(haltonIndex, 1u));
+
+    const float2 pixel = float2(gid) + jitter;
     const float2 ndc = (pixel / dims - 0.5f) * 2.0f;
 
     const float3 eye = uniforms.eye.xyz;
     const float3 forward = uniforms.forward.xyz;
     const float3 right = uniforms.right.xyz;
     const float3 up = uniforms.up.xyz;
-    const float3 target = eye + forward + right * (ndc.x * uniforms.imagePlaneHalfExtents.x) +
+    const float3 target = eye + forward +
+                          right * (ndc.x * uniforms.imagePlaneHalfExtents.x) +
                           up * (ndc.y * uniforms.imagePlaneHalfExtents.y);
     const float3 direction = normalize(target - eye);
 
     const float rayMin = 0.001f;
     const float rayMax = 1.0e6f;
-    ray primaryRay(eye, direction, rayMin, rayMax);
+    ray currentRay(eye, direction, rayMin, rayMax);
 
-    float3 colour = float3(0.04f, 0.06f, 0.10f);
+    float3 radiance = float3(0.0f);
+    float3 throughput = float3(1.0f);
+    const AreaLight areaLight = makeCornellAreaLight();
 
-    constexpr uint kInvalidOffset = 0xFFFFFFFFu;
-
-    if (!is_null_instance_acceleration_structure(scene)) {
-        intersection_params params;
-        params.assume_geometry_type(geometry_type::triangle);
-        params.force_opacity(forced_opacity::opaque);
-
-        intersection_query<triangle_data, instancing> query;
-        query.reset(primaryRay, scene, ~0u, params);
-
-        // Drive traversal; without intersection functions Metal returns the committed result
-        // after the first call to next().
-        while (query.next()) {
-            // No custom intersection functions, so nothing to do inside the loop.
+    for (uint bounce = 0u; bounce < kMaxRayBounces; ++bounce) {
+        SurfaceSample surface = {};
+        const bool hit = gatherSurfaceSample(scene,
+                                             currentRay,
+                                             resourceHeader,
+                                             meshResources,
+                                             fallbackVertexBytes,
+                                             fallbackIndices,
+                                             instances,
+                                             materials,
+                                             textureInfos,
+                                             textureCount,
+                                             texturePixels,
+                                             surface);
+        if (!hit) {
+            radiance += throughput * sampleSkyColor(currentRay.direction);
+            break;
         }
 
-        if (query.get_committed_intersection_type() == intersection_type::triangle) {
-            const uint primitiveID = query.get_committed_primitive_id();
-            if (debugAlbedo) {
-                colour = float3(1.0f, 0.0f, 0.0f);
-            }
-            
-            const float2 bary = query.get_committed_triangle_barycentric_coord();
-            const float w = clamp(1.0f - bary.x - bary.y, 0.0f, 1.0f);
-            const float u = clamp(bary.x, 0.0f, 1.0f);
-            const float v = clamp(bary.y, 0.0f, 1.0f);
+        if (any(surface.emission > float3(0.0f))) {
+            radiance += throughput * surface.emission;
+            break;
+        }
 
-            const float3 palette[3] = {
-                float3(0.92f, 0.38f, 0.24f),
-                float3(0.24f, 0.88f, 0.46f),
-                float3(0.46f, 0.32f, 0.92f),
-            };
-            float3 albedo = palette[0] * w + palette[1] * u + palette[2] * v;
-            float3 emission = float3(0.0f);
+        const float diffuseWeight = clamp(1.0f - surface.material.reflectivity, 0.0f, 1.0f) *
+                                    (1.0f - clamp(surface.material.metallic, 0.0f, 1.0f));
+        const uint dimBase = 2u + bounce * 5u;
+        const float3 bounceOrigin = surface.worldPosition + surface.worldNormal * 0.003f;
 
-            float3 normal = normalize(float3(0.0f, 1.0f, 0.0f));
-            uint instanceIndex = 0;
-            if (instances && resourceHeader != nullptr && resourceHeader->instanceCount > 0) {
-                instanceIndex = min(query.get_committed_user_instance_id(), resourceHeader->instanceCount - 1u);
-            }
-
-            RTRRayTracingMeshResource mesh = {};
-            RTRRayTracingInstanceResource instance = {};
-            RTRRayTracingMaterial materialProps = {};
-            materialProps.albedo = float3(1.0f);
-            materialProps.textureIndex = RTR_INVALID_TEXTURE_INDEX;
-            materialProps.materialFlags = 0u;
-            bool haveInstanceData = false;
-            float2 interpolatedUV = float2(0.0f);
-            bool hasValidUV = false;
-            if (meshResources != nullptr && resourceHeader != nullptr && resourceHeader->geometryCount > 0 && instances) {
-                instance = instances[instanceIndex];
-                haveInstanceData = true;
-                const uint meshIndex = min(instance.meshIndex, resourceHeader->geometryCount - 1u);
-                mesh = meshResources[meshIndex];
-
-                const bool hasGPUAddresses = mesh.vertexBufferAddress != 0 && mesh.indexBufferAddress != 0;
-                const bool hasFallbackVertices = mesh.fallbackVertexOffset != kInvalidOffset && fallbackVertexBytes;
-                const bool hasFallbackIndices = mesh.fallbackIndexOffset != kInvalidOffset && fallbackIndices;
-
-                const device uchar* vertexBytes = nullptr;
-                const device uint* indexData = nullptr;
-                if (hasGPUAddresses) {
-                    vertexBytes = reinterpret_cast<const device uchar*>(mesh.vertexBufferAddress);
-                    indexData = reinterpret_cast<const device uint*>(mesh.indexBufferAddress);
-                } else {
-                    if (hasFallbackVertices) {
-                        vertexBytes = fallbackVertexBytes + mesh.fallbackVertexOffset;
-                    }
-                    if (hasFallbackIndices) {
-                        indexData = fallbackIndices + mesh.fallbackIndexOffset;
-                    }
-                }
-
-                if (vertexBytes && indexData && mesh.vertexStride > 0 && mesh.indexCount >= 3 && mesh.vertexCount >= 3) {
-                    const uint base = min(primitiveID * 3u, mesh.indexCount - 3u);
-                    const uint maxVertex = mesh.vertexCount - 1u;
-                    const uint i0 = min(indexData[base + 0], maxVertex);
-                    const uint i1 = min(indexData[base + 1], maxVertex);
-                    const uint i2 = min(indexData[base + 2], maxVertex);
-
-                    const RTRVertexSample v0 = loadVertexSample(vertexBytes, mesh.vertexStride, i0);
-                    const RTRVertexSample v1 = loadVertexSample(vertexBytes, mesh.vertexStride, i1);
-                    const RTRVertexSample v2 = loadVertexSample(vertexBytes, mesh.vertexStride, i2);
-                    const float3 p0 = v0.position;
-                    const float3 p1 = v1.position;
-                    const float3 p2 = v2.position;
-                    const float3 e1 = p1 - p0;
-                    const float3 e2 = p2 - p0;
-                    const float3 faceNormal = normalize(cross(e1, e2));
-                    float3 interpolatedNormal = normalize(v0.normal * w + v1.normal * u + v2.normal * v);
-                    if (!all(isfinite(interpolatedNormal)) || length(interpolatedNormal) < 1e-3f) {
-                        interpolatedNormal = faceNormal;
-                    }
-                    if (all(isfinite(interpolatedNormal))) {
-                        normal = interpolatedNormal;
-                    } else if (all(isfinite(faceNormal))) {
-                        normal = faceNormal;
-                    }
-
-                    const float2 uv0 = v0.texcoord;
-                    const float2 uv1 = v1.texcoord;
-                    const float2 uv2 = v2.texcoord;
-                    float2 uvInterp = uv0 * w + uv1 * u + uv2 * v;
-                    if (all(isfinite(uvInterp))) {
-                        interpolatedUV = uvInterp;
-                        hasValidUV = true;
-                    }
-                }
-
-            const uint materialIndex = instance.materialIndex;
-            if (materials && resourceHeader->materialCount > 0) {
-                materialProps = materials[min(materialIndex, resourceHeader->materialCount - 1u)];
-                albedo = materialProps.albedo;
-                emission = materialProps.emission;
+        if (diffuseWeight > 0.0f) {
+            const float2 lightSample = float2(halton(haltonIndex, dimBase + 0u),
+                                              halton(haltonIndex, dimBase + 1u));
+            float3 lightDir;
+            float3 lightColor;
+            float lightDistance;
+            sampleAreaLight(areaLight, lightSample, surface.worldPosition, lightDir, lightColor, lightDistance);
+            const bool occluded = traceShadowRay(scene, bounceOrigin, lightDir, lightDistance - 0.01f);
+            if (!occluded) {
+                const float nDotL = clamp(dot(surface.worldNormal, lightDir), 0.0f, 1.0f);
+                radiance += throughput * surface.baseAlbedo * diffuseWeight * lightColor * nDotL;
             }
         }
 
-        const float distance = query.get_committed_distance();
-        float3 worldNormal = normal;
-            if (haveInstanceData) {
-                const float3x3 objectToWorld3x3 = float3x3(instance.objectToWorld[0].xyz,
-                                                           instance.objectToWorld[1].xyz,
-                                                           instance.objectToWorld[2].xyz);
-                worldNormal = normalize(objectToWorld3x3 * normal);
+        float reflectionChance = clamp(surface.material.reflectivity, 0.0f, 1.0f);
+        float refractionChance = (surface.material.indexOfRefraction > 1.01f)
+                                     ? clamp(1.0f - surface.material.roughness, 0.0f, 1.0f) * 0.5f
+                                     : 0.0f;
+        float diffuseChance = max(1.0f - reflectionChance - refractionChance, 0.0f);
+        float chanceSum = reflectionChance + refractionChance + diffuseChance;
+        if (chanceSum <= 0.0f) {
+            diffuseChance = 1.0f;
+            chanceSum = 1.0f;
+        }
+        reflectionChance /= chanceSum;
+        refractionChance /= chanceSum;
+        diffuseChance = 1.0f - reflectionChance - refractionChance;
+
+        const float lobeSample = halton(haltonIndex, dimBase + 4u);
+        if (lobeSample < reflectionChance) {
+            const float3 reflectDir = normalize(reflect(currentRay.direction, surface.worldNormal));
+            throughput *= mix(float3(1.0f), surface.baseAlbedo, surface.material.metallic);
+            currentRay = ray(bounceOrigin, reflectDir, rayMin, rayMax);
+        } else if (lobeSample < reflectionChance + refractionChance) {
+            float3 normal = surface.worldNormal;
+            float eta = clamp(surface.material.indexOfRefraction, 1.01f, 2.5f);
+            if (dot(currentRay.direction, surface.worldNormal) > 0.0f) {
+                normal = -surface.worldNormal;
+                eta = 1.0f / eta;
             }
-
-            float3 baseAlbedo = clamp(albedo, 0.0f, 1.0f);
-            if (materialProps.textureIndex != RTR_INVALID_TEXTURE_INDEX && hasValidUV) {
-                const float4 textureSample = sampleTexture(materialProps.textureIndex,
-                                                          textureInfos,
-                                                          textureCount,
-                                                          texturePixels,
-                                                          interpolatedUV);
-                baseAlbedo = clamp(textureSample.xyz, 0.0f, 1.0f);
+            float3 refractDir = refract(currentRay.direction, normal, eta);
+            if (!all(isfinite(refractDir)) || dot(refractDir, refractDir) < 1e-6f) {
+                refractDir = reflect(currentRay.direction, surface.worldNormal);
             }
-            float3 worldPosition = primaryRay.origin + primaryRay.direction * distance;
-            const float3 V = normalize(-primaryRay.direction);
-
-            const float3 lightPosition = float3(0.0f, 0.92f, -1.05f);
-            const float3 lightRight = float3(0.25f, 0.0f, 0.0f);
-            const float3 lightForward = float3(0.0f, 0.0f, -0.18f);
-
-            const float2 randSample = pseudoRandom(gid, uniforms.frameIndex + 1u);
-            const float3 samplePoint = lightPosition + lightRight * (randSample.x * 2.0f - 1.0f) +
-                                      lightForward * (randSample.y * 2.0f - 1.0f);
-            const float3 toSample = samplePoint - worldPosition;
-            const float distanceToLight = length(toSample);
-            float3 lightDir = toSample / max(distanceToLight, 1e-3f);
-
-            float shadowFactor = 1.0f;
-            if (!debugAlbedo) {
-                const float3 shadowOrigin = worldPosition + worldNormal * 0.002f;
-                if (traceShadowRay(scene, shadowOrigin, lightDir, distanceToLight - 0.01f)) {
-                    shadowFactor = 0.0f;
-                }
-            }
-
-            const float nDotL = clamp(dot(worldNormal, lightDir), 0.0f, 1.0f);
-            const float nDotV = clamp(dot(worldNormal, V), 0.0f, 1.0f);
-            float roughness = clamp(materialProps.roughness, 0.05f, 1.0f);
-            const float alpha = roughness * roughness;
-            const float3 F0 = mix(float3(0.04f), baseAlbedo, materialProps.metallic);
-            const float3 H = normalize(lightDir + V);
-            const float nDotH = max(dot(worldNormal, H), 0.0f);
-            const float vDotH = max(dot(V, H), 0.0f);
-            const float NDF = distributionGGX(nDotH, alpha);
-            const float G = geometrySmith(nDotV, nDotL, roughness);
-            const float3 F = fresnelSchlick(vDotH, F0);
-            const float3 specular = (NDF * G * F) / max(4.0f * nDotV * nDotL + 1e-4f, 1e-4f);
-            const float3 kS = F;
-            const float3 kD = (float3(1.0f) - kS) * (1.0f - materialProps.metallic);
-            const float3 diffuse = kD * baseAlbedo * (1.0f / 3.14159265f);
-
-            const float3 lightColor = float3(12.0f, 11.5f, 11.0f) / (distanceToLight * distanceToLight + 1e-3f);
-            const float3 direct = (diffuse + specular) * lightColor * nDotL * shadowFactor;
-
-            float3 colourDirect = direct + emission;
-
-            if (!debugAlbedo) {
-                if (materialProps.reflectivity > 0.0f) {
-                    const float3 reflectDir = normalize(reflect(primaryRay.direction.xyz, worldNormal));
-                    const float reflectStrength = clamp(materialProps.reflectivity, 0.0f, 1.0f);
-                    const float skyFactor = clamp(reflectDir.y * 0.5f + 0.5f, 0.0f, 1.0f);
-                    const float3 reflectionTint = mix(float3(0.2f, 0.25f, 0.32f), float3(0.7f, 0.75f, 0.8f), skyFactor);
-                    colourDirect = mix(colourDirect, reflectionTint, reflectStrength * 0.6f);
-                }
-
-                if (materialProps.indexOfRefraction > 1.01f) {
-                    const float eta = 1.0f / clamp(materialProps.indexOfRefraction, 1.01f, 2.5f);
-                    const float3 refractDir = refract(primaryRay.direction.xyz, worldNormal, eta);
-                    if (all(isfinite(refractDir))) {
-                        const float refractionWeight = clamp(1.0f - materialProps.roughness, 0.0f, 1.0f);
-                        const float3 glassTint = float3(0.9f, 0.95f, 1.0f);
-                        colourDirect = mix(colourDirect, glassTint, refractionWeight * 0.35f);
-                    }
-                }
-            }
-
-            if (debugAlbedo) {
-                colour = float3(1.0f, 0.0f, 0.0f);
-            } else {
-                colour = accumulateColor(accumulation, gid, uniforms, colourDirect, accumulationEnabled);
-            }
+            throughput *= mix(float3(1.0f), surface.baseAlbedo, 0.2f);
+            currentRay = ray(bounceOrigin, normalize(refractDir), rayMin, rayMax);
         } else {
-            float3 skyColour = float3(0.1f, 0.12f, 0.2f);
-            if (!debugAlbedo) {
-                const float t = direction.y * 0.5f + 0.5f;
-                const float3 skyTop = float3(0.45f, 0.55f, 0.85f);
-                const float3 skyBottom = float3(0.1f, 0.12f, 0.2f);
-                skyColour = mix(skyBottom, skyTop, t);
-            }
-            colour = debugAlbedo ? float3(0.0f, 1.0f, 0.0f)
-                                 : accumulateColor(accumulation, gid, uniforms, skyColour, accumulationEnabled);
+            const float2 hemiSample = float2(halton(haltonIndex, dimBase + 2u),
+                                             halton(haltonIndex, dimBase + 3u));
+            float3 diffuseDir = sampleCosineWeightedHemisphere(hemiSample);
+            diffuseDir = alignHemisphereWithNormal(diffuseDir, surface.worldNormal);
+            throughput *= surface.baseAlbedo;
+            currentRay = ray(bounceOrigin, normalize(diffuseDir), rayMin, rayMax);
+        }
+
+        if (all(throughput < float3(1e-3f))) {
+            break;
         }
     }
 
-    float3 mappedColour = colour;
-    if (!debugAlbedo) {
-        mappedColour = colour / (colour + float3(1.0f));
-        mappedColour = pow(clamp(mappedColour, 0.0f, 1.0f), float3(1.0f / 2.2f));
-    }
+    float3 colour = accumulateColor(accumulation, gid, uniforms, radiance, accumulationEnabled);
+    float3 mappedColour = colour / (colour + float3(1.0f));
+    mappedColour = pow(clamp(mappedColour, 0.0f, 1.0f), float3(1.0f / 2.2f));
     output.write(float4(mappedColour, 1.0f), gid);
 }
+
 #endif // RTR_HAS_RAYTRACING
 
 kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buffer(0)]],
