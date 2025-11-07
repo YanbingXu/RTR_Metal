@@ -50,6 +50,17 @@ std::string resolveShaderLibraryPath() {
     return "shaders/RTRShaders.metallib";
 }
 
+std::string resolveAssetRootPath() {
+    if (NSBundle* bundle = [NSBundle mainBundle]) {
+        NSString* assetsPath = [[bundle resourcePath] stringByAppendingPathComponent:@"assets"];
+        BOOL isDirectory = NO;
+        if ([[NSFileManager defaultManager] fileExistsAtPath:assetsPath isDirectory:&isDirectory] && isDirectory) {
+            return std::string(assetsPath.UTF8String);
+        }
+    }
+    return "assets";
+}
+
 rtr::core::EngineConfig buildEngineConfig() {
     rtr::core::EngineConfig config{};
     config.applicationName = "RTR Metal On-Screen";
@@ -147,7 +158,8 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     _pendingScreenshot = false;
     _renderer->setRenderSize(_currentWidth, _currentHeight);
 
-    _scene = rtr::scene::createCornellBoxScene();
+    const std::string assetRoot = resolveAssetRootPath();
+    _scene = rtr::scene::createCornellBoxScene(assetRoot);
     _sceneLoaded = _renderer->loadScene(_scene);
     if (!_sceneLoaded) {
         rtr::core::Logger::warn("OnScreenSample", "Renderer failed to load Cornell scene");

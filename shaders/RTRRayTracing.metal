@@ -499,7 +499,7 @@ vertex RTRDisplayVertexOutput RTRDisplayVertex(uint vertexId [[vertex_id]]) {
     RTRDisplayVertexOutput output;
     output.position = float4(positions[vertexId], 0.0f, 1.0f);
     output.texcoord = float2((positions[vertexId].x + 1.0f) * 0.5f,
-                             1.0f - (positions[vertexId].y + 1.0f) * 0.5f);
+                             (positions[vertexId].y + 1.0f) * 0.5f);
     return output;
 }
 

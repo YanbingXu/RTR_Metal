@@ -144,7 +144,10 @@ if(RTR_BUILD_ONSCREEN_SAMPLE)
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 ${RTR_METALLIB}
-                $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources/RTRShaders.metallib)
+                $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources/RTRShaders.metallib
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+                ${CMAKE_SOURCE_DIR}/assets
+                $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources/assets)
 endif()
 
 # Tests --------------------------------------------------------------------

@@ -130,7 +130,7 @@ rtr::scene::Scene buildScene(const std::string& sceneName, const fs::path& asset
     }();
 
     if (lower == "cornell") {
-        return rtr::scene::createCornellBoxScene();
+        return rtr::scene::createCornellBoxScene(assetRoot);
     }
     if (lower == "reflective") {
         rtr::core::Logger::info("Sample", "Loading reflective scene from %s", assetRoot.string().c_str());
