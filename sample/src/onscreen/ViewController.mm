@@ -127,6 +127,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 }
 
 - (void)initializeRenderer {
+    rtr::core::Logger::setMinimumLevel(rtr::core::LogLevel::Warning);
     rtr::core::EngineConfig config = buildEngineConfig();
     _renderer = std::make_unique<rtr::rendering::Renderer>(config);
 

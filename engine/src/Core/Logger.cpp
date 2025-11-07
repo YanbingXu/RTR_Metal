@@ -14,6 +14,11 @@ std::mutex& logMutex() {
     return mutex;
 }
 
+LogLevel& minLogLevel() {
+    static LogLevel level = LogLevel::Info;
+    return level;
+}
+
 const char* levelLabel(LogLevel level) {
     switch (level) {
     case LogLevel::Info:
@@ -44,6 +49,9 @@ std::string formatMessage(const char* format, std::va_list args) {
 }  // namespace
 
 void Logger::log(LogLevel level, const char* tag, const char* format, std::va_list args) {
+    if (static_cast<int>(level) < static_cast<int>(minLogLevel())) {
+        return;
+    }
     const std::string message = formatMessage(format, args);
     std::lock_guard<std::mutex> lock(logMutex());
     std::fprintf(stderr, "[%s][%s] %s\n", levelLabel(level), tag ? tag : "RTR", message.c_str());
@@ -69,5 +77,9 @@ void Logger::error(const char* tag, const char* format, ...) {
     log(LogLevel::Error, tag, format, args);
     va_end(args);
 }
+
+void Logger::setMinimumLevel(LogLevel level) { minLogLevel() = level; }
+
+LogLevel Logger::minimumLevel() { return minLogLevel(); }
 
 }  // namespace rtr::core
