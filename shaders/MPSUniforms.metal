@@ -31,6 +31,10 @@ struct MPSSceneLimits {
     uint indexCount;
     uint colorCount;
     uint primitiveCount;
+    uint normalCount;
+    uint texcoordCount;
+    uint materialCount;
+    uint textureCount;
 };
 
 struct MPSAccumulationUniforms {

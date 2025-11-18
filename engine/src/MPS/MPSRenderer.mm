@@ -17,15 +17,19 @@
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <simd/simd.h>
 
+#include "RTRMetalEngine/Core/ImageLoader.hpp"
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/MPS/MPSPathTracer.hpp"
 #include "RTRMetalEngine/MPS/MPSUniforms.hpp"
 #include "RTRMetalEngine/MPS/MPSSceneConverter.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
+#include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 #include "RTRMetalEngine/Scene/Scene.hpp"
 #include "RTRMetalEngine/Scene/SceneBuilder.hpp"
@@ -96,6 +100,32 @@ std::vector<MPSPackedFloat3> packVectorFloat3(const std::vector<vector_float3>& 
         packed.push_back({value.x, value.y, value.z});
     }
     return packed;
+}
+
+std::vector<vector_float2> copyVectorFloat2(const std::vector<vector_float2>& input) {
+    std::vector<vector_float2> packed;
+    packed.reserve(input.size());
+    packed.insert(packed.end(), input.begin(), input.end());
+    return packed;
+}
+
+float srgbChannelToLinear(float value) {
+    if (value <= 0.0f) {
+        return 0.0f;
+    }
+    if (value >= 1.0f) {
+        return value;
+    }
+    if (value <= 0.04045f) {
+        return value / 12.92f;
+    }
+    return powf((value + 0.055f) / 1.055f, 2.4f);
+}
+
+simd_float3 srgbToLinear(simd_float3 colour) {
+    return simd_make_float3(srgbChannelToLinear(colour.x),
+                           srgbChannelToLinear(colour.y),
+                           srgbChannelToLinear(colour.z));
 }
 
 id<MTLLibrary> loadMetalLibrary(id<MTLDevice> device) {
@@ -195,6 +225,23 @@ void MPSRenderer::createUniformBuffer() {
     if (!uniformBuffer_.isValid()) {
         core::Logger::warn("MPSRenderer", "Failed to allocate camera uniform buffer");
     }
+}
+
+bool MPSRenderer::uploadAttributeBuffer(BufferHandle& handle,
+                                        const void* data,
+                                        std::size_t length,
+                                        const char* label) {
+    if (length == 0 || data == nullptr) {
+        handle = {};
+        return true;
+    }
+
+    handle = bufferAllocator_.createBuffer(length, data, label);
+    if (!handle.isValid()) {
+        core::Logger::error("MPSRenderer", "Failed to upload %s (%zu bytes)", label, length);
+        return false;
+    }
+    return true;
 }
 
 void MPSRenderer::updateCameraUniforms() {
@@ -342,7 +389,29 @@ bool MPSRenderer::initializeGPUResources() {
                            packedColors.size() * sizeof(MPSPackedFloat3), "mps.colors");
     }
 
-    return true;
+    bool success = true;
+    const auto packedNormals = packVectorFloat3(cpuSceneNormals_);
+    if (!packedNormals.empty()) {
+        success &= uploadAttributeBuffer(normalsBuffer_,
+                                         packedNormals.data(),
+                                         packedNormals.size() * sizeof(MPSPackedFloat3),
+                                         "mps.normals");
+    } else {
+        normalsBuffer_ = {};
+    }
+
+    const auto packedTexcoords = copyVectorFloat2(cpuSceneTexcoords_);
+    if (!packedTexcoords.empty()) {
+        success &= uploadAttributeBuffer(texcoordBuffer_,
+                                         packedTexcoords.data(),
+                                         packedTexcoords.size() * sizeof(vector_float2),
+                                         "mps.texcoords");
+    } else {
+        texcoordBuffer_ = {};
+    }
+
+    success &= uploadMaterialBuffers();
+    return success;
 }
 
 bool MPSRenderer::initialize() {
@@ -413,6 +482,8 @@ bool MPSRenderer::uploadScene(const scene::Scene& scene) {
     }
 
     cpuScenePositions_ = sceneData.positions;
+    cpuSceneNormals_ = sceneData.normals;
+    cpuSceneTexcoords_ = sceneData.texcoords;
     cpuSceneIndices_ = sceneData.indices;
     cpuSceneColors_ = sceneData.colors;
     cpuScenePrimitiveMaterials_ = sceneData.primitiveMaterials;
@@ -430,6 +501,10 @@ bool MPSRenderer::uploadScene(const scene::Scene& scene) {
         materials_.push_back(props);
     }
 
+    if (!buildMaterialResources(scene)) {
+        core::Logger::warn("MPSRenderer", "Failed to build material resources; GPU shading will fall back to vertex colours");
+    }
+
     if (!initializeGPUResources()) {
         core::Logger::warn("MPSRenderer", "GPU shading resources unavailable; falling back to CPU shading");
     }
@@ -439,6 +514,184 @@ bool MPSRenderer::uploadScene(const scene::Scene& scene) {
     core::Logger::info("MPSRenderer", "Loaded scene with %zu vertices and %zu triangles",
                        cpuScenePositions_.size(), cpuSceneIndices_.size() / 3);
     return true;
+}
+
+bool MPSRenderer::buildMaterialResources(const scene::Scene& scene) {
+    rtMaterials_.clear();
+    rtTextureInfos_.clear();
+    rtTexturePixels_.clear();
+
+    const auto& materials = scene.materials();
+    if (materials.empty()) {
+        RayTracingMaterialResource defaultMaterial{};
+        defaultMaterial.albedo = simd_make_float3(0.82f, 0.82f, 0.82f);
+        rtMaterials_.push_back(defaultMaterial);
+        return true;
+    }
+
+    std::unordered_map<std::string, std::uint32_t> textureLookup;
+    textureLookup.reserve(materials.size());
+
+    auto canonicalisePath = [](const std::string& path) -> std::string {
+        if (path.empty()) {
+            return path;
+        }
+        std::error_code ec;
+        std::filesystem::path fsPath(path);
+        std::filesystem::path resolved = std::filesystem::weakly_canonical(fsPath, ec);
+        if (ec) {
+            resolved = fsPath.lexically_normal();
+        }
+        return resolved.string();
+    };
+
+    auto registerTexture = [&](const std::string& texturePath) -> std::optional<std::uint32_t> {
+        if (texturePath.empty()) {
+            return std::nullopt;
+        }
+
+        const std::string key = canonicalisePath(texturePath);
+        const auto found = textureLookup.find(key);
+        if (found != textureLookup.end()) {
+            return found->second;
+        }
+
+        core::ImageData imageData{};
+        if (!core::ImageLoader::loadRGBA32F(std::filesystem::path(key), imageData)) {
+            core::Logger::warn("MPSRenderer", "Failed to load texture '%s'", key.c_str());
+            return std::nullopt;
+        }
+
+        RayTracingTextureResource texture{};
+        texture.width = imageData.width;
+        texture.height = imageData.height;
+        texture.rowPitch = imageData.width;
+        texture.dataOffset = static_cast<std::uint32_t>(rtTexturePixels_.size());
+        rtTextureInfos_.push_back(texture);
+        rtTexturePixels_.insert(rtTexturePixels_.end(), imageData.pixels.begin(), imageData.pixels.end());
+
+        const std::uint32_t textureIndex = static_cast<std::uint32_t>(rtTextureInfos_.size() - 1);
+        textureLookup.emplace(key, textureIndex);
+        return textureIndex;
+    };
+
+    rtMaterials_.reserve(materials.size());
+    for (const auto& material : materials) {
+        RayTracingMaterialResource resource{};
+        resource.albedo = srgbToLinear(material.albedo);
+        resource.roughness = material.roughness;
+        resource.emission = material.emission;
+        resource.metallic = material.metallic;
+        resource.reflectivity = material.reflectivity;
+        resource.indexOfRefraction = material.indexOfRefraction;
+        resource.textureIndex = kInvalidTextureIndex;
+
+        if (!material.albedoTexturePath.empty()) {
+            const auto textureIndex = registerTexture(material.albedoTexturePath);
+            if (textureIndex.has_value()) {
+                resource.textureIndex = *textureIndex;
+                resource.albedo = simd_make_float3(1.0f, 1.0f, 1.0f);
+            }
+        }
+
+        rtMaterials_.push_back(resource);
+    }
+
+    return true;
+}
+
+bool MPSRenderer::uploadMaterialBuffers() {
+    bool success = true;
+    if (!rtMaterials_.empty()) {
+        success &= uploadAttributeBuffer(materialBuffer_,
+                                         rtMaterials_.data(),
+                                         rtMaterials_.size() * sizeof(RayTracingMaterialResource),
+                                         "mps.rtMaterials");
+    } else {
+        materialBuffer_ = {};
+    }
+
+    if (!rtTextureInfos_.empty()) {
+        success &= uploadAttributeBuffer(textureInfoBuffer_,
+                                         rtTextureInfos_.data(),
+                                         rtTextureInfos_.size() * sizeof(RayTracingTextureResource),
+                                         "mps.textureInfo");
+    } else {
+        textureInfoBuffer_ = {};
+    }
+
+    if (!rtTexturePixels_.empty()) {
+        success &= uploadAttributeBuffer(textureDataBuffer_,
+                                         rtTexturePixels_.data(),
+                                         rtTexturePixels_.size() * sizeof(float),
+                                         "mps.textureData");
+    } else {
+        textureDataBuffer_ = {};
+    }
+
+    if (!cpuScenePrimitiveMaterials_.empty()) {
+        success &= uploadAttributeBuffer(primitiveMaterialBuffer_,
+                                         cpuScenePrimitiveMaterials_.data(),
+                                         cpuScenePrimitiveMaterials_.size() * sizeof(std::uint32_t),
+                                         "mps.primitiveMaterials");
+    } else {
+        primitiveMaterialBuffer_ = {};
+    }
+
+    return success;
+}
+
+vector_float3 MPSRenderer::sampleTextureCPU(const RayTracingTextureResource& info, vector_float2 uv) const {
+    if (info.width == 0 || info.height == 0) {
+        return {1.0f, 1.0f, 1.0f};
+    }
+
+    if (rtTexturePixels_.empty()) {
+        return {1.0f, 1.0f, 1.0f};
+    }
+
+    auto wrap = [](float value) {
+        value = value - std::floor(value);
+        return (value < 0.0f) ? value + 1.0f : value;
+    };
+
+    const float wrappedU = wrap(uv.x);
+    const float wrappedV = wrap(uv.y);
+    const float sampleX = wrappedU * (static_cast<float>(info.width) - 1.0f);
+    const float sampleY = (1.0f - wrappedV) * (static_cast<float>(info.height) - 1.0f);
+
+    const uint32_t x0 = static_cast<uint32_t>(std::floor(sampleX));
+    const uint32_t y0 = static_cast<uint32_t>(std::floor(sampleY));
+    const uint32_t x1 = std::min<uint32_t>(x0 + 1u, info.width - 1u);
+    const uint32_t y1 = std::min<uint32_t>(y0 + 1u, info.height - 1u);
+    const float tx = sampleX - std::floor(sampleX);
+    const float ty = sampleY - std::floor(sampleY);
+
+    auto readTexel = [&](uint32_t x, uint32_t y) -> vector_float4 {
+        const std::size_t rowPitch = static_cast<std::size_t>(info.rowPitch);
+        const std::size_t texelIndex = static_cast<std::size_t>(info.dataOffset) + (y * rowPitch + x) * 4ull;
+        if (texelIndex + 3ull >= rtTexturePixels_.size()) {
+            return {1.0f, 1.0f, 1.0f, 1.0f};
+        }
+        return {rtTexturePixels_[texelIndex + 0],
+                rtTexturePixels_[texelIndex + 1],
+                rtTexturePixels_[texelIndex + 2],
+                rtTexturePixels_[texelIndex + 3]};
+    };
+
+    const vector_float4 t00 = readTexel(x0, y0);
+    const vector_float4 t10 = readTexel(x1, y0);
+    const vector_float4 t01 = readTexel(x0, y1);
+    const vector_float4 t11 = readTexel(x1, y1);
+
+    auto lerp = [](vector_float4 a, vector_float4 b, float t) {
+        return a + (b - a) * t;
+    };
+
+    const vector_float4 a = lerp(t00, t10, tx);
+    const vector_float4 b = lerp(t01, t11, tx);
+    const vector_float4 result = lerp(a, b, ty);
+    return {result.x, result.y, result.z};
 }
 
 void MPSRenderer::setFrameDimensions(std::uint32_t width, std::uint32_t height) noexcept {
@@ -809,13 +1062,13 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
         cpuPixels.resize(pixelCount * 3);
         cpuFloatPixels.resize(pixelCount, (vector_float3){0.0f, 0.0f, 0.0f});
 
-        vector_float3 lightDir = simd_normalize((vector_float3){0.2f, 0.8f, 0.6f});
+        const vector_float3 lightDir = simd_normalize((vector_float3){0.2f, 0.8f, 0.6f});
         constexpr std::uint32_t kNoHit = std::numeric_limits<std::uint32_t>::max();
 
         for (std::size_t i = 0; i < pixelCount; ++i) {
             const auto& intersection = intersections[i];
             const bool hit = intersection.distance < FLT_MAX && intersection.primitiveIndex != kNoHit && indices.size() >= 3;
-            vector_float3 color = {0.08f, 0.08f, 0.12f};
+            vector_float3 colour = {0.08f, 0.08f, 0.12f};
             if (hit) {
                 const uint32_t primitiveIndex = intersection.primitiveIndex;
                 const std::size_t base = static_cast<std::size_t>(primitiveIndex) * 3;
@@ -828,21 +1081,59 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
                         const vector_float3& v1 = vertices[i1];
                         const vector_float3& v2 = vertices[i2];
 
-                        vector_float3 e1 = v1 - v0;
-                        vector_float3 e2 = v2 - v0;
-                        vector_float3 normal = simd_normalize(simd_cross(e1, e2));
+                        vector_float3 n0 = (i0 < cpuSceneNormals_.size()) ? cpuSceneNormals_[i0]
+                                                                          : vector_float3{0.0f, 1.0f, 0.0f};
+                        vector_float3 n1 = (i1 < cpuSceneNormals_.size()) ? cpuSceneNormals_[i1]
+                                                                          : vector_float3{0.0f, 1.0f, 0.0f};
+                        vector_float3 n2 = (i2 < cpuSceneNormals_.size()) ? cpuSceneNormals_[i2]
+                                                                          : vector_float3{0.0f, 1.0f, 0.0f};
+                        const vector_float3 fallbackNormal = simd_normalize(simd_cross(v1 - v0, v2 - v0));
 
-                        float intensity = fmaxf(0.0f, simd_dot(normal, lightDir));
-                        intensity = intensity * 0.8f + 0.2f;
+                        const float u = intersection.coordinates.x;
+                        const float v = intersection.coordinates.y;
+                        const float w = 1.0f - u - v;
 
-                        float u = intersection.coordinates.x;
-                        float v = intersection.coordinates.y;
-                        float w = 1.0f - u - v;
+                        const vector_float3 interpolatedNormal = simd_normalize(n0 * w + n1 * u + n2 * v +
+                                                                              fallbackNormal * 0.001f);
+
+                        vector_float2 uv0 = (i0 < cpuSceneTexcoords_.size()) ? cpuSceneTexcoords_[i0]
+                                                                             : vector_float2{0.0f, 0.0f};
+                        vector_float2 uv1 = (i1 < cpuSceneTexcoords_.size()) ? cpuSceneTexcoords_[i1]
+                                                                             : vector_float2{0.0f, 0.0f};
+                        vector_float2 uv2 = (i2 < cpuSceneTexcoords_.size()) ? cpuSceneTexcoords_[i2]
+                                                                             : vector_float2{0.0f, 0.0f};
+                        const vector_float2 uvCoord = uv0 * w + uv1 * u + uv2 * v;
 
                         vector_float3 c0 = (i0 < colors.size()) ? colors[i0] : vector_float3{0.85f, 0.4f, 0.25f};
                         vector_float3 c1 = (i1 < colors.size()) ? colors[i1] : vector_float3{0.25f, 0.85f, 0.4f};
                         vector_float3 c2 = (i2 < colors.size()) ? colors[i2] : vector_float3{0.4f, 0.25f, 0.85f};
-                        color = (c0 * w + c1 * u + c2 * v) * intensity;
+                        const vector_float3 vertexColour = simd_clamp(c0 * w + c1 * u + c2 * v,
+                                                                      (vector_float3){0.0f, 0.0f, 0.0f},
+                                                                      (vector_float3){1.0f, 1.0f, 1.0f});
+
+                        vector_float3 materialColour = vertexColour;
+                        vector_float3 emission = {0.0f, 0.0f, 0.0f};
+                        if (primitiveIndex < cpuScenePrimitiveMaterials_.size()) {
+                            const uint32_t materialIndex = cpuScenePrimitiveMaterials_[primitiveIndex];
+                            if (materialIndex != std::numeric_limits<uint32_t>::max() &&
+                                materialIndex < rtMaterials_.size()) {
+                                const auto& material = rtMaterials_[materialIndex];
+                                vector_float3 albedo = {material.albedo.x, material.albedo.y, material.albedo.z};
+                                if (material.textureIndex != kInvalidTextureIndex &&
+                                    material.textureIndex < rtTextureInfos_.size()) {
+                                    albedo = sampleTextureCPU(rtTextureInfos_[material.textureIndex], uvCoord);
+                                }
+                                materialColour = simd_clamp(albedo, (vector_float3){0.0f, 0.0f, 0.0f},
+                                                            (vector_float3){1.0f, 1.0f, 1.0f});
+                                emission = {material.emission.x, material.emission.y, material.emission.z};
+                            }
+                        }
+
+                        float intensity = fmaxf(0.0f, simd_dot(interpolatedNormal, lightDir));
+                        intensity = intensity * 0.8f + 0.2f;
+                        colour = simd_clamp(materialColour * intensity + emission,
+                                            (vector_float3){0.0f, 0.0f, 0.0f},
+                                            (vector_float3){1.0f, 1.0f, 1.0f});
                     }
                 }
             }
@@ -855,11 +1146,10 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
                                    intersection.distance);
             }
 
-            color = simd_clamp(color, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
-            cpuFloatPixels[i] = color;
-            cpuPixels[i * 3 + 0] = floatToSRGBByte(color.x);
-            cpuPixels[i * 3 + 1] = floatToSRGBByte(color.y);
-            cpuPixels[i * 3 + 2] = floatToSRGBByte(color.z);
+            cpuFloatPixels[i] = colour;
+            cpuPixels[i * 3 + 0] = floatToSRGBByte(colour.x);
+            cpuPixels[i * 3 + 1] = floatToSRGBByte(colour.y);
+            cpuPixels[i * 3 + 2] = floatToSRGBByte(colour.z);
         }
 
         cpuComputed = true;
@@ -894,16 +1184,30 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->positionsBuffer.nativeHandle()
                                    offset:0
                                   atIndex:1];
+                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)normalsBuffer_.nativeHandle() offset:0 atIndex:2];
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->indicesBuffer.nativeHandle()
                                    offset:0
-                                  atIndex:2];
+                                  atIndex:3];
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->colorsBuffer.nativeHandle()
                                    offset:0
-                                  atIndex:3];
+                                  atIndex:4];
+                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)texcoordBuffer_.nativeHandle() offset:0 atIndex:5];
+                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)materialBuffer_.nativeHandle()
+                                   offset:0
+                                  atIndex:6];
+                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)primitiveMaterialBuffer_.nativeHandle()
+                                   offset:0
+                                  atIndex:7];
+                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)textureInfoBuffer_.nativeHandle()
+                                   offset:0
+                                  atIndex:8];
+                    [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)textureDataBuffer_.nativeHandle()
+                                   offset:0
+                                  atIndex:9];
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->shadingOutputBuffer.nativeHandle()
                                    offset:0
-                                  atIndex:4];
-                    [shadeEncoder setBytes:&cameraUniforms_ length:sizeof(cameraUniforms_) atIndex:5];
+                                  atIndex:10];
+                    [shadeEncoder setBytes:&cameraUniforms_ length:sizeof(cameraUniforms_) atIndex:11];
 
                     MPSSceneLimits limits{};
                     limits.vertexCount = static_cast<std::uint32_t>(
@@ -913,8 +1217,16 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
                     limits.colorCount = static_cast<std::uint32_t>(
                         std::min<std::size_t>(cpuSceneColors_.size(), std::numeric_limits<std::uint32_t>::max()));
                     limits.primitiveCount = limits.indexCount / 3U;
-                    [shadeEncoder setBytes:&limits length:sizeof(limits) atIndex:6];
-                    [shadeEncoder setBuffer:debugBuffer offset:0 atIndex:7];
+                    limits.normalCount = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(cpuSceneNormals_.size(), std::numeric_limits<std::uint32_t>::max()));
+                    limits.texcoordCount = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(cpuSceneTexcoords_.size(), std::numeric_limits<std::uint32_t>::max()));
+                    limits.materialCount = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(rtMaterials_.size(), std::numeric_limits<std::uint32_t>::max()));
+                    limits.textureCount = static_cast<std::uint32_t>(
+                        std::min<std::size_t>(rtTextureInfos_.size(), std::numeric_limits<std::uint32_t>::max()));
+                    [shadeEncoder setBytes:&limits length:sizeof(limits) atIndex:12];
+                    [shadeEncoder setBuffer:debugBuffer offset:0 atIndex:13];
 
                     const NSUInteger threadWidth = gpuState_->shadePipeline.threadExecutionWidth;
                     const NSUInteger threadsPerThreadgroup = gpuState_->shadePipeline.maxTotalThreadsPerThreadgroup;
@@ -1188,9 +1500,14 @@ bool MPSRenderer::writePPM(const char* path,
 }
 
 bool MPSRenderer::usesGPUShading() const noexcept {
+    const bool requiresTextures = !rtTextureInfos_.empty();
+    const bool hasTextureBuffers = !requiresTextures ||
+        (textureInfoBuffer_.isValid() && textureDataBuffer_.isValid());
+
     return gpuShadingEnabled_ && gpuState_ && gpuState_->shadePipeline != nil &&
            gpuState_->positionsBuffer.isValid() && gpuState_->indicesBuffer.isValid() &&
-           gpuState_->colorsBuffer.isValid();
+           gpuState_->colorsBuffer.isValid() && normalsBuffer_.isValid() && texcoordBuffer_.isValid() &&
+           primitiveMaterialBuffer_.isValid() && materialBuffer_.isValid() && hasTextureBuffers;
 }
 }  // namespace rtr::rendering
 

@@ -49,16 +49,24 @@ bool appendMeshInstance(const scene::Mesh& mesh,
     const vector_float3 materialColor = material ? clampColor(material->albedo) : clampColor(defaultColor);
 
     const std::size_t positionStart = outScene.positions.size();
+    const std::size_t normalStart = outScene.normals.size();
+    const std::size_t texcoordStart = outScene.texcoords.size();
     const std::size_t colorStart = outScene.colors.size();
     const std::size_t indexStart = outScene.indices.size();
     const std::size_t primitiveStart = outScene.primitiveMaterials.size();
 
     outScene.positions.reserve(outScene.positions.size() + vertexCount);
+    outScene.normals.reserve(outScene.normals.size() + vertexCount);
+    outScene.texcoords.reserve(outScene.texcoords.size() + vertexCount);
     outScene.colors.reserve(outScene.colors.size() + vertexCount);
     for (std::size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex) {
         const auto& vertex = vertices[vertexIndex];
         const simd_float4 position4 = simd_mul(transform, simd_make_float4(vertex.position, 1.0f));
         outScene.positions.push_back(simd_make_float3(position4.x, position4.y, position4.z));
+        const simd_float4 normal4 = simd_mul(transform, simd_make_float4(vertex.normal, 0.0f));
+        const simd_float3 normal = simd_normalize(simd_make_float3(normal4.x, normal4.y, normal4.z));
+        outScene.normals.push_back(normal);
+        outScene.texcoords.push_back(vertex.texcoord);
         outScene.colors.push_back(materialColor);
     }
 
@@ -67,6 +75,8 @@ bool appendMeshInstance(const scene::Mesh& mesh,
         const std::size_t transformedIndex = baseVertex + static_cast<std::size_t>(idx);
         if (transformedIndex > std::numeric_limits<std::uint32_t>::max()) {
             outScene.positions.resize(positionStart);
+            outScene.normals.resize(normalStart);
+            outScene.texcoords.resize(texcoordStart);
             outScene.colors.resize(colorStart);
             outScene.indices.resize(indexStart);
             outScene.primitiveMaterials.resize(primitiveStart);

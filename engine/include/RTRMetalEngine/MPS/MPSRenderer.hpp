@@ -9,6 +9,7 @@
 #include "RTRMetalEngine/MPS/MPSUniforms.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
+#include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
 
 #include <simd/simd.h>
 
@@ -76,13 +77,24 @@ private:
     GeometryStore geometryStore_;
     MPSPathTracer pathTracer_;
     std::vector<vector_float3> cpuScenePositions_;
+    std::vector<vector_float3> cpuSceneNormals_;
+    std::vector<vector_float2> cpuSceneTexcoords_;
     std::vector<uint32_t> cpuSceneIndices_;
     std::vector<vector_float3> cpuSceneColors_;
     std::vector<uint32_t> cpuScenePrimitiveMaterials_;
     std::vector<MaterialProperties> materials_;
+    std::vector<RayTracingMaterialResource> rtMaterials_;
+    std::vector<RayTracingTextureResource> rtTextureInfos_;
+    std::vector<float> rtTexturePixels_;
     BufferHandle uniformBuffer_;
     BufferHandle rayBuffer_;
     BufferHandle intersectionBuffer_;
+    BufferHandle normalsBuffer_;
+    BufferHandle texcoordBuffer_;
+    BufferHandle primitiveMaterialBuffer_;
+    BufferHandle materialBuffer_;
+    BufferHandle textureInfoBuffer_;
+    BufferHandle textureDataBuffer_;
     MPSCameraUniforms cameraUniforms_{};
     bool gpuShadingEnabled_ = false;
     struct GPUState;
@@ -106,6 +118,10 @@ private:
                       bool enableGpuShading,
                       bool accumulateGpu);
     bool uploadScene(const scene::Scene& scene);
+    bool buildMaterialResources(const scene::Scene& scene);
+    bool uploadMaterialBuffers();
+    bool uploadAttributeBuffer(BufferHandle& handle, const void* data, std::size_t length, const char* label);
+    vector_float3 sampleTextureCPU(const RayTracingTextureResource& info, vector_float2 uv) const;
     static std::uint64_t computePixelHash(const std::vector<uint8_t>& data);
     static bool writePPM(const char* path, const std::vector<uint8_t>& data, std::uint32_t width, std::uint32_t height);
 };

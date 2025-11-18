@@ -21,7 +21,7 @@
 ### Immediate Sprint Backlog
 1. 实现 compute 光追管线：`raytracingKernel` + TLAS 绑定，替换 `dispatchRayTracingPass()` stub。
 2. 引入 per-frame uniform ring buffer、资源指针缓冲、累积/随机纹理，并在 Renderer 中串联调度逻辑。
-3. 让 MPS GPU 着色路径使用相同资源布局，同时保留 CPU 着色作为确定性回退。
+3. ~~让 MPS GPU 着色路径使用相同资源布局，同时保留 CPU 着色作为确定性回退。~~ ✅ GPU/CPU 均使用 `RTRRayTracingMaterial` 与纹理缓冲，差异比较仍以 CPU 结果为基准。
 4. 搭建 CLI 图像导出与 hash 校验流程，更新 README/Docs 的硬件要求与运行步骤。
 
 ## Milestone 4 – Polish & Validation (🔒)

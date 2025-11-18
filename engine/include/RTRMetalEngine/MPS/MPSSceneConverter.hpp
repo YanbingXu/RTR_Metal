@@ -27,6 +27,8 @@ struct MPSMaterialProperties {
 
 struct MPSSceneData {
     std::vector<vector_float3> positions;
+    std::vector<vector_float3> normals;
+    std::vector<vector_float2> texcoords;
     std::vector<vector_float3> colors;
     std::vector<uint32_t> indices;
     std::vector<MPSMaterialProperties> materials;

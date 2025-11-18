@@ -695,12 +695,18 @@ kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buf
 
 kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buffer(0)]],
                            const device packed_float3* positions [[buffer(1)]],
-                           const device uint* indices [[buffer(2)]],
-                           const device packed_float3* colors [[buffer(3)]],
-                           device float4* outRadiance [[buffer(4)]],
-                           constant MPSCameraUniforms& uniforms [[buffer(5)]],
-                           constant MPSSceneLimits& limits [[buffer(6)]],
-                           device float4* debugBuffer [[buffer(7)]],
+                           const device packed_float3* normals [[buffer(2)]],
+                           const device uint* indices [[buffer(3)]],
+                           const device packed_float3* colors [[buffer(4)]],
+                           const device packed_float2* texcoords [[buffer(5)]],
+                           const device RTRRayTracingMaterial* materials [[buffer(6)]],
+                           const device uint* primitiveMaterials [[buffer(7)]],
+                           constant RTRRayTracingTextureResource* textureInfos [[buffer(8)]],
+                           const device float* texturePixels [[buffer(9)]],
+                           device float4* outRadiance [[buffer(10)]],
+                           constant MPSCameraUniforms& uniforms [[buffer(11)]],
+                           constant MPSSceneLimits& limits [[buffer(12)]],
+                           device float4* debugBuffer [[buffer(13)]],
                            uint gid [[thread_position_in_grid]]) {
     if (gid >= uniforms.width * uniforms.height) {
         return;
@@ -724,16 +730,27 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
                 const float3 v0 = float3(positions[i0]);
                 const float3 v1 = float3(positions[i1]);
                 const float3 v2 = float3(positions[i2]);
-                const float3 e1 = v1 - v0;
-                const float3 e2 = v2 - v0;
-                const float3 normal = normalize(cross(e1, e2));
+                const float u = clamp(isect.coordinates.x, 0.0f, 1.0f);
+                const float v = clamp(isect.coordinates.y, 0.0f, 1.0f);
+                const float w = clamp(1.0f - u - v, 0.0f, 1.0f);
 
-                const float lightIntensity = max(0.0f, dot(normal, normalize(float3(0.2f, 0.8f, 0.6f))));
-                const float shading = lightIntensity * 0.8f + 0.2f;
+                float3 normal = float3(0.0f, 1.0f, 0.0f);
+                if (limits.normalCount > 0 && normals != nullptr) {
+                    const float3 n0 = (i0 < limits.normalCount) ? float3(normals[i0]) : float3(0.0f, 1.0f, 0.0f);
+                    const float3 n1 = (i1 < limits.normalCount) ? float3(normals[i1]) : float3(0.0f, 1.0f, 0.0f);
+                    const float3 n2 = (i2 < limits.normalCount) ? float3(normals[i2]) : float3(0.0f, 1.0f, 0.0f);
+                    normal = normalize(n0 * w + n1 * u + n2 * v);
+                } else {
+                    normal = normalize(cross(v1 - v0, v2 - v0));
+                }
 
-                const float u = isect.coordinates.x;
-                const float v = isect.coordinates.y;
-                const float w = 1.0f - u - v;
+                float2 uv = float2(0.0f);
+                if (limits.texcoordCount > 0 && texcoords != nullptr) {
+                    const float2 uv0 = (i0 < limits.texcoordCount) ? float2(texcoords[i0]) : float2(0.0f);
+                    const float2 uv1 = (i1 < limits.texcoordCount) ? float2(texcoords[i1]) : float2(0.0f);
+                    const float2 uv2 = (i2 < limits.texcoordCount) ? float2(texcoords[i2]) : float2(0.0f);
+                    uv = uv0 * w + uv1 * u + uv2 * v;
+                }
 
                 const float3 fallbackPalette[3] = {
                     float3(0.85f, 0.4f, 0.25f),
@@ -743,19 +760,43 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
                 const float3 c0 = (i0 < limits.colorCount) ? float3(colors[i0]) : fallbackPalette[0];
                 const float3 c1 = (i1 < limits.colorCount) ? float3(colors[i1]) : fallbackPalette[1];
                 const float3 c2 = (i2 < limits.colorCount) ? float3(colors[i2]) : fallbackPalette[2];
-                const float3 interpolatedColor = c0 * w + c1 * u + c2 * v;
-                const float3 hitColour = clamp(interpolatedColor * shading, 0.0f, 1.0f);
+                const float3 vertexColour = clamp(c0 * w + c1 * u + c2 * v, 0.0f, 1.0f);
+
+                float3 materialColour = vertexColour;
+                float3 emission = float3(0.0f);
+                if (primitiveMaterials != nullptr && primitiveIndex < limits.primitiveCount) {
+                    const uint materialIndex = primitiveMaterials[primitiveIndex];
+                    if (materialIndex != RTR_INVALID_TEXTURE_INDEX && materialIndex < limits.materialCount &&
+                        materials != nullptr) {
+                        const RTRRayTracingMaterial material = materials[materialIndex];
+                        materialColour = clamp(material.albedo, 0.0f, 1.0f);
+                        if (material.textureIndex != RTR_INVALID_TEXTURE_INDEX && textureInfos != nullptr &&
+                            texturePixels != nullptr && material.textureIndex < limits.textureCount) {
+                            const float4 texSample = sampleTexture(material.textureIndex,
+                                                                   textureInfos,
+                                                                   limits.textureCount,
+                                                                   texturePixels,
+                                                                   uv);
+                            materialColour = clamp(texSample.xyz, 0.0f, 1.0f);
+                        }
+                        emission = material.emission;
+                    }
+                }
+
+                const float lightIntensity = max(0.0f, dot(normalize(normal), normalize(float3(0.2f, 0.8f, 0.6f))));
+                const float shading = lightIntensity * 0.8f + 0.2f;
+                const float3 hitColour = clamp(materialColour * shading + emission, 0.0f, 1.0f);
                 colour = float4(hitColour, 1.0f);
 
-                if (isDebugPixel) {
+                if (isDebugPixel && debugBuffer != nullptr) {
                     debugBuffer[0] = float4(u, v, w, 0.0);
                     debugBuffer[1] = float4(float(i0), float(i1), float(i2), 0.0);
-                    debugBuffer[2] = float4(c0, 0.0);
-                    debugBuffer[3] = float4(c1, 0.0);
-                    debugBuffer[4] = float4(c2, 0.0);
-                    debugBuffer[5] = float4(normal, 0.0);
+                    debugBuffer[2] = float4(vertexColour, 0.0);
+                    debugBuffer[3] = float4(normal, 0.0);
+                    debugBuffer[4] = float4(materialColour, 0.0);
+                    debugBuffer[5] = float4(emission, 0.0);
                     debugBuffer[6] = float4(shading, 0.0, 0.0, 0.0);
-                    debugBuffer[7] = float4(interpolatedColor, 0.0);
+                    debugBuffer[7] = float4(hitColour, 0.0);
                 }
             }
         }

@@ -32,9 +32,13 @@ struct alignas(16) MPSIntersectionData {
 
 struct MPSSceneLimits {
     std::uint32_t vertexCount = 0;
-   std::uint32_t indexCount = 0;
-   std::uint32_t colorCount = 0;
-   std::uint32_t primitiveCount = 0;
+    std::uint32_t indexCount = 0;
+    std::uint32_t colorCount = 0;
+    std::uint32_t primitiveCount = 0;
+    std::uint32_t normalCount = 0;
+    std::uint32_t texcoordCount = 0;
+    std::uint32_t materialCount = 0;
+    std::uint32_t textureCount = 0;
 };
 
 struct alignas(16) MPSAccumulationUniforms {
