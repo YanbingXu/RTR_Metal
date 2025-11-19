@@ -186,9 +186,10 @@ struct AreaLight {
 
 inline AreaLight makeCornellAreaLight() {
     AreaLight light;
-    light.position = float3(0.0f, 0.92f, -1.05f);
-    light.right = float3(0.25f, 0.0f, 0.0f);
-    light.forward = float3(0.0f, 0.0f, -0.18f);
+    // Ceiling patch centered above the scene, facing downward; sized to the Cornell reference.
+    light.position = float3(0.0f, 0.95f, -0.9f);
+    light.right = float3(0.18f, 0.0f, 0.0f);
+    light.forward = float3(0.0f, 0.0f, 0.18f);
     light.normal = float3(0.0f, -1.0f, 0.0f);
     light.color = float3(18.0f, 17.5f, 17.0f);
     return light;
@@ -563,56 +564,43 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
     ray currentRay(eye, direction, rayMin, rayMax);
 
     float3 radiance = float3(0.0f);
-    float3 throughput = float3(1.0f);
+    float3 color = float3(1.0f);
     const AreaLight areaLight = makeCornellAreaLight();
 
+    SurfaceSample surface = {};
+    bool hit = gatherSurfaceSample(scene,
+                                   currentRay,
+                                   resourceHeader,
+                                   meshResources,
+                                   fallbackVertexBytes,
+                                   fallbackIndices,
+                                   instances,
+                                   materials,
+                                   textureInfos,
+                                   textureCount,
+                                   texturePixels,
+                                   surface);
+
     for (uint bounce = 0u; bounce < kMaxRayBounces; ++bounce) {
-        SurfaceSample surface = {};
-        const bool hit = gatherSurfaceSample(scene,
-                                             currentRay,
-                                             resourceHeader,
-                                             meshResources,
-                                             fallbackVertexBytes,
-                                             fallbackIndices,
-                                             instances,
-                                             materials,
-                                             textureInfos,
-                                             textureCount,
-                                             texturePixels,
-                                             surface);
         if (!hit) {
-            radiance += throughput * sampleSkyColor(currentRay.direction);
+            radiance += color * sampleSkyColor(currentRay.direction);
             break;
         }
 
         if (any(surface.emission > float3(0.0f))) {
-            radiance += throughput * surface.emission;
+            radiance += color * surface.emission;
             break;
         }
 
-        const float diffuseWeight = clamp(1.0f - surface.material.reflectivity, 0.0f, 1.0f) *
-                                    (1.0f - clamp(surface.material.metallic, 0.0f, 1.0f));
+        const float reflectionValue = clamp(surface.material.reflectivity, 0.0f, 1.0f);
+        const float refractionValue = (surface.material.indexOfRefraction > 1.01f)
+                                          ? clamp(1.0f - surface.material.roughness, 0.0f, 1.0f)
+                                          : 0.0f;
         const uint dimBase = 2u + bounce * 5u;
         const float3 bounceOrigin = surface.worldPosition + surface.worldNormal * 0.003f;
 
-        if (diffuseWeight > 0.0f) {
-            const float2 lightSample = float2(halton(haltonIndex, dimBase + 0u),
-                                              halton(haltonIndex, dimBase + 1u));
-            float3 lightDir;
-            float3 lightColor;
-            float lightDistance;
-            sampleAreaLight(areaLight, lightSample, surface.worldPosition, lightDir, lightColor, lightDistance);
-            const bool occluded = traceShadowRay(scene, bounceOrigin, lightDir, lightDistance - 0.01f);
-            if (!occluded) {
-                const float nDotL = clamp(dot(surface.worldNormal, lightDir), 0.0f, 1.0f);
-                radiance += throughput * surface.baseAlbedo * diffuseWeight * lightColor * nDotL;
-            }
-        }
-
-        float reflectionChance = clamp(surface.material.reflectivity, 0.0f, 1.0f);
-        float refractionChance = (surface.material.indexOfRefraction > 1.01f)
-                                     ? clamp(1.0f - surface.material.roughness, 0.0f, 1.0f) * 0.5f
-                                     : 0.0f;
+        float reflectionChance = reflectionValue;
+        float refractionChance = refractionValue;
         float diffuseChance = max(1.0f - reflectionChance - refractionChance, 0.0f);
         float chanceSum = reflectionChance + refractionChance + diffuseChance;
         if (chanceSum <= 0.0f) {
@@ -623,11 +611,25 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
         refractionChance /= chanceSum;
         diffuseChance = 1.0f - reflectionChance - refractionChance;
 
+        if (diffuseChance > 0.0f) {
+            const float2 lightSample = float2(halton(haltonIndex, dimBase + 0u),
+                                              halton(haltonIndex, dimBase + 1u));
+            float3 lightDir;
+            float3 lightColor;
+            float lightDistance;
+            sampleAreaLight(areaLight, lightSample, surface.worldPosition, lightDir, lightColor, lightDistance);
+            const bool occluded = traceShadowRay(scene, bounceOrigin, lightDir, lightDistance - 0.01f);
+            if (!occluded) {
+                const float nDotL = clamp(dot(surface.worldNormal, lightDir), 0.0f, 1.0f);
+                radiance += color * surface.baseAlbedo * lightColor * nDotL;
+            }
+        }
+
         const float lobeSample = halton(haltonIndex, dimBase + 4u);
         if (lobeSample < reflectionChance) {
             const float3 reflectDir = normalize(reflect(currentRay.direction, surface.worldNormal));
-            throughput *= mix(float3(1.0f), surface.baseAlbedo, surface.material.metallic);
             currentRay = ray(bounceOrigin, reflectDir, rayMin, rayMax);
+            color = color * mix(float3(1.0f), surface.baseAlbedo, surface.material.metallic) * reflectionValue;
         } else if (lobeSample < reflectionChance + refractionChance) {
             float3 normal = surface.worldNormal;
             float eta = clamp(surface.material.indexOfRefraction, 1.01f, 2.5f);
@@ -639,20 +641,33 @@ kernel void rtHardwareKernel(instance_acceleration_structure scene [[buffer(0)]]
             if (!all(isfinite(refractDir)) || dot(refractDir, refractDir) < 1e-6f) {
                 refractDir = reflect(currentRay.direction, surface.worldNormal);
             }
-            throughput *= mix(float3(1.0f), surface.baseAlbedo, 0.2f);
             currentRay = ray(bounceOrigin, normalize(refractDir), rayMin, rayMax);
+            color = color * refractionValue;
         } else {
             const float2 hemiSample = float2(halton(haltonIndex, dimBase + 2u),
                                              halton(haltonIndex, dimBase + 3u));
             float3 diffuseDir = sampleCosineWeightedHemisphere(hemiSample);
             diffuseDir = alignHemisphereWithNormal(diffuseDir, surface.worldNormal);
-            throughput *= surface.baseAlbedo;
             currentRay = ray(bounceOrigin, normalize(diffuseDir), rayMin, rayMax);
+            color = color * surface.baseAlbedo;
         }
 
-        if (all(throughput < float3(1e-3f))) {
+        if (all(color < float3(1e-3f))) {
             break;
         }
+
+        hit = gatherSurfaceSample(scene,
+                                  currentRay,
+                                  resourceHeader,
+                                  meshResources,
+                                  fallbackVertexBytes,
+                                  fallbackIndices,
+                                  instances,
+                                  materials,
+                                  textureInfos,
+                                  textureCount,
+                                  texturePixels,
+                                  surface);
     }
 
     float3 colour = accumulateColor(accumulation, gid, uniforms, radiance, accumulationEnabled);
@@ -693,6 +708,216 @@ kernel void mpsRayKernel(device MPSRayOriginMaskDirectionMaxDistance* rays [[buf
     rays[index].maxDistance = FLT_MAX;
 }
 
+inline bool intersectTriangle(const float3 rayOrigin,
+                              const float3 rayDir,
+                              const float3 v0,
+                              const float3 v1,
+                              const float3 v2,
+                              thread float& tOut,
+                              thread float2& baryOut) {
+    const float3 edge1 = v1 - v0;
+    const float3 edge2 = v2 - v0;
+    const float3 pvec = cross(rayDir, edge2);
+    const float det = dot(edge1, pvec);
+    const float epsilon = 1e-5f;
+    if (fabs(det) < epsilon) {
+        return false;
+    }
+
+    const float invDet = 1.0f / det;
+    const float3 tvec = rayOrigin - v0;
+    const float u = dot(tvec, pvec) * invDet;
+    if (u < 0.0f || u > 1.0f) {
+        return false;
+    }
+
+    const float3 qvec = cross(tvec, edge1);
+    const float v = dot(rayDir, qvec) * invDet;
+    if (v < 0.0f || u + v > 1.0f) {
+        return false;
+    }
+
+    const float t = dot(edge2, qvec) * invDet;
+    if (t < epsilon) {
+        return false;
+    }
+
+    tOut = t;
+    baryOut = float2(u, v);
+    return true;
+}
+
+struct TraceHit {
+    bool hit;
+    uint primitiveIndex;
+    float distance;
+    float2 bary;
+};
+
+inline TraceHit traceScene(const float3 rayOrigin,
+                           const float3 rayDir,
+                           const device packed_float3* positions,
+                           const device uint* indices,
+                           uint primitiveCount,
+                           uint indexCount,
+                           uint vertexCount) {
+    TraceHit hit{};
+    hit.hit = false;
+    hit.distance = FLT_MAX;
+
+    const uint maxIndex = min(indexCount, primitiveCount * 3u);
+    for (uint base = 0; base + 2 < maxIndex; base += 3) {
+        const uint i0 = indices[base + 0];
+        const uint i1 = indices[base + 1];
+        const uint i2 = indices[base + 2];
+        if (i0 >= vertexCount || i1 >= vertexCount || i2 >= vertexCount) {
+            continue;
+        }
+
+        const float3 v0 = float3(positions[i0]);
+        const float3 v1 = float3(positions[i1]);
+        const float3 v2 = float3(positions[i2]);
+        float t = 0.0f;
+        float2 bary = float2(0.0f);
+        if (intersectTriangle(rayOrigin, rayDir, v0, v1, v2, t, bary) && t < hit.distance) {
+            hit.hit = true;
+            hit.distance = t;
+            hit.bary = bary;
+            hit.primitiveIndex = base / 3u;
+        }
+    }
+
+    return hit;
+}
+
+inline RTRRayTracingMaterial loadMaterial(uint primitiveIndex,
+                                          const device uint* primitiveMaterials,
+                                          const device RTRRayTracingMaterial* materials,
+                                          uint primitiveCount,
+                                          uint materialCount) {
+    RTRRayTracingMaterial material{};
+    material.albedo = float3(0.8f);
+    material.roughness = 0.5f;
+    material.emission = float3(0.0f);
+    material.metallic = 0.0f;
+    material.reflectivity = 0.0f;
+    material.indexOfRefraction = 1.0f;
+    material.textureIndex = RTR_INVALID_TEXTURE_INDEX;
+    material.materialFlags = 0u;
+
+    if (primitiveMaterials != nullptr && primitiveIndex < primitiveCount) {
+        const uint matIndex = primitiveMaterials[primitiveIndex];
+        if (matIndex != RTR_INVALID_TEXTURE_INDEX && matIndex < materialCount && materials != nullptr) {
+            material = materials[matIndex];
+        }
+    }
+    return material;
+}
+
+inline float3 sampleMaterialColor(const RTRRayTracingMaterial material,
+                                  const float2 uv,
+                                  constant RTRRayTracingTextureResource* textureInfos,
+                                  uint textureCount,
+                                  const device float* texturePixels) {
+    float3 materialColour = clamp(material.albedo, 0.0f, 1.0f);
+    if (material.textureIndex != RTR_INVALID_TEXTURE_INDEX && textureInfos != nullptr && texturePixels != nullptr &&
+        material.textureIndex < textureCount) {
+        const float4 texSample = sampleTexture(material.textureIndex,
+                                               textureInfos,
+                                               textureCount,
+                                               texturePixels,
+                                               uv);
+        materialColour = clamp(texSample.xyz, 0.0f, 1.0f);
+    }
+    return materialColour;
+}
+
+inline float3 computeNormal(uint i0,
+                            uint i1,
+                            uint i2,
+                            float3 v0,
+                            float3 v1,
+                            float3 v2,
+                            const device packed_float3* normals,
+                            uint normalCount,
+                            float3 barycentric) {
+    float3 normal = normalize(cross(v1 - v0, v2 - v1));
+    if (normalCount > 0 && normals != nullptr) {
+        const float3 n0 = (i0 < normalCount) ? float3(normals[i0]) : normal;
+        const float3 n1 = (i1 < normalCount) ? float3(normals[i1]) : normal;
+        const float3 n2 = (i2 < normalCount) ? float3(normals[i2]) : normal;
+        normal = normalize(n0 * barycentric.z + n1 * barycentric.x + n2 * barycentric.y);
+    }
+    return normal;
+}
+
+inline float3 shadeHit(uint primitiveIndex,
+                       float2 bary,
+                       float3 rayDir,
+                       const device packed_float3* positions,
+                       const device packed_float3* normals,
+                       const device uint* indices,
+                       const device packed_float3* colors,
+                       const device packed_float2* texcoords,
+                       const device RTRRayTracingMaterial* materials,
+                       const device uint* primitiveMaterials,
+                       constant RTRRayTracingTextureResource* textureInfos,
+                       uint textureCount,
+                       const device float* texturePixels,
+                       constant MPSSceneLimits& limits) {
+    const uint base = primitiveIndex * 3u;
+    if (base + 2u >= limits.indexCount) {
+        return float3(0.08f, 0.08f, 0.12f);
+    }
+
+    const uint i0 = indices[base + 0];
+    const uint i1 = indices[base + 1];
+    const uint i2 = indices[base + 2];
+    if (i0 >= limits.vertexCount || i1 >= limits.vertexCount || i2 >= limits.vertexCount) {
+        return float3(0.08f, 0.08f, 0.12f);
+    }
+
+    const float3 v0 = float3(positions[i0]);
+    const float3 v1 = float3(positions[i1]);
+    const float3 v2 = float3(positions[i2]);
+    const float w = clamp(1.0f - bary.x - bary.y, 0.0f, 1.0f);
+    const float3 baryFull = float3(w, bary.x, bary.y);
+    const float3 normal = computeNormal(i0, i1, i2, v0, v1, v2, normals, limits.normalCount, baryFull);
+
+    float2 uv = float2(0.0f);
+    if (limits.texcoordCount > 0 && texcoords != nullptr) {
+        const float2 uv0 = (i0 < limits.texcoordCount) ? float2(texcoords[i0]) : float2(0.0f);
+        const float2 uv1 = (i1 < limits.texcoordCount) ? float2(texcoords[i1]) : float2(0.0f);
+        const float2 uv2 = (i2 < limits.texcoordCount) ? float2(texcoords[i2]) : float2(0.0f);
+        uv = uv0 * baryFull.x + uv1 * baryFull.y + uv2 * baryFull.z;
+    }
+
+    const float3 fallbackPalette[3] = {
+        float3(0.85f, 0.4f, 0.25f),
+        float3(0.25f, 0.85f, 0.4f),
+        float3(0.4f, 0.25f, 0.85f),
+    };
+    const float3 c0 = (i0 < limits.colorCount && colors != nullptr) ? float3(colors[i0]) : fallbackPalette[0];
+    const float3 c1 = (i1 < limits.colorCount && colors != nullptr) ? float3(colors[i1]) : fallbackPalette[1];
+    const float3 c2 = (i2 < limits.colorCount && colors != nullptr) ? float3(colors[i2]) : fallbackPalette[2];
+    const float3 vertexColour = clamp(c0 * baryFull.x + c1 * baryFull.y + c2 * baryFull.z, 0.0f, 1.0f);
+
+    const RTRRayTracingMaterial material = loadMaterial(primitiveIndex,
+                                                        primitiveMaterials,
+                                                        materials,
+                                                        limits.primitiveCount,
+                                                        limits.materialCount);
+    const float3 materialColour = sampleMaterialColor(material, uv, textureInfos, limits.textureCount, texturePixels);
+    const float3 baseColour = clamp(materialColour * vertexColour, 0.0f, 1.0f);
+
+    const float3 lightDir = normalize(float3(0.2f, 0.8f, 0.6f));
+    const float nDotL = max(0.0f, dot(normal, lightDir));
+    const float shading = nDotL * 0.8f + 0.2f;
+    const float3 diffuse = clamp(baseColour * shading + material.emission, 0.0f, 1.0f);
+
+    return diffuse;
+}
+
 kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buffer(0)]],
                            const device packed_float3* positions [[buffer(1)]],
                            const device packed_float3* normals [[buffer(2)]],
@@ -707,6 +932,7 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
                            constant MPSCameraUniforms& uniforms [[buffer(11)]],
                            constant MPSSceneLimits& limits [[buffer(12)]],
                            device float4* debugBuffer [[buffer(13)]],
+                           const device MPSRayOriginMaskDirectionMaxDistance* rays [[buffer(14)]],
                            uint gid [[thread_position_in_grid]]) {
     if (gid >= uniforms.width * uniforms.height) {
         return;
@@ -717,89 +943,116 @@ kernel void mpsShadeKernel(const device MPSIntersectionData* intersections [[buf
     const MPSIntersectionData isect = intersections[gid];
     float4 colour = float4(0.08f, 0.08f, 0.12f, 1.0f);
 
-    if (isfinite(isect.distance) && isect.distance < FLT_MAX && isect.primitiveIndex != UINT_MAX &&
-        isect.primitiveIndex < limits.primitiveCount && limits.vertexCount > 0 && limits.indexCount > 0) {
-        const uint primitiveIndex = isect.primitiveIndex;
-        const uint base = primitiveIndex * 3;
-        if ((base + 2) < limits.indexCount) {
-            const uint i0 = indices[base + 0];
-            const uint i1 = indices[base + 1];
-            const uint i2 = indices[base + 2];
+    if (!(rays && limits.vertexCount > 0 && limits.indexCount > 0)) {
+        outRadiance[gid] = colour;
+        return;
+    }
 
-            if (i0 < limits.vertexCount && i1 < limits.vertexCount && i2 < limits.vertexCount) {
-                const float3 v0 = float3(positions[i0]);
-                const float3 v1 = float3(positions[i1]);
-                const float3 v2 = float3(positions[i2]);
-                const float u = clamp(isect.coordinates.x, 0.0f, 1.0f);
-                const float v = clamp(isect.coordinates.y, 0.0f, 1.0f);
-                const float w = clamp(1.0f - u - v, 0.0f, 1.0f);
+    float3 rayOrigin = float3(rays[gid].origin);
+    float3 rayDir = normalize(float3(rays[gid].direction));
 
-                float3 normal = float3(0.0f, 1.0f, 0.0f);
-                if (limits.normalCount > 0 && normals != nullptr) {
-                    const float3 n0 = (i0 < limits.normalCount) ? float3(normals[i0]) : float3(0.0f, 1.0f, 0.0f);
-                    const float3 n1 = (i1 < limits.normalCount) ? float3(normals[i1]) : float3(0.0f, 1.0f, 0.0f);
-                    const float3 n2 = (i2 < limits.normalCount) ? float3(normals[i2]) : float3(0.0f, 1.0f, 0.0f);
-                    normal = normalize(n0 * w + n1 * u + n2 * v);
-                } else {
-                    normal = normalize(cross(v1 - v0, v2 - v0));
-                }
+    if (!(isfinite(isect.distance) && isect.distance < FLT_MAX && isect.primitiveIndex != UINT_MAX &&
+          isect.primitiveIndex < limits.primitiveCount)) {
+        outRadiance[gid] = colour;
+        return;
+    }
 
-                float2 uv = float2(0.0f);
-                if (limits.texcoordCount > 0 && texcoords != nullptr) {
-                    const float2 uv0 = (i0 < limits.texcoordCount) ? float2(texcoords[i0]) : float2(0.0f);
-                    const float2 uv1 = (i1 < limits.texcoordCount) ? float2(texcoords[i1]) : float2(0.0f);
-                    const float2 uv2 = (i2 < limits.texcoordCount) ? float2(texcoords[i2]) : float2(0.0f);
-                    uv = uv0 * w + uv1 * u + uv2 * v;
-                }
+    const uint maxBounces = 2u;
+    float3 throughput = float3(1.0f);
+    float3 accum = float3(0.0f);
+    TraceHit currentHit{};
+    currentHit.hit = true;
+    currentHit.primitiveIndex = isect.primitiveIndex;
+    currentHit.distance = isect.distance;
+    currentHit.bary = clamp(float2(isect.coordinates.x, isect.coordinates.y), 0.0f, 1.0f);
 
-                const float3 fallbackPalette[3] = {
-                    float3(0.85f, 0.4f, 0.25f),
-                    float3(0.25f, 0.85f, 0.4f),
-                    float3(0.4f, 0.25f, 0.85f),
-                };
-                const float3 c0 = (i0 < limits.colorCount) ? float3(colors[i0]) : fallbackPalette[0];
-                const float3 c1 = (i1 < limits.colorCount) ? float3(colors[i1]) : fallbackPalette[1];
-                const float3 c2 = (i2 < limits.colorCount) ? float3(colors[i2]) : fallbackPalette[2];
-                const float3 vertexColour = clamp(c0 * w + c1 * u + c2 * v, 0.0f, 1.0f);
+    for (uint bounce = 0; bounce < maxBounces && currentHit.hit; ++bounce) {
+        const float w = clamp(1.0f - currentHit.bary.x - currentHit.bary.y, 0.0f, 1.0f);
+        const float3 baseColour = shadeHit(currentHit.primitiveIndex,
+                                           currentHit.bary,
+                                           rayDir,
+                                           positions,
+                                           normals,
+                                           indices,
+                                           colors,
+                                           texcoords,
+                                           materials,
+                                           primitiveMaterials,
+                                           textureInfos,
+                                           limits.textureCount,
+                                           texturePixels,
+                                           limits);
 
-                float3 materialColour = vertexColour;
-                float3 emission = float3(0.0f);
-                if (primitiveMaterials != nullptr && primitiveIndex < limits.primitiveCount) {
-                    const uint materialIndex = primitiveMaterials[primitiveIndex];
-                    if (materialIndex != RTR_INVALID_TEXTURE_INDEX && materialIndex < limits.materialCount &&
-                        materials != nullptr) {
-                        const RTRRayTracingMaterial material = materials[materialIndex];
-                        materialColour = clamp(material.albedo, 0.0f, 1.0f);
-                        if (material.textureIndex != RTR_INVALID_TEXTURE_INDEX && textureInfos != nullptr &&
-                            texturePixels != nullptr && material.textureIndex < limits.textureCount) {
-                            const float4 texSample = sampleTexture(material.textureIndex,
-                                                                   textureInfos,
-                                                                   limits.textureCount,
-                                                                   texturePixels,
-                                                                   uv);
-                            materialColour = clamp(texSample.xyz, 0.0f, 1.0f);
-                        }
-                        emission = material.emission;
-                    }
-                }
+        const RTRRayTracingMaterial material = loadMaterial(currentHit.primitiveIndex,
+                                                            primitiveMaterials,
+                                                            materials,
+                                                            limits.primitiveCount,
+                                                            limits.materialCount);
+        accum += throughput * baseColour;
 
-                const float lightIntensity = max(0.0f, dot(normalize(normal), normalize(float3(0.2f, 0.8f, 0.6f))));
-                const float shading = lightIntensity * 0.8f + 0.2f;
-                const float3 hitColour = clamp(materialColour * shading + emission, 0.0f, 1.0f);
-                colour = float4(hitColour, 1.0f);
+        // Compute normal for scattering
+        const uint base = currentHit.primitiveIndex * 3u;
+        const uint i0 = indices[base + 0];
+        const uint i1 = indices[base + 1];
+        const uint i2 = indices[base + 2];
+        const float3 v0 = float3(positions[i0]);
+        const float3 v1 = float3(positions[i1]);
+        const float3 v2 = float3(positions[i2]);
+        const float3 baryFull = float3(w, currentHit.bary.x, currentHit.bary.y);
+        const float3 normal = computeNormal(i0, i1, i2, v0, v1, v2, normals, limits.normalCount, baryFull);
+        const float3 hitPos = v0 * baryFull.x + v1 * baryFull.y + v2 * baryFull.z;
 
-                if (isDebugPixel && debugBuffer != nullptr) {
-                    debugBuffer[0] = float4(u, v, w, 0.0);
-                    debugBuffer[1] = float4(float(i0), float(i1), float(i2), 0.0);
-                    debugBuffer[2] = float4(vertexColour, 0.0);
-                    debugBuffer[3] = float4(normal, 0.0);
-                    debugBuffer[4] = float4(materialColour, 0.0);
-                    debugBuffer[5] = float4(emission, 0.0);
-                    debugBuffer[6] = float4(shading, 0.0, 0.0, 0.0);
-                    debugBuffer[7] = float4(hitColour, 0.0);
-                }
+        // Determine reflection/refraction contributions
+        const float reflectivity = clamp(material.reflectivity, 0.0f, 1.0f);
+        const float metallic = clamp(material.metallic, 0.0f, 1.0f);
+        const float ior = max(material.indexOfRefraction, 1.0f);
+        const float specularWeight = clamp(reflectivity + metallic * 0.5f, 0.0f, 1.0f);
+
+        float3 nextDir = float3(0.0f);
+        float3 offsetOrigin = hitPos + normal * 1e-3f;
+        bool hasNextRay = false;
+        bool refractNext = false;
+
+        if (specularWeight > 0.0f) {
+            nextDir = normalize(reflect(rayDir, normal));
+            throughput *= specularWeight;
+            hasNextRay = true;
+        } else if (ior > 1.0f) {
+            const float eta = dot(rayDir, normal) < 0.0f ? (1.0f / ior) : ior;
+            const float3 refractDir = refract(rayDir, normal, eta);
+            if (all(isfinite(refractDir)) && length(refractDir) > 0.0f) {
+                nextDir = normalize(refractDir);
+                throughput *= 0.8f;
+                hasNextRay = true;
+                refractNext = true;
             }
         }
+
+        if (!hasNextRay) {
+            break;
+        }
+
+        TraceHit bounceHit = traceScene(offsetOrigin,
+                                        nextDir,
+                                        positions,
+                                        indices,
+                                        limits.primitiveCount,
+                                        limits.indexCount,
+                                        limits.vertexCount);
+        if (!bounceHit.hit) {
+            break;
+        }
+
+        rayOrigin = offsetOrigin;
+        rayDir = nextDir;
+        currentHit = bounceHit;
+    }
+
+    colour = float4(clamp(accum, 0.0f, 1.0f), 1.0f);
+
+    if (isDebugPixel && debugBuffer != nullptr) {
+        debugBuffer[0] = float4(rayDir, 0.0f);
+        debugBuffer[1] = float4(accum, 0.0f);
     }
 
     outRadiance[gid] = colour;

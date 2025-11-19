@@ -318,7 +318,27 @@ struct Renderer::Impl {
             return false;
         }
 
-        NSURL* libraryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:config.shaderLibraryPath.c_str()]];
+        // Resolve shader library path using a small set of build output fallbacks to align with RayTracingPipeline.
+        auto resolveLibraryPath = [&](const std::string& preferred) {
+            namespace fs = std::filesystem;
+            std::vector<std::string> candidates = {
+                preferred,
+                "cmake-build-debug/shaders/RTRShaders.metallib",
+                "cmake-build-release/shaders/RTRShaders.metallib",
+                "build/shaders/RTRShaders.metallib",
+            };
+            for (const auto& candidate : candidates) {
+                std::error_code ec;
+                if (fs::exists(candidate, ec)) {
+                    return candidate;
+                }
+            }
+            return preferred;
+        };
+
+        const std::string libraryPath = resolveLibraryPath(config.shaderLibraryPath);
+
+        NSURL* libraryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:libraryPath.c_str()]];
         NSError* error = nil;
         id<MTLLibrary> library = [device newLibraryWithURL:libraryURL error:&error];
         auto errorMessage = [](NSError* err) {
@@ -345,7 +365,7 @@ struct Renderer::Impl {
         }
 
         fallbackRayGenState = pipelineState;
-        core::Logger::info("Renderer", "Fallback compute pipeline initialized");
+        core::Logger::info("Renderer", "Fallback compute pipeline initialized from %s", libraryPath.c_str());
         return true;
     }
 
@@ -653,11 +673,26 @@ struct Renderer::Impl {
             return;
         }
 
-        uniforms->eye = simd_make_float4(0.0F, 0.0F, 2.0F, 1.0F);
-        uniforms->forward = simd_make_float4(0.0F, 0.0F, -1.0F, 0.0F);
-        uniforms->right = simd_make_float4(1.0F, 0.0F, 0.0F, 0.0F);
-        uniforms->up = simd_make_float4(0.0F, 1.0F, 0.0F, 0.0F);
-        uniforms->imagePlaneHalfExtents = simd_make_float2(1.0F, 1.0F);
+        // Camera approximating the reference Cornell composition: eye in front of the box, looking inward with a ~45°
+        // vertical FOV and aspect-derived image plane.
+        const float aspect = (target.height > 0) ? static_cast<float>(target.width) / static_cast<float>(target.height)
+                                                 : 1.0f;
+        const float fovY = 45.0f * (M_PI / 180.0f);
+        const float halfHeight = tanf(fovY * 0.5f);
+        const float halfWidth = halfHeight * aspect;
+
+        simd_float3 eye = simd_make_float3(0.0f, 0.15f, 2.2f);
+        simd_float3 targetPoint = simd_make_float3(0.0f, 0.15f, -0.9f);
+        simd_float3 forward = simd_normalize(targetPoint - eye);
+        simd_float3 globalUp = simd_make_float3(0.0f, 1.0f, 0.0f);
+        simd_float3 right = simd_normalize(simd_cross(forward, globalUp));
+        simd_float3 up = simd_cross(right, forward);
+
+        uniforms->eye = simd_make_float4(eye, 1.0f);
+        uniforms->forward = simd_make_float4(forward, 0.0f);
+        uniforms->right = simd_make_float4(right, 0.0f);
+        uniforms->up = simd_make_float4(up, 0.0f);
+        uniforms->imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
         uniforms->width = target.width;
         uniforms->height = target.height;
         uniforms->frameIndex = frameCounter;

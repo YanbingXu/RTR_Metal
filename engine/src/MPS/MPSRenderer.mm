@@ -1207,6 +1207,7 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
                     [shadeEncoder setBuffer:(__bridge id<MTLBuffer>)gpuState_->shadingOutputBuffer.nativeHandle()
                                    offset:0
                                   atIndex:10];
+                    [shadeEncoder setBuffer:rayBuffer offset:0 atIndex:14];
                     [shadeEncoder setBytes:&cameraUniforms_ length:sizeof(cameraUniforms_) atIndex:11];
 
                     MPSSceneLimits limits{};
@@ -1243,16 +1244,10 @@ bool MPSRenderer::computeFrame(FrameComparison& comparison,
                     auto* gpuDebug = reinterpret_cast<simd_float4*>([debugBuffer contents]);
                     if (gpuDebug && logDifferences) {
                         core::Logger::info("DEBUG_GPU", "-- Pixel (153, 225) --");
-                        core::Logger::info("DEBUG_GPU", "bary=(%.3f, %.3f, %.3f)", gpuDebug[0].x, gpuDebug[0].y, gpuDebug[0].z);
-                        core::Logger::info("DEBUG_GPU", "indices=(%u, %u, %u)", (uint)gpuDebug[1].x, (uint)gpuDebug[1].y,
-                                           (uint)gpuDebug[1].z);
-                        core::Logger::info("DEBUG_GPU", "c0=(%.2f, %.2f, %.2f)", gpuDebug[2].x, gpuDebug[2].y, gpuDebug[2].z);
-                        core::Logger::info("DEBUG_GPU", "c1=(%.2f, %.2f, %.2f)", gpuDebug[3].x, gpuDebug[3].y, gpuDebug[3].z);
-                        core::Logger::info("DEBUG_GPU", "c2=(%.2f, %.2f, %.2f)", gpuDebug[4].x, gpuDebug[4].y, gpuDebug[4].z);
-                        core::Logger::info("DEBUG_GPU", "normal=(%.3f, %.3f, %.3f)", gpuDebug[5].x, gpuDebug[5].y, gpuDebug[5].z);
-                        core::Logger::info("DEBUG_GPU", "intensity=%.3f", gpuDebug[6].x);
-                        core::Logger::info("DEBUG_GPU", "interpolatedColor=(%.2f, %.2f, %.2f)",
-                                           gpuDebug[7].x, gpuDebug[7].y, gpuDebug[7].z);
+                        core::Logger::info("DEBUG_GPU", "rayDir=(%.3f, %.3f, %.3f)",
+                                           gpuDebug[0].x, gpuDebug[0].y, gpuDebug[0].z);
+                        core::Logger::info("DEBUG_GPU", "accumulated=(%.3f, %.3f, %.3f)",
+                                           gpuDebug[1].x, gpuDebug[1].y, gpuDebug[1].z);
                     }
 
                     gpuOutput = reinterpret_cast<simd_float4*>(
@@ -1500,14 +1495,25 @@ bool MPSRenderer::writePPM(const char* path,
 }
 
 bool MPSRenderer::usesGPUShading() const noexcept {
+    if (!(gpuShadingEnabled_ && gpuState_ && gpuState_->shadePipeline != nil)) {
+        return false;
+    }
+
+    if (!(gpuState_->positionsBuffer.isValid() && gpuState_->indicesBuffer.isValid())) {
+        return false;
+    }
+
+    // If the scene supplies colors, ensure the matching buffer uploaded successfully; other attributes are optional and
+    // handled by shader fallbacks.
+    if (!cpuSceneColors_.empty() && !gpuState_->colorsBuffer.isValid()) {
+        return false;
+    }
+
     const bool requiresTextures = !rtTextureInfos_.empty();
     const bool hasTextureBuffers = !requiresTextures ||
         (textureInfoBuffer_.isValid() && textureDataBuffer_.isValid());
 
-    return gpuShadingEnabled_ && gpuState_ && gpuState_->shadePipeline != nil &&
-           gpuState_->positionsBuffer.isValid() && gpuState_->indicesBuffer.isValid() &&
-           gpuState_->colorsBuffer.isValid() && normalsBuffer_.isValid() && texcoordBuffer_.isValid() &&
-           primitiveMaterialBuffer_.isValid() && materialBuffer_.isValid() && hasTextureBuffers;
+    return hasTextureBuffers;
 }
 }  // namespace rtr::rendering
 

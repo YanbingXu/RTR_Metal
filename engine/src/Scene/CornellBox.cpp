@@ -244,7 +244,8 @@ void addFeatureGeometry(SceneBuilder& builder,
     mirror.albedo = {0.95f, 0.95f, 0.95f};
     mirror.roughness = 0.05f;
     mirror.metallic = 1.0f;
-    mirror.reflectivity = 0.9f;
+    mirror.reflectivity = 0.95f;
+    mirror.indexOfRefraction = 1.0f;
     constexpr float mirrorRadius = 0.3f;
     auto mirrorMesh = addSphere(builder, 1.0f, 32, 16);
     auto mirrorMat = scene.addMaterial(mirror);
@@ -254,7 +255,8 @@ void addFeatureGeometry(SceneBuilder& builder,
     Material glass{};
     glass.albedo = {0.95f, 0.98f, 1.0f};
     glass.roughness = 0.02f;
-    glass.reflectivity = 0.15f;
+    glass.metallic = 0.0f;
+    glass.reflectivity = 0.05f;
     glass.indexOfRefraction = 1.5f;
     auto glassMesh = addSphere(builder, 1.0f, 32, 16);
     auto glassMat = scene.addMaterial(glass);
@@ -281,6 +283,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                               simd_make_float3(-roomHalfWidth, floorY, -roomDepth));
     Material floorMaterial{};
     floorMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    floorMaterial.reflectivity = 0.0f;
+    floorMaterial.metallic = 0.0f;
+    floorMaterial.indexOfRefraction = 1.0f;
     auto floorMatHandle = scene.addMaterial(floorMaterial);
     scene.addInstance(floorMesh, floorMatHandle, matrix_identity_float4x4);
 
@@ -291,6 +296,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                 simd_make_float3(-roomHalfWidth, roomHalfHeight, 0.0f));
     Material ceilingMaterial{};
     ceilingMaterial.albedo = {0.78f, 0.78f, 0.78f};
+    ceilingMaterial.reflectivity = 0.0f;
+    ceilingMaterial.metallic = 0.0f;
+    ceilingMaterial.indexOfRefraction = 1.0f;
     auto ceilingMatHandle = scene.addMaterial(ceilingMaterial);
     scene.addInstance(ceilingMesh, ceilingMatHandle, matrix_identity_float4x4);
 
@@ -301,6 +309,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                              simd_make_float3(-roomHalfWidth, roomHalfHeight, -roomDepth));
     Material backMaterial{};
     backMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    backMaterial.reflectivity = 0.0f;
+    backMaterial.metallic = 0.0f;
+    backMaterial.indexOfRefraction = 1.0f;
     auto backMatHandle = scene.addMaterial(backMaterial);
     scene.addInstance(backMesh, backMatHandle, matrix_identity_float4x4);
 
@@ -312,6 +323,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Material leftMaterial{};
     leftMaterial.albedo = {0.63f, 0.065f, 0.05f};
     leftMaterial.roughness = 0.45f;
+    leftMaterial.reflectivity = 0.0f;
+    leftMaterial.metallic = 0.0f;
+    leftMaterial.indexOfRefraction = 1.0f;
     auto leftMatHandle = scene.addMaterial(leftMaterial);
     scene.addInstance(leftMesh, leftMatHandle, matrix_identity_float4x4);
 
@@ -323,6 +337,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Material rightMaterial{};
     rightMaterial.albedo = {0.14f, 0.45f, 0.091f};
     rightMaterial.roughness = 0.45f;
+    rightMaterial.reflectivity = 0.0f;
+    rightMaterial.metallic = 0.0f;
+    rightMaterial.indexOfRefraction = 1.0f;
     auto rightMatHandle = scene.addMaterial(rightMaterial);
     scene.addInstance(rightMesh, rightMatHandle, matrix_identity_float4x4);
 
@@ -332,6 +349,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Material blockMaterial{};
     blockMaterial.albedo = {0.73f, 0.73f, 0.73f};
     blockMaterial.roughness = 0.35f;
+    blockMaterial.reflectivity = 0.0f;
+    blockMaterial.metallic = 0.0f;
+    blockMaterial.indexOfRefraction = 1.0f;
     auto blockMatHandle = scene.addMaterial(blockMaterial);
     scene.addInstance(boxMesh, blockMatHandle, matrix_identity_float4x4);
 
@@ -342,6 +362,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Material crateMaterial{};
     crateMaterial.albedo = {0.8f, 0.7f, 0.6f};
     crateMaterial.roughness = 0.6f;
+    crateMaterial.reflectivity = 0.0f;
+    crateMaterial.metallic = 0.0f;
+    crateMaterial.indexOfRefraction = 1.0f;
     if (!assetRoot.empty()) {
         const auto crateTexture = assetRoot / "crate.jpg";
         if (std::filesystem::exists(crateTexture)) {

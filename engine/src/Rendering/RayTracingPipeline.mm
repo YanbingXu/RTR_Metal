@@ -9,6 +9,8 @@
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 
+#include <filesystem>
+
 namespace rtr::rendering {
 
 class RayTracingPipeline::Impl {
@@ -44,11 +46,30 @@ bool RayTracingPipeline::initialize(MetalContext& context, const std::string& sh
         return false;
     }
 
-    NSURL* libraryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:shaderLibraryPath.c_str()]];
+    namespace fs = std::filesystem;
+
+    // Search common build output locations if the provided path is missing.
+    std::vector<std::string> candidatePaths = {
+        shaderLibraryPath,
+        "cmake-build-debug/shaders/RTRShaders.metallib",
+        "cmake-build-release/shaders/RTRShaders.metallib",
+        "build/shaders/RTRShaders.metallib",
+    };
+
+    std::string resolvedPath = shaderLibraryPath;
+    for (const auto& candidate : candidatePaths) {
+        std::error_code ec;
+        if (fs::exists(candidate, ec)) {
+            resolvedPath = candidate;
+            break;
+        }
+    }
+
+    NSURL* libraryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:resolvedPath.c_str()]];
     NSError* error = nil;
     id<MTLLibrary> library = [device newLibraryWithURL:libraryURL error:&error];
     if (!library || error) {
-        core::Logger::error("RTPipeline", "Failed to load shader library %s (%s)", shaderLibraryPath.c_str(),
+        core::Logger::error("RTPipeline", "Failed to load shader library %s (%s)", resolvedPath.c_str(),
                             error.localizedDescription.UTF8String);
         return false;
     }
