@@ -41,7 +41,7 @@ Metal GPU + Shaders
 - **AccelerationStructureBuilder** – Queries Metal for BLAS memory requirements and (when hardware allows) builds diagnostic BLAS instances to validate the ray-tracing command path end-to-end.
 - **RayTracingPipeline** – ~~Wraps `MTLRayTracingPipelineState` creation when the SDK exposes `MetalRayTracing.h`; otherwise falls back silently so the rest of the engine remains usable.~~
 - **RayTracingCompute** – Builds compute pipelines (with optional linked intersection/visible functions) that bind TLAS/BLAS via `setAccelerationStructure:` and execute hardware-accelerated traversal inside ray tracing kernels.
-- **MPSPathTracer** – Initializes an MPS-based backend (`MPSSupportsMTLDevice`) to provide a portable fallback/existing sample parity when hardware ray tracing APIs are unavailable.
+- ~~**MPSPathTracer** – Initializes an MPS-based backend (`MPSSupportsMTLDevice`) to provide a portable fallback when hardware ray tracing APIs are unavailable.~~ (Software/MPS fallback removed for Stage 3D; it will return in Stage 4 once the hardware renderer is feature-complete.)
 - Upcoming work will extend these types with GPU upload hooks, material textures, and acceleration-structure builders leveraging the math helpers already in place.
 
 ### Shaders (`shaders/`)

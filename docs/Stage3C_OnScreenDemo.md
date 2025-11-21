@@ -15,7 +15,7 @@ The app sets the activation policy to `NSApplicationActivationPolicyRegular` and
 
 The overlay in the top-left corner exposes three immediate controls:
 
-- **Mode** – `Auto`, `Hardware`, `Gradient`. This calls `Renderer::setShadingMode` so the UI and CLI share the same switch.
+- **Mode** – `Auto`, `Hardware`. The gradient/software option has been removed; this still calls `Renderer::setShadingMode` so the UI and CLI share the same switch.
 - **Resolution** – 512×512, 1024×768, 1280×720, 1920×1080 plus a dynamic entry that tracks manual window resizing. Selecting a preset updates `MTKView::drawableSize` and `Renderer::setRenderSize`.
 - **Screenshot** – saves the current frame to `~/Pictures/RTR_<timestamp>.ppm`. The handler pipes the request back through `Renderer::renderFrame()` so we reuse the existing PPM writer.
 

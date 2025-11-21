@@ -1,5 +1,7 @@
 # MPS GPU Compute Pipeline Plan
 
+> **Status (2025-11-06)**: Deferred. The hardware pipeline owns Stage 3D; the software/MPS roadmap below (and its former targets such as `RTRMetalMPSSample`) is archived until Stage 4 resumes fallback work.
+
 ## Goals
 - Replace the current CPU shading loop in `MPSRenderer` with Metal compute kernels so the fallback path mirrors the production renderer architecture.
 - Share buffers between ray generation, intersection, shading, and accumulation to minimise copies and ease future integration with the native RT path.

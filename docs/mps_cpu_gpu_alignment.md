@@ -1,5 +1,7 @@
 # CPU / GPU 渲染结果对齐调试记录
 
+> **Status (2025-11-06)**: The MPS/software renderer referenced here (and the associated `RTRMetalMPSSample` target) has been removed from the active build. Keep this log for future Stage 4 work when the fallback returns.
+
 ## 背景
 - `MPSRendererImageComparisonTests` 在 Apple Silicon 设备上持续失败，报告 GPU 输出相对 CPU 参考图像存在 20+ 级别的像素差异。
 - 日志中 GPU 渲染阶段打印了 `GPU shading matched CPU output (max byte diff 0.00)`，与测试结论矛盾。

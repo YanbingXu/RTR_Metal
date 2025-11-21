@@ -1,4 +1,4 @@
-> Status checkpoint (2025-11-06): Stage 1–3B complete; Stage 3C active; Stage 3D and Stage 4 queued.
+> Status checkpoint (2025-11-06): Stage 1–3C complete; Stage 3D (hardware shading polish) active; Stage 4 (software/fallback return) queued.
 > Refer to [AGENTS.md](AGENTS.md) for contributor workflow guidance and entry points into the codebase.
 
 ## Stage 1: Project Shell & Tooling
@@ -14,19 +14,19 @@
 **Status**: Complete
 
 ## Stage 3: Ray Tracing Pipelines
-**Goal**: Track the Apple reference implementation step by step—finish the hardware RT path (matching the official Cornell result) before touching the MPS fallback; only once hardware parity is achieved do we mirror the fallback pipeline.
+**Goal**: Track the Apple reference implementation step by step—Stage 3 is now hardware-only. Hardware parity against Apple's reference scenes must be achieved before we bring back any software/MPS fallback (punted to Stage 4).
 
 ### Stage 3A: Hardware-Accelerated Compute Path (Metal Ray Tracing)
 **Goal**: Build BLAS/TLAS constructors and dispatch a compute-based ray tracing kernel that leverages hardware traversal to render diagnostic frames.
 **Success Criteria**:
 - Diagnostic Cornell Box renders through the compute ray tracing pipeline on RT-capable devices, producing non-black frames with basic lighting.
 - TLAS/BLAS build + instance management validated via logs/tests; resource buffer layout and intersection/visible function usage documented.
-- Renderer toggles between compute RT and fallback backends at runtime with graceful degradation when `supportsRaytracing` is false.
-**Tests**: Capability-gated integration tests for TLAS creation and compute dispatch, hash comparison on RT hardware, smoke test ensuring fallback when unavailable.
+- Hardware renderer reports clear errors on non-RT devices (no more silent fallback).
+**Tests**: Capability-gated integration tests for TLAS creation and compute dispatch, hash comparison on RT hardware.
 **Status**: Complete
 
 ### Stage 3B: Hardware Rendering Polish
-**Goal**: Rebuild the hardware kernel to mirror the Apple sample (Cornell lighting, reflections, refraction) so we ship a complete hardware RT frame before considering fallbacks.
+**Goal**: Rebuild the hardware kernel to mirror the Apple sample (Cornell lighting, reflections, refraction) so we ship a complete hardware RT frame before considering any future fallback work.
 **Success Criteria**:
 - Ray-gen kernel produces the Cornell reference image from `~/Desktop/metal_RTR_official_example`.
 - Material/enclosure data in `RTRRayTracing.metal` stays aligned with the reference shading code.
@@ -36,7 +36,7 @@
 **Status**: Complete — Cornell shading path committed; hashes/docs scheduled with on-screen demo work
 
 ### Stage 3C: On-Screen Examples & Scene Assets
-**Goal**: Prioritize an on-screen sample that exercises the engine from a simple app shell, matching Apple’s UI patterns before expanding CLI tooling.
+**Goal**: Prioritize an on-screen sample that exercises the engine from a simple app shell, matching Apple’s UI patterns. Hardware-only toggles remain.
 **Success Criteria**:
 - Engine exposes the minimal swapchain/display loop so the sample app remains thin (UI logic in app, rendering control in engine).
 - MetalKit/SwiftUI sample renders the Cornell frame interactively with backend toggles, resolution controls, and screenshot capture.
@@ -45,7 +45,7 @@
 **Status**: Complete — MetalKit UI with mode/resolution/screenshot controls shipped; docs + 1024×768 hash recorded
 
 ### Stage 3D: Extended Shading & Effects
-**Goal**: Build on the hardware kernel to introduce polished effects (reflections, refraction, soft shadows, motion blur, etc.) while keeping parity with future fallbacks.
+**Goal**: Build on the hardware kernel to introduce polished effects (reflections, refraction, soft shadows, motion blur, etc.). The fallback/software renderer is paused until Stage 4, so this milestone is hardware-only.
 **Current Status**:
 The Stage 3D shader port is partially in place: primary shading, BRDF sampling, and TLAS setup now match the Apple reference (per-instance light masks, shared metal kernels). However, the render graph still copies `shadeTexture` to the drawable before the shadow/accumulate passes run, so queued lighting never reaches the screen. Secondary bounces also fall back to the CPU `traceScene` helper instead of issuing real hardware rays, which keeps reflection/refraction black. The next iteration must address both shortcomings (render graph ordering + hardware-driven secondary rays) before we can claim Stage 3D parity.
 **Success Criteria**:
@@ -58,9 +58,10 @@ The Stage 3D shader port is partially in place: primary shading, BRDF sampling, 
 - Mirror the CPU reference scene (`~/Desktop/MetalRayTracing`) triangle-for-triangle so our Cornell builder uses the exact same transforms/materials.
 - Rebuild the hardware acceleration structures the way the Metal RT sample does (`~/Desktop/metal_RTR_official_example`): BLAS per mesh plus TLAS instances with correct masks/material bindings.
 - Prepare the same material/texture buffers as the reference and rewrite `RTRRayTracing.metal` so all ray queries (primary/shadow/reflection) use the hardware intersection path, matching Apple's shading code.
+- Validate frame dumps + hashes for each shading tweak; the next fallback work remains blocked until this is green.
 
-## Stage 4: Polish & Documentation
-**Goal**: Round out material models (reflections/refraction, textures), ensure parity between hardware RT and MPS shading, and publish developer guidance.
-**Success Criteria**: Extended shading features shared across backends; performance/QA tooling (hash baselines, profiling); README/docs capture usage and troubleshooting.
-**Tests**: Expanded hash/image diff suite, profiling scripts, documentation linting.
-**Status**: Not Started
+## Stage 4: Software RT & Fallback Return
+**Goal**: Reintroduce the software/MPS fallback once the hardware renderer reaches parity. Mirror the resource layouts from Stage 3 so both backends share scene packing and produce deterministic outputs for regression tests.
+**Success Criteria**: Software path renders the Cornell reference image, hashes recorded for both backends, CLI/UI toggles expose hardware vs fallback, docs outline hardware requirements plus fallback caveats.
+**Tests**: Expanded hash/image diff suite running both backends, profiling scripts, documentation linting.
+**Status**: Not Started — blocked on Stage 3D completion.

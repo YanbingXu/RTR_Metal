@@ -30,7 +30,6 @@ struct ResolutionOption {
 constexpr ModeOption kModeOptions[] = {
     {"Auto", "auto"},
     {"Hardware", "hardware"},
-    {"Gradient", "gradient"},
 };
 
 constexpr ResolutionOption kResolutionOptions[] = {

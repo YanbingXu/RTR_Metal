@@ -52,8 +52,6 @@ typedef struct RTRRayTracingMeshResource {
     uint indexCount;
     uint vertexStride;
     uint materialIndex;
-    uint fallbackVertexOffset;
-    uint fallbackIndexOffset;
     uint padding0;
     uint padding1;
 } RTRRayTracingMeshResource;
@@ -151,8 +149,6 @@ struct alignas(16) RayTracingMeshResource {
     std::uint32_t indexCount = 0;
     std::uint32_t vertexStride = 0;
     std::uint32_t materialIndex = 0;
-    std::uint32_t fallbackVertexOffset = std::numeric_limits<std::uint32_t>::max();
-    std::uint32_t fallbackIndexOffset = std::numeric_limits<std::uint32_t>::max();
     std::uint32_t padding0 = 0;
     std::uint32_t padding1 = 0;
 };

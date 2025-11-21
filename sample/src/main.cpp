@@ -50,7 +50,7 @@ void printUsage() {
               << "  --asset-root=<path>    资产目录，用于 reflective/glass 场景 (默认 assets)\n"
               << "  --resolution=WxH       渲染分辨率，例 1280x720 (默认 512x512)\n"
               << "  --frames=N             渲染帧数，用于累计或调试 (默认 1)\n"
-              << "  --mode=auto|hardware|fallback  选择硬件 RT 或渐变回退 (默认 auto)\n"
+              << "  --mode=auto|hardware          选择硬件模式（默认 auto，与硬件模式一致）\n"
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
               << "  --accumulation=on|off  开启或关闭累计 (覆盖配置文件)\n"
               << "  --accumulation-frames=N 限定累计帧数 (0 表示无限制)\n"
@@ -306,10 +306,9 @@ int main(int argc, const char* argv[]) {
         return static_cast<char>(std::tolower(c));
     });
 
-    const bool expectHardware = shadingMode != "cpu" && shadingMode != "fallback" && shadingMode != "gradient";
-
-    if (expectHardware && !renderer.isRayTracingReady()) {
-        rtr::core::Logger::warn("Sample", "Ray tracing pipeline not ready; output will use fallback gradient");
+    if (!renderer.isRayTracingReady()) {
+        rtr::core::Logger::error("Sample", "Hardware ray tracing pipeline is not ready on this device");
+        return 1;
     }
 
     for (std::uint32_t i = 0; i < options.frames; ++i) {

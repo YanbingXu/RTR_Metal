@@ -15,43 +15,21 @@ namespace rtr::rendering {
 
 class RayTracingPipeline::Impl {
 public:
-    struct PipelineStates {
-        id<MTLComputePipelineState> ray = nil;
-        id<MTLComputePipelineState> shade = nil;
-        id<MTLComputePipelineState> shadow = nil;
-        id<MTLComputePipelineState> accumulate = nil;
-    };
-
-    explicit Impl(PipelineStates states)
-        : states_(states) {}
+    Impl(id<MTLComputePipelineState> rayState, id<MTLComputePipelineState> accumulateState)
+        : rayState_(rayState), accumulateState_(accumulateState) {}
 
     ~Impl() {
-        states_.ray = nil;
-        states_.shade = nil;
-        states_.shadow = nil;
-        states_.accumulate = nil;
+        rayState_ = nil;
+        accumulateState_ = nil;
     }
 
-    bool isValid() const noexcept {
-        return states_.ray != nil && states_.shade != nil && states_.shadow != nil && states_.accumulate != nil;
-    }
-
-    id<MTLComputePipelineState> pipeline(RayKernelStage stage) const noexcept {
-        switch (stage) {
-        case RayKernelStage::RayGeneration:
-            return states_.ray;
-        case RayKernelStage::Shade:
-            return states_.shade;
-        case RayKernelStage::Shadow:
-            return states_.shadow;
-        case RayKernelStage::Accumulate:
-            return states_.accumulate;
-        }
-        return nil;
-    }
+    [[nodiscard]] bool isValid() const noexcept { return rayState_ != nil; }
+    [[nodiscard]] id<MTLComputePipelineState> rayPipeline() const noexcept { return rayState_; }
+    [[nodiscard]] id<MTLComputePipelineState> accumulatePipeline() const noexcept { return accumulateState_; }
 
 private:
-    PipelineStates states_;
+    id<MTLComputePipelineState> rayState_ = nil;
+    id<MTLComputePipelineState> accumulateState_ = nil;
 };
 
 RayTracingPipeline::RayTracingPipeline() = default;
@@ -128,33 +106,28 @@ bool RayTracingPipeline::initialize(MetalContext& context, const std::string& sh
         return state;
     };
 
-    Impl::PipelineStates pipelines;
-    pipelines.ray = makePipeline(@"rayKernel", @"RTRHardwareRayKernel");
-    pipelines.shade = makePipeline(@"shadeKernel", @"RTRHardwareShadeKernel");
-    pipelines.shadow = makePipeline(@"shadowKernel", @"RTRHardwareShadowKernel");
-    pipelines.accumulate = makePipeline(@"accumulateKernel", @"RTRHardwareAccumulateKernel");
+    id<MTLComputePipelineState> rayState = makePipeline(@"rayKernel", @"RTRHardwareRayKernel");
+    id<MTLComputePipelineState> accumulateState = makePipeline(@"accumulateKernel", @"RTRHardwareAccumulateKernel");
 
-    if (pipelines.ray == nil || pipelines.shade == nil || pipelines.shadow == nil || pipelines.accumulate == nil) {
-        core::Logger::error("RTPipeline", "Failed to build hardware ray tracing compute pipeline set");
+    if (rayState == nil) {
+        core::Logger::error("RTPipeline", "Failed to build hardware ray tracing kernel");
         impl_.reset();
         return false;
     }
 
-    impl_ = std::make_unique<Impl>(pipelines);
+    impl_ = std::make_unique<Impl>(rayState, accumulateState);
     core::Logger::info("RTPipeline", "Hardware ray tracing kernels initialized from %s", resolvedPath.c_str());
     return true;
 }
 
 bool RayTracingPipeline::isValid() const noexcept { return impl_ && impl_->isValid(); }
 
-void* RayTracingPipeline::rawPipelineState(RayKernelStage stage) const noexcept {
-    return impl_ ? (__bridge void*)impl_->pipeline(stage) : nullptr;
+void* RayTracingPipeline::rayPipelineState() const noexcept {
+    return impl_ ? (__bridge void*)impl_->rayPipeline() : nullptr;
 }
 
-bool RayTracingPipeline::hasHardwareKernels() const noexcept { return impl_ && impl_->isValid(); }
-
-bool RayTracingPipeline::requiresAccelerationStructure() const noexcept {
-    return hasHardwareKernels();
+void* RayTracingPipeline::accumulationPipelineState() const noexcept {
+    return impl_ ? (__bridge void*)impl_->accumulatePipeline() : nullptr;
 }
 
 }  // namespace rtr::rendering

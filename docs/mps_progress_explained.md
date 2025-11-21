@@ -1,5 +1,6 @@
 # MPSFallback Engine Progress (Plain-English Walkthrough)
 
+> **Status (2025-11-06)**: The software/MPS fallback (including the `RTRMetalMPSSample` target) has been archived until Stage 4 so that Stage 3D can focus entirely on hardware ray tracing. The notes below remain for historical reference only.
 > **Audience**: Someone who knows a little C++ and has heard of ray tracing, but hasn’t built a renderer and doesn’t know Metal.
 
 ## 1. Project Context
@@ -81,4 +82,3 @@
 - Keep the CPU shading path as a fallback/test mode until GPU shading is battle-tested.
 
 Remember: you don’t need to be a Metal wizard to follow along. We’re isolating Metal-specific bits so you can focus on the data flow and high-level renderer architecture.
-
