@@ -469,3 +469,31 @@ kernel void accumulateKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(
 }
 
 #endif // RTR_HAS_RAYTRACING
+
+struct RTRDisplayVertexOutput {
+    float4 position [[position]];
+    float2 uv;
+};
+
+vertex RTRDisplayVertexOutput RTRDisplayVertex(uint vertexID [[vertex_id]]) {
+    RTRDisplayVertexOutput out;
+    const float2 positions[3] = {
+        float2(-1.0f, -1.0f),
+        float2(3.0f, -1.0f),
+        float2(-1.0f, 3.0f),
+    };
+    const float2 texcoords[3] = {
+        float2(0.0f, 0.0f),
+        float2(2.0f, 0.0f),
+        float2(0.0f, 2.0f),
+    };
+    out.position = float4(positions[vertexID], 0.0f, 1.0f);
+    out.uv = texcoords[vertexID] * 0.5f;
+    return out;
+}
+
+fragment float4 RTRDisplayFragment(RTRDisplayVertexOutput in [[stage_in]],
+                                   texture2d<float> colorTexture [[texture(0)]]) {
+    constexpr sampler displaySampler(address::clamp_to_edge, filter::linear);
+    return colorTexture.sample(displaySampler, in.uv);
+}
