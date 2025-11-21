@@ -316,7 +316,7 @@ struct Renderer::Impl {
 
 
     [[nodiscard]] bool dispatchRayTracingPass() {
-        if (!rayTracingPipeline.hasHardwareKernels()) {
+        if (!rayTracingPipeline.isValid()) {
             core::Logger::warn("Renderer", "Hardware ray tracing kernels unavailable; skipping dispatch");
             return false;
         }
@@ -725,14 +725,15 @@ struct Renderer::Impl {
             }
         }
 
-        auto ensureTexture = [&](id<MTLTexture>& texture, MTLPixelFormat format, NSString* label) {
+        auto ensureTexture = [&](id<MTLTexture> __strong* textureSlot, MTLPixelFormat format, NSString* label) {
+            id<MTLTexture> texture = textureSlot ? *textureSlot : nil;
             if (texture != nil && resources.width == width && resources.height == height) {
                 return true;
             }
             MTLTextureDescriptor* desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
-                                                                                            width:width
-                                                                                           height:height
-                                                                                        mipmapped:NO];
+                                                                                           width:width
+                                                                                          height:height
+                                                                                       mipmapped:NO];
             desc.storageMode = MTLStorageModePrivate;
             desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
             id<MTLTexture> newTexture = [device newTextureWithDescriptor:desc];
@@ -741,17 +742,19 @@ struct Renderer::Impl {
                 return false;
             }
             [newTexture setLabel:label];
-            texture = newTexture;
+            if (textureSlot) {
+                *textureSlot = newTexture;
+            }
             return true;
         };
 
-        if (!ensureTexture(resources.shadeTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.lighting")) {
+        if (!ensureTexture(&resources.shadeTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.lighting")) {
             success = false;
         }
 
         const bool needsAccumulation = accumulationEnabledThisFrame();
         if (needsAccumulation) {
-            if (!ensureTexture(resources.accumulationTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.accum")) {
+            if (!ensureTexture(&resources.accumulationTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.accum")) {
                 success = false;
             }
         } else if (resources.accumulationTexture != nil && (resources.width != width || resources.height != height)) {
@@ -811,8 +814,6 @@ struct Renderer::Impl {
                      texturePixels.empty() ? nullptr : texturePixels.data(),
                      texturePixels.size() * sizeof(float),
                      "rtr.textureData");
-
-        resources.sceneLimits.textureCount = static_cast<std::uint32_t>(textureResources.size());
 
         if (success) {
             resources.width = width;
@@ -1077,8 +1078,6 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         }
         materialResources.push_back(resource);
     }
-
-    resources.textureCount = textureResources.size();
 
     const bool hardwareSceneReady = prepareHardwareSceneData(sceneData);
     if (!hardwareSceneReady) {
