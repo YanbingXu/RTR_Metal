@@ -87,7 +87,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 
 }  // namespace
 
-@interface RTRViewController () <MTKViewDelegate>
+@interface RTRViewController ()
 - (void)setupOverlayUI;
 - (void)modeChanged:(id)sender;
 - (void)resolutionChanged:(id)sender;

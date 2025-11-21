@@ -355,7 +355,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
         }
     }
 
-    [instanceBuffer didModifyRange:NSMakeRange(0, sizes->instanceDescriptorBufferSize)];
+    // [instanceBuffer didModifyRange:NSMakeRange(0, sizes->instanceDescriptorBufferSize)]; // Removed: Not needed for Shared buffers
 
     MTLInstanceAccelerationStructureDescriptor* descriptor =
         [MTLInstanceAccelerationStructureDescriptor descriptor];

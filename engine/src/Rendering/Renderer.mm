@@ -599,7 +599,9 @@ struct Renderer::Impl {
             core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->camera.flags);
         }
 
-        [buffer didModifyRange:NSMakeRange(0, sizeof(HardwareRayUniforms))];
+        if ([buffer storageMode] == MTLStorageModeManaged) {
+            [buffer didModifyRange:NSMakeRange(0, sizeof(HardwareRayUniforms))];
+        }
     }
 
     void resetAccumulationInternal() {
@@ -772,7 +774,9 @@ struct Renderer::Impl {
 
         if (resources.sceneLimitsBuffer != nil) {
             std::memcpy([resources.sceneLimitsBuffer contents], &resources.sceneLimits, sizeof(MPSSceneLimits));
-            [resources.sceneLimitsBuffer didModifyRange:NSMakeRange(0, sizeof(MPSSceneLimits))];
+            if ([resources.sceneLimitsBuffer storageMode] == MTLStorageModeManaged) {
+                [resources.sceneLimitsBuffer didModifyRange:NSMakeRange(0, sizeof(MPSSceneLimits))];
+            }
         }
 
         resources.width = width;
@@ -790,7 +794,9 @@ struct Renderer::Impl {
                 id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
                 if (buffer && data) {
                     std::memcpy([buffer contents], data, length);
-                    [buffer didModifyRange:NSMakeRange(0, length)];
+                    if ([buffer storageMode] == MTLStorageModeManaged) {
+                        [buffer didModifyRange:NSMakeRange(0, length)];
+                    }
                 }
             }
         };
@@ -860,6 +866,12 @@ struct Renderer::Impl {
 
 bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
 
+    core::Logger::info("Renderer", "DEBUG: Preparing hardware scene data with %zu vertices.", sceneData.positions.size());
+    for (int i = 0; i < 3 && i < sceneData.positions.size(); ++i) {
+        const auto& v = sceneData.positions[i];
+        core::Logger::info("Renderer", "DEBUG: Shader-Data Vtx[%d]: (%.3f, %.3f, %.3f)", i, v.x, v.y, v.z);
+    }
+
     auto uploadSceneBuffer = [&](BufferHandle& handle, const void* data, std::size_t byteLength, const char* label) {
         if (byteLength == 0 || data == nullptr) {
             handle = {};
@@ -871,7 +883,9 @@ bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
             id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
             if (buffer) {
                 std::memcpy([buffer contents], data, byteLength);
-                [buffer didModifyRange:NSMakeRange(0, byteLength)];
+                if ([buffer storageMode] == MTLStorageModeManaged) {
+                    [buffer didModifyRange:NSMakeRange(0, byteLength)];
+                }
             }
         }
     };
@@ -932,10 +946,15 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     resources.reset();
     geometryStore.clear();
 
-    core::Logger::info("Renderer", "Loading scene with %zu meshes, %zu materials, %zu instances",
-                       scene.meshes().size(),
-                       scene.materials().size(),
-                       scene.instances().size());
+    const std::size_t meshCount = scene.meshes().size();
+    const std::size_t materialCount = scene.materials().size();
+    const std::size_t instanceCount = scene.instances().size();
+
+    core::Logger::info("Renderer",
+                       "Loading scene with %zu meshes, %zu materials, %zu instances",
+                       meshCount,
+                       materialCount,
+                       instanceCount);
 
     if (!context.isValid()) {
         core::Logger::warn("Renderer", "Metal context invalid; cannot load scene");
@@ -951,7 +970,6 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     const auto& materials = scene.materials();
 
     const MPSSceneData sceneData = buildSceneData(scene);
-    geometryStore.clear();
     if (sceneData.positions.empty() || sceneData.indices.empty() || sceneData.indexOffsets.empty()) {
         core::Logger::warn("Renderer", "Flattened scene data empty; scene load aborted");
         return false;
@@ -960,9 +978,13 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     std::vector<std::size_t> meshUploadIndices(1, static_cast<std::size_t>(-1));
     std::vector<std::size_t> meshBLASIndices(1, static_cast<std::size_t>(-1));
 
-    geometryStore.clear();
-
     scene::Mesh flattenedMesh = makeCombinedMeshFromSceneData(sceneData);
+    core::Logger::info("Renderer", "DEBUG: Flattened mesh created with %zu vertices.", flattenedMesh.vertices().size());
+    for (int i = 0; i < 3 && i < flattenedMesh.vertices().size(); ++i) {
+        const auto& v = flattenedMesh.vertices()[i].position;
+        core::Logger::info("Renderer", "DEBUG: AS-Mesh Vtx[%d]: (%.3f, %.3f, %.3f)", i, v.x, v.y, v.z);
+    }
+
     const auto uploadIndex = geometryStore.uploadMesh(flattenedMesh, "scene_mesh_combined");
     if (!uploadIndex.has_value()) {
         core::Logger::error("Renderer", "Failed to upload flattened mesh for scene");
