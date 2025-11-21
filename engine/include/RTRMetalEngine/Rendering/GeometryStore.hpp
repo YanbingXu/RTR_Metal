@@ -41,6 +41,7 @@ public:
     explicit GeometryStore(BufferAllocator& allocator);
 
     std::optional<std::size_t> uploadMesh(const scene::Mesh& mesh, const std::string& label);
+    void clear();
 
     [[nodiscard]] const std::vector<MeshBuffers>& uploadedMeshes() const noexcept { return meshes_; }
 

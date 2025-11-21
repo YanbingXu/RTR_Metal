@@ -36,6 +36,11 @@ struct CommandLineOptions {
     bool printHash = false;
     bool debugAlbedo = false;
     bool overrideShadingMode = false;
+    std::optional<bool> accumulationEnabled;
+    std::optional<std::uint32_t> accumulationFrames;
+    std::optional<std::uint32_t> samplesPerPixel;
+    std::optional<std::uint32_t> sampleSeed;
+    std::optional<std::uint32_t> maxBounces;
 };
 
 void printUsage() {
@@ -47,6 +52,11 @@ void printUsage() {
               << "  --frames=N             渲染帧数，用于累计或调试 (默认 1)\n"
               << "  --mode=auto|hardware|fallback  选择硬件 RT 或渐变回退 (默认 auto)\n"
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
+              << "  --accumulation=on|off  开启或关闭累计 (覆盖配置文件)\n"
+              << "  --accumulation-frames=N 限定累计帧数 (0 表示无限制)\n"
+              << "  --samples-per-pixel=N  每像素采样次数，0 表示无限制 (默认 1)\n"
+              << "  --sample-seed=N        采样随机种子\n"
+              << "  --max-bounces=N        硬件 RT 最大弹射次数 (至少 1)\n"
               << "  --hash                 渲染完输出图像的 FNV-1a hash\n"
               << "  --debug-albedo         调试模式：直接输出材质反照率\n"
               << "  --help                 打印帮助\n";
@@ -71,6 +81,32 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseResolution(const std
         return std::make_pair(static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
     } catch (const std::exception&) {
         return std::nullopt;
+    }
+}
+
+bool parseBoolArgument(std::string value, const char* optionName) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (value == "1" || value == "true" || value == "on" || value == "yes") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "off" || value == "no") {
+        return false;
+    }
+    throw std::runtime_error(std::string("Invalid value for ") + optionName + ": " + value);
+}
+
+std::uint32_t parseUIntArgument(const std::string& text, const char* optionName) {
+    try {
+        const unsigned long parsed = std::stoul(text);
+        if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::runtime_error("Value out of range for " + std::string(optionName));
+        }
+        return static_cast<std::uint32_t>(parsed);
+    } catch (const std::exception&) {
+        throw std::runtime_error("Invalid numeric value for " + std::string(optionName) + ": " + text);
     }
 }
 
@@ -114,6 +150,24 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             options.debugAlbedo = true;
         } else if (arg.rfind("--config=", 0) == 0) {
             options.configPath = fs::path(arg.substr(9));
+        } else if (arg.rfind("--accumulation=", 0) == 0) {
+            options.accumulationEnabled = parseBoolArgument(arg.substr(15), "--accumulation");
+        } else if (arg == "--accumulation") {
+            options.accumulationEnabled = true;
+        } else if (arg == "--no-accumulation") {
+            options.accumulationEnabled = false;
+        } else if (arg.rfind("--accumulation-frames=", 0) == 0) {
+            options.accumulationFrames = parseUIntArgument(arg.substr(22), "--accumulation-frames");
+        } else if (arg.rfind("--samples-per-pixel=", 0) == 0) {
+            options.samplesPerPixel = parseUIntArgument(arg.substr(22), "--samples-per-pixel");
+        } else if (arg.rfind("--sample-seed=", 0) == 0) {
+            options.sampleSeed = parseUIntArgument(arg.substr(14), "--sample-seed");
+        } else if (arg.rfind("--max-bounces=", 0) == 0) {
+            const auto value = parseUIntArgument(arg.substr(14), "--max-bounces");
+            if (value == 0) {
+                throw std::runtime_error("--max-bounces must be >= 1");
+            }
+            options.maxBounces = value;
         } else {
             throw std::runtime_error("Unknown option: " + arg);
         }
@@ -215,6 +269,25 @@ int main(int argc, const char* argv[]) {
 
     if (options.overrideShadingMode) {
         config.shadingMode = options.shadingMode;
+    }
+
+    if (options.accumulationEnabled.has_value()) {
+        config.accumulationEnabled = *options.accumulationEnabled;
+    }
+    if (options.accumulationFrames.has_value()) {
+        config.accumulationFrames = *options.accumulationFrames;
+    }
+    if (options.samplesPerPixel.has_value()) {
+        config.samplesPerPixel = *options.samplesPerPixel;
+    }
+    if (options.sampleSeed.has_value()) {
+        config.sampleSeed = *options.sampleSeed;
+    }
+    if (options.maxBounces.has_value()) {
+        config.maxHardwareBounces = *options.maxBounces;
+    }
+    if (config.maxHardwareBounces == 0) {
+        config.maxHardwareBounces = 1;
     }
 
     rtr::rendering::Renderer renderer{config};

@@ -77,6 +77,7 @@ accumulation = off
 accumulationFrames = 8
 samplesPerPixel = 4
 sampleSeed = 123
+maxBounces = 3
 )");
 
     const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
@@ -84,6 +85,20 @@ sampleSeed = 123
     EXPECT_EQ(config.accumulationFrames, 8u);
     EXPECT_EQ(config.samplesPerPixel, 4u);
     EXPECT_EQ(config.sampleSeed, 123u);
+    EXPECT_EQ(config.maxHardwareBounces, 3u);
+
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigLoader, ClampsZeroMaxBounces) {
+    const auto path = makeTempFile("rtr_engine_config_bounces.ini",
+                                   R"(applicationName = Sample
+shaderLibraryPath = assets/RTR.metallib
+maxBounces = 0
+)");
+
+    const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
+    EXPECT_EQ(config.maxHardwareBounces, 1u);
 
     std::filesystem::remove(path);
 }

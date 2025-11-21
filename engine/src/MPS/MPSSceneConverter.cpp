@@ -47,6 +47,7 @@ bool appendMeshInstance(const scene::Mesh& mesh,
     }
 
     const vector_float3 materialColor = material ? clampColor(material->albedo) : clampColor(defaultColor);
+    const vector_float3 emissionColor = material ? clampColor(material->emission) : vector_float3{0.0f, 0.0f, 0.0f};
 
     const std::size_t positionStart = outScene.positions.size();
     const std::size_t normalStart = outScene.normals.size();
@@ -96,6 +97,7 @@ bool appendMeshInstance(const scene::Mesh& mesh,
 
 MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColor) {
     MPSSceneData sceneData{};
+    sceneData.indexOffsets.clear();
 
     const auto& meshes = scene.meshes();
     const auto& materials = scene.materials();
@@ -132,6 +134,10 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
         }
 
         if (appendMeshInstance(mesh, material, materialIndex, instance.transform, defaultColor, sceneData)) {
+            if (sceneData.indexOffsets.empty()) {
+                sceneData.indexOffsets.push_back(0);
+            }
+            sceneData.indexOffsets.push_back(sceneData.indices.size());
             appendedAny = true;
         } else {
             core::Logger::warn("MPSSceneConverter", "Skipped mesh instance %zu due to invalid geometry", instanceIndex);
@@ -147,6 +153,10 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
                                     matrix_identity_float4x4,
                                     defaultColor,
                                     sceneData)) {
+                if (sceneData.indexOffsets.empty()) {
+                    sceneData.indexOffsets.push_back(0);
+                }
+                sceneData.indexOffsets.push_back(sceneData.indices.size());
                 appendedAny = true;
             } else {
                 core::Logger::warn("MPSSceneConverter", "Skipped mesh %zu due to invalid geometry", meshIndex);

@@ -9,10 +9,20 @@
 #include <cmath>
 #include <filesystem>
 #include <simd/simd.h>
+#include <span>
 #include <vector>
 
 namespace rtr::scene {
 namespace {
+
+constexpr std::uint32_t FACE_MASK_NONE = 0;
+constexpr std::uint32_t FACE_MASK_NEGATIVE_X = 1u << 0u;
+constexpr std::uint32_t FACE_MASK_POSITIVE_X = 1u << 1u;
+constexpr std::uint32_t FACE_MASK_NEGATIVE_Y = 1u << 2u;
+constexpr std::uint32_t FACE_MASK_POSITIVE_Y = 1u << 3u;
+constexpr std::uint32_t FACE_MASK_NEGATIVE_Z = 1u << 4u;
+constexpr std::uint32_t FACE_MASK_POSITIVE_Z = 1u << 5u;
+constexpr std::uint32_t FACE_MASK_ALL = (1u << 6u) - 1u;
 
 MeshHandle addQuad(SceneBuilder& builder,
                    const simd_float3& p0,
@@ -104,35 +114,149 @@ MeshHandle addTexturedBox(SceneBuilder& builder,
                                    std::span<const std::uint32_t>(indices.data(), indices.size()));
 }
 
-void addCeilingLight(SceneBuilder& builder, Scene& scene) {
-    const float lightHalfWidth = 0.25f;
-    const float lightHalfDepth = 0.18f;
-    const float ceilingY = 1.0f;
-    const float lightZ = -1.0f;
-
-    const simd_float3 p0 = simd_make_float3(-lightHalfWidth, ceilingY - 0.001f, -lightHalfDepth - lightZ);
-    const simd_float3 p1 = simd_make_float3(lightHalfWidth, ceilingY - 0.001f, -lightHalfDepth - lightZ);
-    const simd_float3 p2 = simd_make_float3(lightHalfWidth, ceilingY - 0.001f, lightHalfDepth - lightZ);
-    const simd_float3 p3 = simd_make_float3(-lightHalfWidth, ceilingY - 0.001f, lightHalfDepth - lightZ);
-
-    const std::array<simd_float3, 4> positions = {p0, p1, p2, p3};
-    const std::array<std::uint32_t, 6> indices = {0, 1, 2, 0, 2, 3};
-
-    auto mesh = builder.addTriangleMesh(positions, indices);
-
-    Material lightMaterial{};
-    lightMaterial.albedo = {1.0f, 0.98f, 0.92f};
-    lightMaterial.emission = {18.0f, 17.5f, 17.0f};
-    lightMaterial.roughness = 0.2f;
-
-    auto lightHandle = scene.addMaterial(lightMaterial);
-    scene.addInstance(mesh, lightHandle, matrix_identity_float4x4);
+simd_float4x4 makeTranslation(const simd_float3& translation) {
+    simd_float4x4 result = matrix_identity_float4x4;
+    result.columns[3] = simd_make_float4(translation.x, translation.y, translation.z, 1.0f);
+    return result;
 }
 
-MeshHandle addSphere(SceneBuilder& builder, float radius, std::uint32_t slices, std::uint32_t stacks) {
-    std::vector<simd_float3> positions;
+simd_float4x4 makeScale(const simd_float3& scale) {
+    simd_float4x4 result = matrix_identity_float4x4;
+    result.columns[0].x = scale.x;
+    result.columns[1].y = scale.y;
+    result.columns[2].z = scale.z;
+    return result;
+}
+
+simd_float4x4 makeRotation(float radians, simd_float3 axis) {
+    if (radians == 0.0f) {
+        return matrix_identity_float4x4;
+    }
+    axis = simd_normalize(axis);
+    const float ct = std::cos(radians);
+    const float st = std::sin(radians);
+    const float ci = 1.0f - ct;
+    const float x = axis.x;
+    const float y = axis.y;
+    const float z = axis.z;
+
+    simd_float4x4 result = matrix_identity_float4x4;
+    result.columns[0] = simd_make_float4(ct + x * x * ci, x * y * ci + z * st, x * z * ci - y * st, 0.0f);
+    result.columns[1] = simd_make_float4(y * x * ci - z * st, ct + y * y * ci, y * z * ci + x * st, 0.0f);
+    result.columns[2] = simd_make_float4(z * x * ci + y * st, z * y * ci - x * st, ct + z * z * ci, 0.0f);
+    return result;
+}
+
+simd_float4x4 composeTransform(const simd_float3& translation,
+                               const simd_float3& scale,
+                               float rotationRadians,
+                               simd_float3 rotationAxis) {
+    const simd_float4x4 translationMatrix = makeTranslation(translation);
+    const simd_float4x4 rotationMatrix = makeRotation(rotationRadians, rotationAxis);
+    const simd_float4x4 scaleMatrix = makeScale(scale);
+    return simd_mul(translationMatrix, simd_mul(rotationMatrix, scaleMatrix));
+}
+
+MeshHandle addCubeWithTransform(SceneBuilder& builder,
+                                const simd_float4x4& transform,
+                                bool inwardNormals,
+                                bool includeTexcoords,
+                                std::uint32_t faceMask) {
+    const simd_float3 baseVertices[] = {
+        simd_make_float3(-0.5f, -0.5f, -0.5f),
+        simd_make_float3(0.5f, -0.5f, -0.5f),
+        simd_make_float3(0.5f, 0.5f, -0.5f),
+        simd_make_float3(-0.5f, 0.5f, -0.5f),
+        simd_make_float3(-0.5f, -0.5f, 0.5f),
+        simd_make_float3(0.5f, -0.5f, 0.5f),
+        simd_make_float3(0.5f, 0.5f, 0.5f),
+        simd_make_float3(-0.5f, 0.5f, 0.5f),
+    };
+
+    struct Face {
+        std::uint32_t mask;
+        std::uint32_t indices[4];
+        simd_float3 normal;
+    };
+
+    const Face faces[] = {
+        {FACE_MASK_NEGATIVE_Z, {0, 1, 2, 3}, simd_make_float3(0.0f, 0.0f, -1.0f)},
+        {FACE_MASK_POSITIVE_Z, {5, 4, 7, 6}, simd_make_float3(0.0f, 0.0f, 1.0f)},
+        {FACE_MASK_NEGATIVE_X, {4, 0, 3, 7}, simd_make_float3(-1.0f, 0.0f, 0.0f)},
+        {FACE_MASK_POSITIVE_X, {1, 5, 6, 2}, simd_make_float3(1.0f, 0.0f, 0.0f)},
+        {FACE_MASK_NEGATIVE_Y, {4, 5, 1, 0}, simd_make_float3(0.0f, -1.0f, 0.0f)},
+        {FACE_MASK_POSITIVE_Y, {3, 2, 6, 7}, simd_make_float3(0.0f, 1.0f, 0.0f)},
+    };
+
+    const simd_float4x4 normalMatrix = simd_transpose(simd_inverse(transform));
+    const std::array<simd_float2, 4> faceUVs = {
+        simd_make_float2(0.0f, 0.0f),
+        simd_make_float2(1.0f, 0.0f),
+        simd_make_float2(1.0f, 1.0f),
+        simd_make_float2(0.0f, 1.0f),
+    };
+
+    auto transformPosition = [&](simd_float3 position) {
+        const simd_float4 result = simd_mul(transform, simd_make_float4(position, 1.0f));
+        return simd_make_float3(result.x, result.y, result.z);
+    };
+    auto transformNormal = [&](simd_float3 normal) {
+        const simd_float4 result = simd_mul(normalMatrix, simd_make_float4(normal, 0.0f));
+        return simd_normalize(simd_make_float3(result.x, result.y, result.z));
+    };
+
+    std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
-    positions.reserve((stacks + 1) * (slices + 1));
+    vertices.reserve(24);
+    indices.reserve(36);
+
+    for (const Face& face : faces) {
+        if ((faceMask & face.mask) == 0u) {
+            continue;
+        }
+        const simd_float3 faceNormal = inwardNormals ? -face.normal : face.normal;
+        const simd_float3 transformedNormal = transformNormal(faceNormal);
+        const std::uint32_t baseIndex = static_cast<std::uint32_t>(vertices.size());
+        for (std::size_t i = 0; i < 4; ++i) {
+            const simd_float3 position = transformPosition(baseVertices[face.indices[i]]);
+            Vertex vertex{};
+            vertex.position = position;
+            vertex.normal = transformedNormal;
+            vertex.texcoord = includeTexcoords ? faceUVs[i] : simd_make_float2(0.0f, 0.0f);
+            vertices.push_back(vertex);
+        }
+        indices.push_back(baseIndex + 0);
+        indices.push_back(baseIndex + 1);
+        indices.push_back(baseIndex + 2);
+        indices.push_back(baseIndex + 0);
+        indices.push_back(baseIndex + 2);
+        indices.push_back(baseIndex + 3);
+    }
+
+    return builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
+                                   std::span<const std::uint32_t>(indices.data(), indices.size()));
+}
+
+MeshHandle addSphere(SceneBuilder& builder,
+                     std::uint32_t slices,
+                     std::uint32_t stacks,
+                     const simd_float4x4& transform) {
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+    vertices.reserve((stacks + 1) * (slices + 1));
+    indices.reserve(stacks * slices * 6);
+
+    const simd_float4x4 normalMatrix = simd_transpose(simd_inverse(transform));
+
+    auto transformPosition = [&](simd_float3 position) {
+        const simd_float4 result = simd_mul(transform, simd_make_float4(position, 1.0f));
+        return simd_make_float3(result.x, result.y, result.z);
+    };
+
+    auto transformNormal = [&](simd_float3 normal) {
+        const simd_float4 result = simd_mul(normalMatrix, simd_make_float4(normal, 0.0f));
+        return simd_normalize(simd_make_float3(result.x, result.y, result.z));
+    };
 
     for (std::uint32_t stack = 0; stack <= stacks; ++stack) {
         const float v = static_cast<float>(stack) / static_cast<float>(stacks);
@@ -144,7 +268,12 @@ MeshHandle addSphere(SceneBuilder& builder, float radius, std::uint32_t slices, 
             const float theta = u * static_cast<float>(M_PI) * 2.0f;
             const float x = ringRadius * std::cos(theta);
             const float z = ringRadius * std::sin(theta);
-            positions.push_back(simd_make_float3(x * radius, y * radius, z * radius));
+            const simd_float3 localPos = simd_make_float3(x, y, z);
+            Vertex vertex{};
+            vertex.position = transformPosition(localPos);
+            vertex.normal = transformNormal(localPos);
+            vertex.texcoord = simd_make_float2(u, 1.0f - v);
+            vertices.push_back(vertex);
         }
     }
 
@@ -162,23 +291,16 @@ MeshHandle addSphere(SceneBuilder& builder, float radius, std::uint32_t slices, 
         }
     }
 
-    return builder.addTriangleMesh(std::span<const simd_float3>(positions.data(), positions.size()),
+    return builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
                                    std::span<const std::uint32_t>(indices.data(), indices.size()));
-}
-
-simd_float4x4 makeTransform(const simd_float3& translation, float scale) {
-    simd_float4x4 transform = matrix_identity_float4x4;
-    transform.columns[0] = simd_make_float4(scale, 0.0f, 0.0f, 0.0f);
-    transform.columns[1] = simd_make_float4(0.0f, scale, 0.0f, 0.0f);
-    transform.columns[2] = simd_make_float4(0.0f, 0.0f, scale, 0.0f);
-    transform.columns[3] = simd_make_float4(translation.x, translation.y, translation.z, 1.0f);
-    return transform;
 }
 
 void addMario(SceneBuilder& builder,
               Scene& scene,
               const std::filesystem::path& assetRoot,
-              float supportY) {
+              float supportY,
+              const simd_float3& translation,
+              float rotationRadians) {
     if (assetRoot.empty()) {
         return;
     }
@@ -204,18 +326,30 @@ void addMario(SceneBuilder& builder,
     const simd_float3 centre = (minPoint + maxPoint) * 0.5f;
     const simd_float3 extent = maxPoint - minPoint;
     const float largest = std::max({extent.x, extent.y, extent.z, 1e-3f});
-    const float scale = 0.62f / largest;
+    const float uniformScale = 0.62f / largest;
+
     for (auto& vertex : vertices) {
-        vertex.position = (vertex.position - centre) * scale;
+        vertex.position = (vertex.position - centre) * uniformScale;
     }
 
     simd_float3 scaledMin = vertices.front().position;
-    simd_float3 scaledMax = vertices.front().position;
     for (const auto& v : vertices) {
         scaledMin = simd_min(scaledMin, v.position);
-        scaledMax = simd_max(scaledMax, v.position);
     }
+
     const float supportLift = (supportY - scaledMin.y) + 0.01f;
+    const simd_float3 marioTranslation = simd_make_float3(translation.x, supportLift, translation.z);
+    const simd_float4x4 marioTransform = composeTransform(marioTranslation,
+                                                          simd_make_float3(1.0f, 1.0f, 1.0f),
+                                                          rotationRadians,
+                                                          simd_make_float3(1.0f, 0.0f, 0.0f));
+
+    for (auto& vertex : vertices) {
+        const simd_float4 transformed = simd_mul(marioTransform, simd_make_float4(vertex.position, 1.0f));
+        vertex.position = simd_make_float3(transformed.x, transformed.y, transformed.z);
+        const simd_float4 rotatedNormal = simd_mul(marioTransform, simd_make_float4(vertex.normal, 0.0f));
+        vertex.normal = simd_normalize(simd_make_float3(rotatedNormal.x, rotatedNormal.y, rotatedNormal.z));
+    }
 
     Material marioMaterial{};
     marioMaterial.albedo = {0.9f, 0.35f, 0.3f};
@@ -231,163 +365,147 @@ void addMario(SceneBuilder& builder,
     auto mesh = builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
                                         std::span<const std::uint32_t>(indices.data(), indices.size()));
     auto matHandle = scene.addMaterial(marioMaterial);
-    const simd_float3 marioTranslation = simd_make_float3(0.2f, supportLift, -0.95f);
-    scene.addInstance(mesh, matHandle, makeTransform(marioTranslation, 1.0f));
+    scene.addInstance(mesh, matHandle, matrix_identity_float4x4);
 }
 
 void addFeatureGeometry(SceneBuilder& builder,
                         Scene& scene,
                         const std::filesystem::path& assetRoot,
-                        float floorY,
                         float crateTopY) {
     Material mirror{};
-    mirror.albedo = {0.95f, 0.95f, 0.95f};
-    mirror.roughness = 0.05f;
+    mirror.albedo = {1.0f, 1.0f, 1.0f};
+    mirror.roughness = 0.02f;
     mirror.metallic = 1.0f;
-    mirror.reflectivity = 0.95f;
+    mirror.reflectivity = 1.0f;
     mirror.indexOfRefraction = 1.0f;
-    constexpr float mirrorRadius = 0.3f;
-    auto mirrorMesh = addSphere(builder, 1.0f, 32, 16);
     auto mirrorMat = scene.addMaterial(mirror);
-    const simd_float3 mirrorPos = simd_make_float3(-0.35f, floorY + 0.35f, -0.5f);
-    scene.addInstance(mirrorMesh, mirrorMat, makeTransform(mirrorPos, mirrorRadius));
+    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.3275f, 0.7f, 0.3f),
+                                                          simd_make_float3(0.25f, 0.25f, 0.25f),
+                                                          1.9f,
+                                                          simd_make_float3(1.0f, 0.0f, 0.0f));
+    auto mirrorMesh = addSphere(builder, 48, 24, mirrorTransform);
+    scene.addInstance(mirrorMesh, mirrorMat, matrix_identity_float4x4);
 
     Material glass{};
-    glass.albedo = {0.95f, 0.98f, 1.0f};
+    glass.albedo = {1.0f, 0.5f, 1.0f};
     glass.roughness = 0.02f;
-    glass.metallic = 0.0f;
-    glass.reflectivity = 0.05f;
-    glass.indexOfRefraction = 1.5f;
-    auto glassMesh = addSphere(builder, 1.0f, 32, 16);
+    glass.reflectivity = 0.1f;
+    glass.indexOfRefraction = 1.1f;
     auto glassMat = scene.addMaterial(glass);
-    constexpr float glassRadius = 0.26f;
-    const simd_float3 glassPos = simd_make_float3(0.3f, crateTopY + glassRadius, -0.55f);
-    scene.addInstance(glassMesh, glassMat, makeTransform(glassPos, glassRadius));
+    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.3275f, 0.7f, 0.6f),
+                                                         simd_make_float3(0.25f, 0.25f, 0.25f),
+                                                         1.9f,
+                                                         simd_make_float3(1.0f, 0.0f, 0.0f));
+    auto glassMesh = addSphere(builder, 48, 24, glassTransform);
+    scene.addInstance(glassMesh, glassMat, matrix_identity_float4x4);
 
-    addMario(builder, scene, assetRoot, crateTopY);
+    addMario(builder,
+             scene,
+             assetRoot,
+             crateTopY,
+             simd_make_float3(0.3275f, 0.6f, -0.1f),
+             0.01f);
 }
+
+}  // namespace
 
 Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Scene scene;
     SceneBuilder builder(scene);
 
-    constexpr float roomHalfWidth = 1.0f;
-    constexpr float roomHalfHeight = 1.15f;
-    constexpr float roomDepth = 1.8f;
-    const float floorY = -roomHalfHeight;
+    const simd_float4x4 enclosureTransform = composeTransform(simd_make_float3(0.0f, 1.0f, 0.0f),
+                                                              simd_make_float3(2.0f, 2.0f, 2.0f),
+                                                              0.0f,
+                                                              simd_make_float3(0.0f, 1.0f, 0.0f));
 
-    auto floorMesh = addQuad(builder,
-                              simd_make_float3(-roomHalfWidth, floorY, 0.0f),
-                              simd_make_float3(roomHalfWidth, floorY, 0.0f),
-                              simd_make_float3(roomHalfWidth, floorY, -roomDepth),
-                              simd_make_float3(-roomHalfWidth, floorY, -roomDepth));
-    Material floorMaterial{};
-    floorMaterial.albedo = {0.725f, 0.71f, 0.68f};
-    floorMaterial.reflectivity = 0.0f;
-    floorMaterial.metallic = 0.0f;
-    floorMaterial.indexOfRefraction = 1.0f;
-    auto floorMatHandle = scene.addMaterial(floorMaterial);
-    scene.addInstance(floorMesh, floorMatHandle, matrix_identity_float4x4);
+    Material enclosureMaterial{};
+    enclosureMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    auto enclosureHandle = scene.addMaterial(enclosureMaterial);
+    auto enclosureMesh = addCubeWithTransform(builder,
+                                              enclosureTransform,
+                                              true,
+                                              false,
+                                              FACE_MASK_NEGATIVE_Y | FACE_MASK_POSITIVE_Y | FACE_MASK_NEGATIVE_Z);
+    scene.addInstance(enclosureMesh, enclosureHandle, matrix_identity_float4x4);
 
-    auto ceilingMesh = addQuad(builder,
-                                simd_make_float3(-roomHalfWidth, roomHalfHeight, -roomDepth),
-                                simd_make_float3(roomHalfWidth, roomHalfHeight, -roomDepth),
-                                simd_make_float3(roomHalfWidth, roomHalfHeight, 0.0f),
-                                simd_make_float3(-roomHalfWidth, roomHalfHeight, 0.0f));
-    Material ceilingMaterial{};
-    ceilingMaterial.albedo = {0.78f, 0.78f, 0.78f};
-    ceilingMaterial.reflectivity = 0.0f;
-    ceilingMaterial.metallic = 0.0f;
-    ceilingMaterial.indexOfRefraction = 1.0f;
-    auto ceilingMatHandle = scene.addMaterial(ceilingMaterial);
-    scene.addInstance(ceilingMesh, ceilingMatHandle, matrix_identity_float4x4);
-
-    auto backMesh = addQuad(builder,
-                             simd_make_float3(-roomHalfWidth, -roomHalfHeight, -roomDepth),
-                             simd_make_float3(roomHalfWidth, -roomHalfHeight, -roomDepth),
-                             simd_make_float3(roomHalfWidth, roomHalfHeight, -roomDepth),
-                             simd_make_float3(-roomHalfWidth, roomHalfHeight, -roomDepth));
-    Material backMaterial{};
-    backMaterial.albedo = {0.725f, 0.71f, 0.68f};
-    backMaterial.reflectivity = 0.0f;
-    backMaterial.metallic = 0.0f;
-    backMaterial.indexOfRefraction = 1.0f;
-    auto backMatHandle = scene.addMaterial(backMaterial);
-    scene.addInstance(backMesh, backMatHandle, matrix_identity_float4x4);
-
-    auto leftMesh = addQuad(builder,
-                             simd_make_float3(-roomHalfWidth, floorY, 0.0f),
-                             simd_make_float3(-roomHalfWidth, floorY, -roomDepth),
-                             simd_make_float3(-roomHalfWidth, roomHalfHeight, -roomDepth),
-                             simd_make_float3(-roomHalfWidth, roomHalfHeight, 0.0f));
     Material leftMaterial{};
     leftMaterial.albedo = {0.63f, 0.065f, 0.05f};
-    leftMaterial.roughness = 0.45f;
-    leftMaterial.reflectivity = 0.0f;
-    leftMaterial.metallic = 0.0f;
-    leftMaterial.indexOfRefraction = 1.0f;
-    auto leftMatHandle = scene.addMaterial(leftMaterial);
-    scene.addInstance(leftMesh, leftMatHandle, matrix_identity_float4x4);
+    auto leftHandle = scene.addMaterial(leftMaterial);
+    auto leftMesh = addCubeWithTransform(builder,
+                                         enclosureTransform,
+                                         true,
+                                         false,
+                                         FACE_MASK_NEGATIVE_X);
+    scene.addInstance(leftMesh, leftHandle, matrix_identity_float4x4);
 
-    auto rightMesh = addQuad(builder,
-                              simd_make_float3(roomHalfWidth, floorY, -roomDepth),
-                              simd_make_float3(roomHalfWidth, floorY, 0.0f),
-                              simd_make_float3(roomHalfWidth, roomHalfHeight, 0.0f),
-                              simd_make_float3(roomHalfWidth, roomHalfHeight, -roomDepth));
     Material rightMaterial{};
     rightMaterial.albedo = {0.14f, 0.45f, 0.091f};
-    rightMaterial.roughness = 0.45f;
-    rightMaterial.reflectivity = 0.0f;
-    rightMaterial.metallic = 0.0f;
-    rightMaterial.indexOfRefraction = 1.0f;
-    auto rightMatHandle = scene.addMaterial(rightMaterial);
-    scene.addInstance(rightMesh, rightMatHandle, matrix_identity_float4x4);
+    auto rightHandle = scene.addMaterial(rightMaterial);
+    auto rightMesh = addCubeWithTransform(builder,
+                                          enclosureTransform,
+                                          true,
+                                          false,
+                                          FACE_MASK_POSITIVE_X);
+    scene.addInstance(rightMesh, rightHandle, matrix_identity_float4x4);
 
-    const simd_float3 shortMin = simd_make_float3(-0.7f, floorY, -1.2f);
-    const simd_float3 shortMax = simd_make_float3(-0.1f, floorY + 0.7f, -0.7f);
-    auto boxMesh = addAxisAlignedBox(builder, shortMin, shortMax);
-    Material blockMaterial{};
-    blockMaterial.albedo = {0.73f, 0.73f, 0.73f};
-    blockMaterial.roughness = 0.35f;
-    blockMaterial.reflectivity = 0.0f;
-    blockMaterial.metallic = 0.0f;
-    blockMaterial.indexOfRefraction = 1.0f;
-    auto blockMatHandle = scene.addMaterial(blockMaterial);
-    scene.addInstance(boxMesh, blockMatHandle, matrix_identity_float4x4);
+    const simd_float4x4 lightTransform = composeTransform(simd_make_float3(0.0f, 1.0f, 0.0f),
+                                                         simd_make_float3(0.5f, 1.98f, 0.5f),
+                                                         0.0f,
+                                                         simd_make_float3(0.0f, 1.0f, 0.0f));
+    auto lightMesh = addCubeWithTransform(builder,
+                                          lightTransform,
+                                          true,
+                                          false,
+                                          FACE_MASK_POSITIVE_Y);
+    Material lightMaterial{};
+    lightMaterial.albedo = {1.0f, 1.0f, 1.0f};
+    lightMaterial.emission = {4.0f, 4.0f, 4.0f};
+    lightMaterial.roughness = 0.2f;
+    auto lightHandle = scene.addMaterial(lightMaterial);
+    scene.addInstance(lightMesh, lightHandle, matrix_identity_float4x4);
 
-    const simd_float3 crateMin = simd_make_float3(0.05f, floorY, -0.9f);
-    const simd_float3 crateMax = simd_make_float3(0.65f, floorY + 0.48f, -0.35f);
-
-    auto crateMesh = addTexturedBox(builder, crateMin, crateMax);
-    Material crateMaterial{};
-    crateMaterial.albedo = {0.8f, 0.7f, 0.6f};
-    crateMaterial.roughness = 0.6f;
-    crateMaterial.reflectivity = 0.0f;
-    crateMaterial.metallic = 0.0f;
-    crateMaterial.indexOfRefraction = 1.0f;
+    Material shortBoxMaterial{};
+    shortBoxMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    shortBoxMaterial.roughness = 0.4f;
     if (!assetRoot.empty()) {
         const auto crateTexture = assetRoot / "crate.jpg";
         if (std::filesystem::exists(crateTexture)) {
-            crateMaterial.albedoTexturePath = crateTexture.string();
+            shortBoxMaterial.albedoTexturePath = crateTexture.string();
         } else {
             rtr::core::Logger::warn("CornellBox",
                                     "Crate texture missing at %s",
                                     crateTexture.string().c_str());
         }
     }
-    auto crateMatHandle = scene.addMaterial(crateMaterial);
-    scene.addInstance(crateMesh, crateMatHandle, matrix_identity_float4x4);
-    const float crateTopY = crateMax.y;
+    const simd_float3 shortTranslation = simd_make_float3(0.3275f, 0.3f, 0.0f);
+    const simd_float3 shortScale = simd_make_float3(0.6f, 0.6f, 0.6f);
+    const float shortRotation = -0.3f;
+    const simd_float4x4 shortTransform = composeTransform(shortTranslation,
+                                                          shortScale,
+                                                          shortRotation,
+                                                          simd_make_float3(0.0f, 1.0f, 0.0f));
+    auto shortMesh = addCubeWithTransform(builder, shortTransform, false, true, FACE_MASK_ALL);
+    auto shortHandle = scene.addMaterial(shortBoxMaterial);
+    scene.addInstance(shortMesh, shortHandle, matrix_identity_float4x4);
+    const float crateTopY = shortTranslation.y + shortScale.y * 0.5f;
 
-    addCeilingLight(builder, scene);
+    Material tallBoxMaterial{};
+    tallBoxMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    const simd_float3 tallTranslation = simd_make_float3(-0.335f, 0.6f, -0.29f);
+    const simd_float3 tallScale = simd_make_float3(0.6f, 1.2f, 0.6f);
+    const float tallRotation = 0.3f;
+    const simd_float4x4 tallTransform = composeTransform(tallTranslation,
+                                                         tallScale,
+                                                         tallRotation,
+                                                         simd_make_float3(0.0f, 1.0f, 0.0f));
+    auto tallMesh = addCubeWithTransform(builder, tallTransform, false, false, FACE_MASK_ALL);
+    auto tallHandle = scene.addMaterial(tallBoxMaterial);
+    scene.addInstance(tallMesh, tallHandle, matrix_identity_float4x4);
 
-    addFeatureGeometry(builder, scene, assetRoot, floorY, crateTopY);
+    addFeatureGeometry(builder, scene, assetRoot, crateTopY);
 
     return scene;
 }
-
-}  // namespace
-
 Scene createCornellBoxScene() { return createCornellBoxSceneInternal({}); }
 
 Scene createCornellBoxScene(const std::filesystem::path& assetRoot) {

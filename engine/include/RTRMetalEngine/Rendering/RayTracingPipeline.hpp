@@ -7,6 +7,13 @@ namespace rtr::rendering {
 
 class MetalContext;
 
+enum class RayKernelStage {
+    RayGeneration,
+    Shade,
+    Shadow,
+    Accumulate,
+};
+
 class RayTracingPipeline {
 public:
     RayTracingPipeline();
@@ -19,7 +26,8 @@ public:
 
     bool initialize(MetalContext& context, const std::string& shaderLibraryPath);
     bool isValid() const noexcept;
-    void* rawPipelineState() const noexcept;
+    void* rawPipelineState(RayKernelStage stage) const noexcept;
+    bool hasHardwareKernels() const noexcept;
     bool requiresAccelerationStructure() const noexcept;
 
 private:

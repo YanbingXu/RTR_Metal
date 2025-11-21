@@ -105,7 +105,7 @@ private:
     std::uint32_t frameHeight_ = 512;
     bool accumulationEnabled_ = true;
     std::uint32_t accumulationTargetFrames_ = 0;
-    std::uint32_t samplesPerPixel_ = 1;
+    std::uint32_t samplesPerPixel_ = 0;
     std::uint32_t baseSeed_ = 0;
 
     void createUniformBuffer();

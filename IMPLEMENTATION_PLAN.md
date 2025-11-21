@@ -46,12 +46,18 @@
 
 ### Stage 3D: Extended Shading & Effects
 **Goal**: Build on the hardware kernel to introduce polished effects (reflections, refraction, soft shadows, motion blur, etc.) while keeping parity with future fallbacks.
+**Current Status**:
+The Stage 3D shader port is partially in place: primary shading, BRDF sampling, and TLAS setup now match the Apple reference (per-instance light masks, shared metal kernels). However, the render graph still copies `shadeTexture` to the drawable before the shadow/accumulate passes run, so queued lighting never reaches the screen. Secondary bounces also fall back to the CPU `traceScene` helper instead of issuing real hardware rays, which keeps reflection/refraction black. The next iteration must address both shortcomings (render graph ordering + hardware-driven secondary rays) before we can claim Stage 3D parity.
 **Success Criteria**:
 - Material system supports reflective/refractive parameters with documented presets.
 - Shadowing, indirect bounce approximations, and motion blur toggles wired through CLI/on-screen samples.
 - Regression assets include updated frame hashes per effect.
 **Tests**: Expanded image-diff suite, stress tests for parameter toggles, targeted unit tests for material packing.
-**Status**: Not Started
+**Status**: In Progress — TLAS build now flattens the scene into a single hardware mesh, but the on-screen frame still diverges from Apple's reference (Mario scale/placement and per-triangle materials/UVs). Upcoming work:
+
+- Mirror the CPU reference scene (`~/Desktop/MetalRayTracing`) triangle-for-triangle so our Cornell builder uses the exact same transforms/materials.
+- Rebuild the hardware acceleration structures the way the Metal RT sample does (`~/Desktop/metal_RTR_official_example`): BLAS per mesh plus TLAS instances with correct masks/material bindings.
+- Prepare the same material/texture buffers as the reference and rewrite `RTRRayTracing.metal` so all ray queries (primary/shadow/reflection) use the hardware intersection path, matching Apple's shading code.
 
 ## Stage 4: Polish & Documentation
 **Goal**: Round out material models (reflections/refraction, textures), ensure parity between hardware RT and MPS shading, and publish developer guidance.

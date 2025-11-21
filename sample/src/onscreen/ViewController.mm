@@ -68,7 +68,7 @@ rtr::core::EngineConfig buildEngineConfig() {
     config.shadingMode = "hardware";
     config.accumulationEnabled = true;
     config.accumulationFrames = 0;
-    config.samplesPerPixel = 1;
+    config.samplesPerPixel = 0;
     config.sampleSeed = 0;
     return config;
 }
@@ -107,6 +107,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     NSPopUpButton* _modePopup;
     NSPopUpButton* _resolutionPopup;
     NSButton* _screenshotButton;
+    NSButton* _debugToggle;
     std::uint32_t _currentWidth;
     std::uint32_t _currentHeight;
     bool _pendingScreenshot;
@@ -200,7 +201,18 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
                                            action:@selector(captureScreenshot:)];
     _screenshotButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    NSStackView* stack = [NSStackView stackViewWithViews:@[_modePopup, _resolutionPopup, _screenshotButton]];
+    _debugToggle = [NSButton checkboxWithTitle:@"Debug Albedo"
+                                        target:self
+                                        action:@selector(debugModeChanged:)];
+    _debugToggle.translatesAutoresizingMaskIntoConstraints = NO;
+    _debugToggle.state = NSControlStateValueOff;
+
+    NSStackView* stack = [NSStackView stackViewWithViews:@[
+        _modePopup,
+        _resolutionPopup,
+        _screenshotButton,
+        _debugToggle,
+    ]];
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.spacing = 8.0;
     stack.edgeInsets = NSEdgeInsetsMake(6.0, 8.0, 6.0, 8.0);
@@ -359,6 +371,15 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     _pendingScreenshotPath = fullPath.UTF8String;
     _pendingScreenshot = true;
     rtr::core::Logger::info("OnScreenSample", "Screenshot requested -> %s", _pendingScreenshotPath.c_str());
+}
+
+- (void)debugModeChanged:(id)sender {
+    if (!_renderer) {
+        return;
+    }
+    const bool enabled = (_debugToggle.state == NSControlStateValueOn);
+    _renderer->setDebugMode(enabled);
+    _renderer->resetAccumulation();
 }
 
 - (void)selectCurrentMode {

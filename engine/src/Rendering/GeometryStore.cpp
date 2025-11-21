@@ -50,4 +50,8 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
     return meshes_.size() - 1;
 }
 
+void GeometryStore::clear() {
+    meshes_.clear();
+}
+
 }  // namespace rtr::rendering

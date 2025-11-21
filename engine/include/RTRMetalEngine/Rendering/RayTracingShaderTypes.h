@@ -9,6 +9,15 @@
 #define RTR_RAY_FLAG_DEBUG 0x1u
 #define RTR_RAY_FLAG_ACCUMULATE 0x2u
 
+#define RTR_RAY_MASK_PRIMARY 0x3u
+#define RTR_RAY_MASK_SHADOW 0x1u
+#define RTR_RAY_MASK_SECONDARY 0x3u
+
+#define RTR_TRIANGLE_MASK_GEOMETRY 0x1u
+#define RTR_TRIANGLE_MASK_LIGHT 0x2u
+
+#define RTR_MAX_AREA_LIGHTS 4u
+
 #ifdef __METAL_VERSION__
 
 typedef struct RTRRayTracingUniforms {
@@ -21,6 +30,8 @@ typedef struct RTRRayTracingUniforms {
     uint height;
     uint frameIndex;
     uint flags;
+    uint samplesPerPixel;
+    uint sampleSeed;
 } RTRRayTracingUniforms;
 
 typedef struct RTRRayTracingResourceHeader {
@@ -76,6 +87,32 @@ typedef struct RTRRayTracingMaterial {
     uint materialFlags;
 } RTRRayTracingMaterial;
 
+typedef struct RTRHardwareAreaLight {
+    float4 position;
+    float4 right;
+    float4 up;
+    float4 forward;
+    float4 color;
+} RTRHardwareAreaLight;
+
+typedef struct RTRHardwareRayUniforms {
+    RTRRayTracingUniforms camera;
+    uint lightCount;
+    uint maxBounces;
+    uint padding0;
+    uint padding1;
+    RTRHardwareAreaLight lights[RTR_MAX_AREA_LIGHTS];
+} RTRHardwareRayUniforms;
+
+typedef struct RTRHardwareRay {
+    packed_float3 origin;
+    uint mask;
+    packed_float3 direction;
+    float maxDistance;
+    float3 color;
+    float padding0;
+} RTRHardwareRay;
+
 #else
 
 namespace rtr::rendering {
@@ -92,6 +129,8 @@ struct RayTracingUniforms {
     uint32_t height = 0;
     uint32_t frameIndex = 0;
     uint32_t flags = 0;
+    uint32_t samplesPerPixel = 1;
+    uint32_t sampleSeed = 0;
 };
 
 struct alignas(16) RayTracingResourceHeader {
@@ -145,11 +184,40 @@ struct alignas(16) RayTracingMaterialResource {
     std::uint32_t materialFlags = 0;
 };
 
+struct alignas(16) HardwareAreaLight {
+    simd_float4 position{0.0F, 0.0F, 0.0F, 1.0F};
+    simd_float4 right{1.0F, 0.0F, 0.0F, 0.0F};
+    simd_float4 up{0.0F, 1.0F, 0.0F, 0.0F};
+    simd_float4 forward{0.0F, 0.0F, -1.0F, 0.0F};
+    simd_float4 color{1.0F, 1.0F, 1.0F, 0.0F};
+};
+
+struct alignas(16) HardwareRayUniforms {
+    RayTracingUniforms camera;
+    std::uint32_t lightCount = 0;
+    std::uint32_t maxBounces = 1;
+    std::uint32_t padding0 = 0;
+    std::uint32_t padding1 = 0;
+    HardwareAreaLight lights[RTR_MAX_AREA_LIGHTS] = {};
+};
+
+struct alignas(16) HardwareRay {
+    float origin[3] = {0.0F, 0.0F, 0.0F};
+    std::uint32_t mask = RTR_RAY_MASK_PRIMARY;
+    float direction[3] = {0.0F, 0.0F, -1.0F};
+    float maxDistance = 0.0F;
+    simd_float3 color{1.0F, 1.0F, 1.0F};
+    float padding0 = 0.0F;
+};
+
 static_assert(sizeof(RayTracingResourceHeader) % 16 == 0, "RayTracingResourceHeader must be 16-byte aligned");
 static_assert(sizeof(RayTracingMeshResource) % 16 == 0, "RayTracingMeshResource must be 16-byte aligned");
 static_assert(sizeof(RayTracingInstanceResource) % 16 == 0, "RayTracingInstanceResource must be 16-byte aligned");
 static_assert(sizeof(RayTracingMaterialResource) % 16 == 0, "RayTracingMaterialResource must be 16-byte aligned");
 static_assert(sizeof(RayTracingTextureResource) % 16 == 0, "RayTracingTextureResource must be 16-byte aligned");
+static_assert(sizeof(HardwareAreaLight) % 16 == 0, "HardwareAreaLight must be 16-byte aligned");
+static_assert(sizeof(HardwareRayUniforms) % 16 == 0, "HardwareRayUniforms must be 16-byte aligned");
+static_assert(sizeof(HardwareRay) % 16 == 0, "HardwareRay must be 16-byte aligned");
 
 }  // namespace rtr::rendering
 
