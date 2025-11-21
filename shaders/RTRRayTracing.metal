@@ -245,13 +245,14 @@ inline HardwareHit traceScene(instance_acceleration_structure accelerationStruct
     hit.hit = false;
 
     intersection_query<instancing, triangle_data> query(sceneRay, accelerationStructure);
-    if (query.next()) {
-        if (query.get_committed_intersection_type() == intersection_type::triangle) {
+    while (query.next()) {
+        if (query.get_candidate_intersection_type() == intersection_type::triangle) {
             hit.hit = true;
-            hit.primitiveIndex = query.get_committed_primitive_id();
-            hit.distance = query.get_committed_distance();
-            const float2 bary = query.get_committed_triangle_barycentric_coord();
-            hit.bary = bary;
+            hit.primitiveIndex = query.get_candidate_primitive_id();
+            hit.distance = query.get_candidate_triangle_distance();
+            hit.bary = query.get_candidate_triangle_barycentric_coord();
+            query.commit_triangle_intersection();
+            break;
         }
     }
     return hit;
@@ -264,10 +265,12 @@ inline bool isOccluded(instance_acceleration_structure accelerationStructure,
     const float epsilon = 1.0e-3f;
     raytracing::ray shadowRay(origin + direction * epsilon, direction, epsilon, maxDistance - epsilon);
     intersection_query<instancing, triangle_data> query(shadowRay, accelerationStructure);
-    if (query.next()) {
-        if (query.get_committed_intersection_type() == intersection_type::triangle) {
-            const float distance = query.get_committed_distance();
-            return distance < maxDistance - epsilon;
+    while (query.next()) {
+        if (query.get_candidate_intersection_type() == intersection_type::triangle) {
+            const float distance = query.get_candidate_triangle_distance();
+            if (distance < maxDistance - epsilon) {
+                return true;
+            }
         }
     }
     return false;
