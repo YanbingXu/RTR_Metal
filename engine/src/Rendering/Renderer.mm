@@ -407,6 +407,11 @@ struct Renderer::Impl {
             core::Logger::error("Renderer", "Top-level acceleration structure is invalid");
             return false;
         }
+        const NSUInteger tlasSize = [accelerationStructure size];
+        core::Logger::info("Renderer",
+                           "TLAS handle=%p size=%lu bytes",
+                           accelerationStructure,
+                           static_cast<unsigned long>(tlasSize));
 
         if (!dispatch2D(rayPipeline, [&](id<MTLComputeCommandEncoder> encoder) {
                 [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
@@ -425,6 +430,35 @@ struct Renderer::Impl {
                 }
                 [encoder setTexture:resources.shadeTexture atIndex:1];
                 [encoder setAccelerationStructure:accelerationStructure atBufferIndex:15];
+                if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
+                    [encoder useResource:accelerationStructure usage:MTLResourceUsageRead];
+                    [encoder useResource:positions usage:MTLResourceUsageRead];
+                    if (normals) {
+                        [encoder useResource:normals usage:MTLResourceUsageRead];
+                    }
+                    [encoder useResource:indices usage:MTLResourceUsageRead];
+                    if (colors) {
+                        [encoder useResource:colors usage:MTLResourceUsageRead];
+                    }
+                    if (texcoords) {
+                        [encoder useResource:texcoords usage:MTLResourceUsageRead];
+                    }
+                    if (primitiveMaterials) {
+                        [encoder useResource:primitiveMaterials usage:MTLResourceUsageRead];
+                    }
+                    if (materialBuffer) {
+                        [encoder useResource:materialBuffer usage:MTLResourceUsageRead];
+                    }
+                    if (textureInfoBuffer) {
+                        [encoder useResource:textureInfoBuffer usage:MTLResourceUsageRead];
+                    }
+                    if (textureDataBuffer) {
+                        [encoder useResource:textureDataBuffer usage:MTLResourceUsageRead];
+                    }
+                    if (resources.sceneLimitsBuffer) {
+                        [encoder useResource:resources.sceneLimitsBuffer usage:MTLResourceUsageRead];
+                    }
+                }
             })) {
             core::Logger::error("Renderer", "Failed to encode hardware ray tracing kernel");
             return false;
@@ -993,6 +1027,12 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
     meshUploadIndices[0] = *uploadIndex;
     const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
+    core::Logger::info("Renderer",
+                       "BLAS build buffers: gpuVtx=%p stride=%zu gpuIdx=%p indices=%zu",
+                       meshBuffers.gpuVertexBuffer.nativeHandle(),
+                       meshBuffers.vertexStride,
+                       meshBuffers.gpuIndexBuffer.nativeHandle(),
+                       meshBuffers.indexCount);
     auto blas = asBuilder.buildBottomLevel(meshBuffers, "scene_mesh_combined", queueHandle);
     if (!blas.has_value()) {
         core::Logger::error("Renderer", "Failed to build BLAS for flattened mesh");
@@ -1001,6 +1041,7 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
     meshBLASIndices[0] = bottomLevelStructures.size();
     bottomLevelStructures.push_back(std::move(*blas));
+    core::Logger::info("Renderer", "BLAS size=%zu bytes", bottomLevelStructures.back().sizeInBytes());
 
     std::vector<InstanceBuildInput> instanceInputs;
     instanceInputs.reserve(1);
@@ -1012,6 +1053,10 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     input.transform = matrix_identity_float4x4;
     input.userID = 0u;
     input.mask = RTR_TRIANGLE_MASK_GEOMETRY;
+    core::Logger::info("Renderer",
+                       "Instance mask=0x%X rayMask=0x%X",
+                       input.mask,
+                       RTR_RAY_MASK_PRIMARY);
     instanceInputs.push_back(input);
 
     RayTracingInstanceResource resource{};

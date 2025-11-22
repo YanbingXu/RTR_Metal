@@ -241,10 +241,12 @@ inline HardwareHit traceScene(instance_acceleration_structure accelerationStruct
                               float minDistance,
                               float maxDistance) {
     raytracing::ray sceneRay(origin, direction, minDistance, maxDistance);
+    intersection_params params;
+    params.set_triangle_cull_mode(triangle_cull_mode::none);
+    intersection_query<instancing, triangle_data> query(sceneRay, accelerationStructure, params);
     HardwareHit hit{};
     hit.hit = false;
 
-    intersection_query<instancing, triangle_data> query(sceneRay, accelerationStructure);
     while (query.next()) {
         if (query.get_candidate_intersection_type() == intersection_type::triangle) {
             hit.hit = true;
@@ -446,6 +448,10 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                 }
             }
         }
+    }
+
+    if (gid.x == 0u && gid.y == 0u) {
+        color = hit.hit ? float3(1.0f, 0.0f, 0.0f) : float3(0.0f, 0.0f, 1.0f);
     }
 
     dstTex.write(float4(color, 1.0f), gid);

@@ -50,7 +50,7 @@ void* AccelerationStructure::rawHandle() const noexcept {
 }
 
 AccelerationStructure makeAccelerationStructure(std::string label, std::size_t size, void* handle) {
-    id<MTLAccelerationStructure> structure = (__bridge id<MTLAccelerationStructure>)handle;
+    id<MTLAccelerationStructure> structure = (__bridge_transfer id<MTLAccelerationStructure>)handle;
     auto impl = std::make_unique<AccelerationStructureImpl>(structure);
     return AccelerationStructure(std::move(label), size, std::move(impl));
 }
