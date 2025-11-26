@@ -235,47 +235,43 @@ struct HardwareHit {
     float distance;
 };
 
-inline HardwareHit traceScene(instance_acceleration_structure accelerationStructure,
+inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStructure,
                               float3 origin,
                               float3 direction,
                               float minDistance,
-                              float maxDistance) {
+                              float maxDistance,
+                              uint rayMask = RTR_RAY_MASK_PRIMARY) {
     raytracing::ray sceneRay(origin, direction, minDistance, maxDistance);
-    intersection_params params;
-    params.set_triangle_cull_mode(triangle_cull_mode::none);
-    intersection_query<instancing, triangle_data> query(sceneRay, accelerationStructure, params);
-    HardwareHit hit{};
-    hit.hit = false;
+    intersector<triangle_data, instancing> tracer;
+    tracer.assume_geometry_type(geometry_type::triangle);
+    tracer.force_opacity(forced_opacity::opaque);
+    tracer.accept_any_intersection(false);
 
-    while (query.next()) {
-        if (query.get_candidate_intersection_type() == intersection_type::triangle) {
-            hit.hit = true;
-            hit.primitiveIndex = query.get_candidate_primitive_id();
-            hit.distance = query.get_candidate_triangle_distance();
-            hit.bary = query.get_candidate_triangle_barycentric_coord();
-            query.commit_triangle_intersection();
-            break;
-        }
+    const auto result = tracer.intersect(sceneRay, accelerationStructure, rayMask);
+
+    HardwareHit hit{};
+    if (result.type == intersection_type::triangle) {
+        hit.hit = true;
+        hit.primitiveIndex = result.primitive_id;
+        hit.distance = result.distance;
+        hit.bary = result.triangle_barycentric_coord;
     }
     return hit;
 }
 
-inline bool isOccluded(instance_acceleration_structure accelerationStructure,
+inline bool isOccluded(acceleration_structure<instancing> accelerationStructure,
                        float3 origin,
                        float3 direction,
                        float maxDistance) {
     const float epsilon = 1.0e-3f;
     raytracing::ray shadowRay(origin + direction * epsilon, direction, epsilon, maxDistance - epsilon);
-    intersection_query<instancing, triangle_data> query(shadowRay, accelerationStructure);
-    while (query.next()) {
-        if (query.get_candidate_intersection_type() == intersection_type::triangle) {
-            const float distance = query.get_candidate_triangle_distance();
-            if (distance < maxDistance - epsilon) {
-                return true;
-            }
-        }
-    }
-    return false;
+    intersector<triangle_data, instancing> tracer;
+    tracer.assume_geometry_type(geometry_type::triangle);
+    tracer.force_opacity(forced_opacity::opaque);
+    tracer.accept_any_intersection(true);
+
+    const auto result = tracer.intersect(shadowRay, accelerationStructure, RTR_RAY_MASK_SHADOW);
+    return result.type != intersection_type::none && result.distance < maxDistance - epsilon;
 }
 
 
@@ -290,7 +286,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                       constant RTRRayTracingTextureResource* textureInfos [[buffer(8)]],
                       const device float* texturePixels [[buffer(9)]],
                       constant MPSSceneLimits& limits [[buffer(10)]],
-                      instance_acceleration_structure accelerationStructure [[buffer(15)]],
+                      acceleration_structure<instancing> accelerationStructure [[buffer(15)]],
                       texture2d<unsigned int> randomTex [[texture(0)]],
                       texture2d<float, access::write> dstTex [[texture(1)]],
                       uint2 gid [[thread_position_in_grid]]) {

@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#import <Metal/MTLCaptureManager.h>
 #ifndef MTL_ENABLE_RAYTRACING
 #define MTL_ENABLE_RAYTRACING 1
 #endif
@@ -32,9 +33,11 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdlib>
 
 #include "RTRMetalEngine/Scene/CornellBox.hpp"
 #include "RTRMetalEngine/Scene/Scene.hpp"
@@ -210,6 +213,15 @@ struct Renderer::Impl {
         } else {
             core::Logger::info("Renderer", "Renderer configured for %s", config.applicationName.c_str());
             context.logDeviceInfo();
+            const char* captureFlag = std::getenv("RTR_METAL_CAPTURE");
+            if (captureFlag && captureFlag[0] != '\0' && std::strcmp(captureFlag, "0") != 0) {
+                metalCaptureEnabled = true;
+                std::filesystem::path capturePath = std::filesystem::current_path() / "metal_capture.gputrace";
+                metalCaptureOutputPath = capturePath.string();
+                core::Logger::info("Renderer",
+                                   "Metal capture enabled via RTR_METAL_CAPTURE (output=%s)",
+                                   metalCaptureOutputPath.c_str());
+            }
             if (!asBuilder.isRayTracingSupported()) {
                 core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
             } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
@@ -309,6 +321,10 @@ struct Renderer::Impl {
     std::uint32_t targetHeight = kDiagnosticHeight;
     bool debugAlbedo = false;
     RayTracingShadingMode shadingMode = RayTracingShadingMode::Auto;
+    bool metalCaptureEnabled = false;
+    bool metalCaptureInProgress = false;
+    bool metalCaptureCompleted = false;
+    std::string metalCaptureOutputPath;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
@@ -350,10 +366,16 @@ struct Renderer::Impl {
             return false;
         }
 
+        startMetalCaptureIfNeeded(queue);
+        auto fail = [&]() {
+            stopMetalCaptureIfNeeded();
+            return false;
+        };
+
         id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
         if (!commandBuffer) {
             core::Logger::error("Renderer", "Failed to create command buffer for ray tracing dispatch");
-            return false;
+            return fail();
         }
 
         id<MTLBuffer> positions = (__bridge id<MTLBuffer>)resources.positionsBuffer.nativeHandle();
@@ -368,7 +390,7 @@ struct Renderer::Impl {
 
         if (!positions || !indices || !resources.shadeTexture || !resources.sceneLimitsBuffer) {
             core::Logger::warn("Renderer", "Hardware scene buffers unavailable; skipping dispatch");
-            return false;
+            return fail();
         }
 
         auto dispatch2D = [&](id<MTLComputePipelineState> pipelineState,
@@ -398,14 +420,14 @@ struct Renderer::Impl {
 
         if (!rayPipeline) {
             core::Logger::error("Renderer", "Hardware ray tracing kernel unavailable");
-            return false;
+            return fail();
         }
 
         id<MTLAccelerationStructure> accelerationStructure =
             (__bridge id<MTLAccelerationStructure>)topLevelStructure.rawHandle();
         if (!accelerationStructure) {
             core::Logger::error("Renderer", "Top-level acceleration structure is invalid");
-            return false;
+            return fail();
         }
         const NSUInteger tlasSize = [accelerationStructure size];
         core::Logger::info("Renderer",
@@ -461,7 +483,7 @@ struct Renderer::Impl {
                 }
             })) {
             core::Logger::error("Renderer", "Failed to encode hardware ray tracing kernel");
-            return false;
+            return fail();
         }
 
         const bool doAccumulate = accumulationEnabledThisFrame();
@@ -473,7 +495,7 @@ struct Renderer::Impl {
                     [encoder setTexture:target.colorTexture atIndex:2];
                 })) {
                 core::Logger::error("Renderer", "Failed to encode accumulate kernel");
-                return false;
+                return fail();
             }
 
             id<MTLBlitCommandEncoder> copyAccum = [commandBuffer blitCommandEncoder];
@@ -529,6 +551,7 @@ struct Renderer::Impl {
 
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        stopMetalCaptureIfNeeded();
         return true;
     }
 
@@ -636,6 +659,56 @@ struct Renderer::Impl {
         if ([buffer storageMode] == MTLStorageModeManaged) {
             [buffer didModifyRange:NSMakeRange(0, sizeof(HardwareRayUniforms))];
         }
+    }
+
+    void startMetalCaptureIfNeeded(id<MTLCommandQueue> queue) {
+        if (!metalCaptureEnabled || metalCaptureInProgress || metalCaptureCompleted || queue == nil) {
+            return;
+        }
+
+        MTLCaptureManager* manager = [MTLCaptureManager sharedCaptureManager];
+        if (!manager) {
+            core::Logger::error("Renderer", "Metal capture manager unavailable");
+            return;
+        }
+        if (manager.isCapturing) {
+            metalCaptureInProgress = true;
+            return;
+        }
+
+        if (!metalCaptureOutputPath.empty()) {
+            std::error_code removeError;
+            std::filesystem::remove(metalCaptureOutputPath, removeError);
+        }
+
+        MTLCaptureDescriptor* descriptor = [[MTLCaptureDescriptor alloc] init];
+        descriptor.captureObject = queue;
+        descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+        if (!metalCaptureOutputPath.empty()) {
+            NSString* capturePath = [NSString stringWithUTF8String:metalCaptureOutputPath.c_str()];
+            if (capturePath.length > 0) {
+                descriptor.outputURL = [NSURL fileURLWithPath:capturePath isDirectory:NO];
+            }
+        }
+
+        NSError* error = nil;
+        if (![manager startCaptureWithDescriptor:descriptor error:&error]) {
+            const char* message = error ? error.localizedDescription.UTF8String : "unknown error";
+            core::Logger::error("Renderer", "Failed to start Metal capture (%s)", message);
+        } else {
+            metalCaptureInProgress = true;
+            core::Logger::info("Renderer", "Metal capture started (output=%s)", metalCaptureOutputPath.c_str());
+        }
+    }
+
+    void stopMetalCaptureIfNeeded() {
+        if (!metalCaptureInProgress) {
+            return;
+        }
+        [[MTLCaptureManager sharedCaptureManager] stopCapture];
+        metalCaptureInProgress = false;
+        metalCaptureCompleted = true;
+        core::Logger::info("Renderer", "Metal capture saved to %s", metalCaptureOutputPath.c_str());
     }
 
     void resetAccumulationInternal() {
