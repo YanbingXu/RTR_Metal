@@ -41,7 +41,7 @@ TEST(GeometryStore, HandlesContextAvailabilityGracefully) {
         EXPECT_TRUE(buffers.cpuVertexBuffer.isValid());
         EXPECT_TRUE(buffers.cpuIndexBuffer.isValid());
         EXPECT_EQ(buffers.indexCount, indices.size());
-        EXPECT_EQ(buffers.vertexStride, sizeof(rtr::scene::Vertex));
+        EXPECT_EQ(buffers.vertexStride, sizeof(float) * 3);
     } else {
         EXPECT_FALSE(result.has_value());
         EXPECT_TRUE(store.uploadedMeshes().empty());

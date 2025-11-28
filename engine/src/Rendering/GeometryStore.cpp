@@ -1,6 +1,7 @@
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 
 #include <cstdint>
+#include <vector>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 
@@ -23,6 +24,15 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
     }
 
     const std::size_t vertexLength = vertices.size() * sizeof(scene::Vertex);
+    constexpr std::size_t kPackedPositionStride = sizeof(float) * 3;
+    std::vector<float> packedPositions;
+    packedPositions.reserve(vertices.size() * 3);
+    for (const auto& vertex : vertices) {
+        packedPositions.push_back(vertex.position.x);
+        packedPositions.push_back(vertex.position.y);
+        packedPositions.push_back(vertex.position.z);
+    }
+    const std::size_t packedLength = packedPositions.size() * sizeof(float);
     const std::size_t indexLength = indices.size() * sizeof(std::uint32_t);
 
     const std::string vertexLabel = label + ".vb";
@@ -32,8 +42,11 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
 
     BufferHandle cpuVertexBuffer = allocator_.createBuffer(vertexLength, vertices.data(), vertexLabel.c_str());
     BufferHandle cpuIndexBuffer = allocator_.createBuffer(indexLength, indices.data(), indexLabel.c_str());
-    BufferHandle gpuVertexBuffer = allocator_.createPrivateBuffer(vertexLength, vertices.data(), gpuVertexLabel.c_str());
-    BufferHandle gpuIndexBuffer = allocator_.createPrivateBuffer(indexLength, indices.data(), gpuIndexLabel.c_str());
+
+    BufferHandle gpuVertexBuffer = allocator_.createBuffer(packedLength,
+                                                          packedPositions.empty() ? nullptr : packedPositions.data(),
+                                                          gpuVertexLabel.c_str());
+    BufferHandle gpuIndexBuffer = allocator_.createBuffer(indexLength, indices.data(), gpuIndexLabel.c_str());
 
     if (!cpuVertexBuffer.isValid() || !cpuIndexBuffer.isValid() || !gpuVertexBuffer.isValid() || !gpuIndexBuffer.isValid()) {
         core::Logger::error("GeometryStore", "Failed to upload mesh '%s'", label.c_str());
@@ -46,7 +59,7 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
                          std::move(cpuIndexBuffer),
                          vertices.size(),
                          indices.size(),
-                         sizeof(scene::Vertex));
+                         kPackedPositionStride);
     return meshes_.size() - 1;
 }
 

@@ -459,7 +459,7 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                           FACE_MASK_POSITIVE_Y);
     Material lightMaterial{};
     lightMaterial.albedo = {1.0f, 1.0f, 1.0f};
-    lightMaterial.emission = {4.0f, 4.0f, 4.0f};
+    lightMaterial.emission = {8.0f, 8.0f, 8.0f};
     lightMaterial.roughness = 0.2f;
     auto lightHandle = scene.addMaterial(lightMaterial);
     scene.addInstance(lightMesh, lightHandle, matrix_identity_float4x4);

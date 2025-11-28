@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -21,6 +23,13 @@
 #include "RTRMetalEngine/Scene/DemoScenes.hpp"
 
 namespace fs = std::filesystem;
+
+#ifndef RTR_SOURCE_DIR
+#define RTR_SOURCE_DIR ""
+#endif
+#ifndef RTR_BINARY_DIR
+#define RTR_BINARY_DIR ""
+#endif
 
 namespace {
 
@@ -237,6 +246,66 @@ rtr::core::EngineConfig loadEngineConfig(const fs::path& configPath) {
 }  // namespace
 
 int main(int argc, const char* argv[]) {
+    const fs::path sourceRoot = fs::path(RTR_SOURCE_DIR);
+    const fs::path binaryRoot = fs::path(RTR_BINARY_DIR);
+    const fs::path currentDir = fs::current_path();
+
+    auto resolvePath = [&](const fs::path& candidate,
+                           bool requireDirectory,
+                           std::initializer_list<fs::path> preferredBases = {}) -> std::optional<fs::path> {
+        if (candidate.empty()) {
+            return std::nullopt;
+        }
+
+        auto validate = [&](const fs::path& path) -> bool {
+            std::error_code ec;
+            if (!fs::exists(path, ec)) {
+                return false;
+            }
+            if (!requireDirectory) {
+                return true;
+            }
+            return fs::is_directory(path, ec);
+        };
+
+        auto tryResolveRelative = [&](const fs::path& base) -> std::optional<fs::path> {
+            if (base.empty()) {
+                return std::nullopt;
+            }
+            std::error_code ec;
+            fs::path resolved = fs::weakly_canonical(base / candidate, ec);
+            if (!ec && validate(resolved)) {
+                return resolved;
+            }
+            return std::nullopt;
+        };
+
+        if (candidate.is_absolute()) {
+            std::error_code ec;
+            fs::path canonical = fs::weakly_canonical(candidate, ec);
+            if (!ec && validate(canonical)) {
+                return canonical;
+            }
+            if (validate(candidate)) {
+                return candidate;
+            }
+            return std::nullopt;
+        }
+
+        for (const auto& base : preferredBases) {
+            if (auto resolved = tryResolveRelative(base)) {
+                return resolved;
+            }
+        }
+
+        const std::array<fs::path, 3> bases = {currentDir, binaryRoot, sourceRoot};
+        for (const auto& base : bases) {
+            if (auto resolved = tryResolveRelative(base)) {
+                return resolved;
+            }
+        }
+        return std::nullopt;
+    };
     CommandLineOptions options{};
     try {
         options = parseOptions(argc, argv);
@@ -247,12 +316,10 @@ int main(int argc, const char* argv[]) {
     }
 
     if (!options.assetRoot.empty()) {
-        std::error_code ec;
-        fs::path absoluteRoot = fs::absolute(options.assetRoot, ec);
-        if (!ec) {
-            options.assetRoot = absoluteRoot;
-        }
-        if (!fs::exists(options.assetRoot)) {
+        if (auto resolvedAssetRoot = resolvePath(options.assetRoot, true)) {
+            options.assetRoot = *resolvedAssetRoot;
+            rtr::core::Logger::info("Sample", "Using asset root: %s", options.assetRoot.string().c_str());
+        } else {
             rtr::core::Logger::warn("Sample",
                                     "Asset root '%s' does not exist; reflective/glass scenes may fall back",
                                     options.assetRoot.string().c_str());
@@ -260,11 +327,31 @@ int main(int argc, const char* argv[]) {
     }
 
     rtr::core::EngineConfig config{};
+    const auto configCandidate = resolvePath(options.configPath, false);
+    fs::path resolvedConfigPath = configCandidate.value_or(options.configPath);
+    fs::path configDirectory = configCandidate ? configCandidate->parent_path() : fs::path{};
+    rtr::core::Logger::info("Sample", "Loading config: %s", resolvedConfigPath.string().c_str());
+
     try {
-        config = loadEngineConfig(options.configPath);
+        config = loadEngineConfig(resolvedConfigPath);
     } catch (const std::exception& ex) {
         rtr::core::Logger::error("Sample", "Failed to load config: %s", ex.what());
         return 1;
+    }
+
+    std::optional<fs::path> resolvedShaderLibrary;
+    if (!configDirectory.empty()) {
+        resolvedShaderLibrary = resolvePath(config.shaderLibraryPath, false, {configDirectory});
+    } else {
+        resolvedShaderLibrary = resolvePath(config.shaderLibraryPath, false);
+    }
+    if (resolvedShaderLibrary) {
+        config.shaderLibraryPath = resolvedShaderLibrary->string();
+        rtr::core::Logger::info("Sample", "Using shader library: %s", config.shaderLibraryPath.c_str());
+    } else {
+        rtr::core::Logger::warn("Sample",
+                                "Shader library '%s' not found relative to working/binary/source/config directories",
+                                config.shaderLibraryPath.c_str());
     }
 
     if (options.overrideShadingMode) {

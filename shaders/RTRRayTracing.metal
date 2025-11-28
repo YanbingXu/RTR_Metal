@@ -43,6 +43,19 @@ inline float wrapCoordinate(float value) {
     return (value < 0.0f) ? value + 1.0f : value;
 }
 
+inline RTRRayTracingMaterial makeFallbackMaterial() {
+    RTRRayTracingMaterial material;
+    material.albedo = float3(0.5f, 0.5f, 0.5f);
+    material.roughness = 0.5f;
+    material.emission = float3(0.0f);
+    material.metallic = 0.0f;
+    material.reflectivity = 0.0f;
+    material.indexOfRefraction = 1.0f;
+    material.textureIndex = RTR_INVALID_TEXTURE_INDEX;
+    material.materialFlags = 0u;
+    return material;
+}
+
 inline float3 computeNormal(uint i0,
                             uint i1,
                             uint i2,
@@ -70,10 +83,14 @@ inline RTRRayTracingMaterial loadMaterial(uint primitiveIndex,
                                           uint primitiveCount,
                                           uint materialCount) {
     if (!primitiveMaterials || !materials || primitiveCount == 0 || materialCount == 0) {
-        return RTRRayTracingMaterial{};
+        return makeFallbackMaterial();
     }
     const uint clampedPrimitive = min(primitiveIndex, primitiveCount - 1u);
-    const uint materialIndex = min(primitiveMaterials[clampedPrimitive], materialCount - 1u);
+    uint materialIndex = primitiveMaterials[clampedPrimitive];
+    if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
+        materialIndex = 0u;
+    }
+    materialIndex = min(materialIndex, materialCount - 1u);
     return materials[materialIndex];
 }
 
@@ -242,7 +259,7 @@ inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStr
                               float maxDistance,
                               uint rayMask = RTR_RAY_MASK_PRIMARY) {
     raytracing::ray sceneRay(origin, direction, minDistance, maxDistance);
-    intersector<triangle_data, instancing> tracer;
+    intersector<instancing, triangle_data> tracer;
     tracer.assume_geometry_type(geometry_type::triangle);
     tracer.force_opacity(forced_opacity::opaque);
     tracer.accept_any_intersection(false);
@@ -265,7 +282,7 @@ inline bool isOccluded(acceleration_structure<instancing> accelerationStructure,
                        float maxDistance) {
     const float epsilon = 1.0e-3f;
     raytracing::ray shadowRay(origin + direction * epsilon, direction, epsilon, maxDistance - epsilon);
-    intersector<triangle_data, instancing> tracer;
+    intersector<instancing, triangle_data> tracer;
     tracer.assume_geometry_type(geometry_type::triangle);
     tracer.force_opacity(forced_opacity::opaque);
     tracer.accept_any_intersection(true);
@@ -286,6 +303,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                       constant RTRRayTracingTextureResource* textureInfos [[buffer(8)]],
                       const device float* texturePixels [[buffer(9)]],
                       constant MPSSceneLimits& limits [[buffer(10)]],
+                      device uint* hitDebug [[buffer(11)]],
                       acceleration_structure<instancing> accelerationStructure [[buffer(15)]],
                       texture2d<unsigned int> randomTex [[texture(0)]],
                       texture2d<float, access::write> dstTex [[texture(1)]],
@@ -316,7 +334,35 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
 
     const bool debugAlbedo = (uniforms.camera.flags & RTR_RAY_FLAG_DEBUG) != 0u;
 
+    bool accelerationStructureNull = is_null_instance_acceleration_structure(accelerationStructure);
+
+    if (accelerationStructureNull) {
+        dstTex.write(float4(1.0f, 0.0f, 1.0f, 1.0f), gid);
+        if (hitDebug != nullptr) {
+            const uint width = uniforms.camera.width;
+            const uint height = uniforms.camera.height;
+            if (width > 0 && height > 0) {
+                const uint linearIndex = gid.y * width + gid.x;
+                if (linearIndex < width * height) {
+                    hitDebug[linearIndex] = 3u;
+                }
+            }
+        }
+        return;
+    }
+
     HardwareHit hit = traceScene(accelerationStructure, eye, rayDirection, 1.0e-3f, FLT_MAX);
+
+    if (hitDebug != nullptr) {
+        const uint width = uniforms.camera.width;
+        const uint height = uniforms.camera.height;
+        if (width > 0 && height > 0) {
+            const uint linearIndex = gid.y * width + gid.x;
+            if (linearIndex < width * height) {
+                hitDebug[linearIndex] = hit.hit ? 1u : 0u;
+            }
+        }
+    }
     float3 color = sampleSkyColor(rayDirection);
 
     if (hit.hit) {

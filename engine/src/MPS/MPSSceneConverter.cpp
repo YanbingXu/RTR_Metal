@@ -87,7 +87,8 @@ bool appendMeshInstance(const scene::Mesh& mesh,
     }
 
     const std::size_t triangleCount = indices.size() / 3;
-    const std::uint32_t storedMaterialIndex = material ? materialIndex : std::numeric_limits<std::uint32_t>::max();
+    const bool validMaterial = material && materialIndex < outScene.materials.size();
+    const std::uint32_t storedMaterialIndex = validMaterial ? materialIndex : 0u;
     outScene.primitiveMaterials.insert(outScene.primitiveMaterials.end(), triangleCount, storedMaterialIndex);
 
     return true;
@@ -114,6 +115,16 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
         props.indexOfRefraction = mat.indexOfRefraction;
         sceneData.materials.push_back(props);
     }
+    if (sceneData.materials.empty()) {
+        MPSMaterialProperties fallback{};
+        fallback.albedo = defaultColor;
+        fallback.roughness = 0.5f;
+        fallback.metallic = 0.0f;
+        fallback.reflectivity = 0.0f;
+        fallback.indexOfRefraction = 1.0f;
+        sceneData.materials.push_back(fallback);
+        core::Logger::warn("MPSSceneConverter", "Scene contained no materials; inserted fallback material");
+    }
 
     bool appendedAny = false;
     for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
@@ -125,7 +136,7 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
 
         const scene::Mesh& mesh = meshes[instance.mesh.index];
         const scene::Material* material = nullptr;
-        std::uint32_t materialIndex = std::numeric_limits<std::uint32_t>::max();
+        std::uint32_t materialIndex = 0u;
         if (instance.material.isValid() && instance.material.index < materials.size()) {
             material = &materials[instance.material.index];
             materialIndex = static_cast<std::uint32_t>(instance.material.index);
@@ -149,7 +160,7 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
             const scene::Mesh& mesh = meshes[meshIndex];
             if (appendMeshInstance(mesh,
                                     nullptr,
-                                    std::numeric_limits<std::uint32_t>::max(),
+                                    0u,
                                     matrix_identity_float4x4,
                                     defaultColor,
                                     sceneData)) {

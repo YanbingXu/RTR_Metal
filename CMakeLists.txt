@@ -122,6 +122,7 @@ if(RTR_BUILD_SAMPLE)
     target_link_libraries(RTRMetalSample PRIVATE RTRMetalEngine)
     add_dependencies(RTRMetalSample RTRMetalShaders)
     target_compile_features(RTRMetalSample PRIVATE cxx_std_20)
+    target_compile_definitions(RTRMetalSample PRIVATE RTR_SOURCE_DIR="${CMAKE_SOURCE_DIR}" RTR_BINARY_DIR="${CMAKE_BINARY_DIR}")
 endif()
 
 if(RTR_BUILD_ONSCREEN_SAMPLE)

@@ -11,11 +11,14 @@
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <simd/simd.h>
 #include <vector>
 
 namespace {
+
+constexpr std::size_t kMaxTrianglesPerGeometry = 4096;
 
 MTLPackedFloat3 makePackedColumn(const simd_float4& column) {
     return MTLPackedFloat3Make(column.x, column.y, column.z);
@@ -26,6 +29,52 @@ MTLPackedFloat4x3 makePackedTransform(const simd_float4x4& transform) {
                              makePackedColumn(transform.columns[1]),
                              makePackedColumn(transform.columns[2]),
                              makePackedColumn(transform.columns[3]));
+}
+
+NSMutableArray<MTLAccelerationStructureTriangleGeometryDescriptor*>*
+makeTriangleDescriptors(const rtr::rendering::MeshBuffers& meshBuffers,
+                        id<MTLBuffer> vertexBuffer,
+                        id<MTLBuffer> indexBuffer,
+                        const std::string& label) {
+    const NSUInteger totalTriangles = static_cast<NSUInteger>(meshBuffers.indexCount / 3);
+    if (totalTriangles == 0) {
+        rtr::core::Logger::warn("ASBuilder", "Mesh '%s' has no triangles", label.c_str());
+        return nil;
+    }
+
+    NSMutableArray<MTLAccelerationStructureTriangleGeometryDescriptor*>* geometries =
+        [NSMutableArray array];
+    NSUInteger processed = 0;
+    NSUInteger indexOffsetBytes = 0;
+    while (processed < totalTriangles) {
+        const NSUInteger remaining = totalTriangles - processed;
+        const NSUInteger chunkTriangles = std::min<NSUInteger>(kMaxTrianglesPerGeometry, remaining);
+        MTLAccelerationStructureTriangleGeometryDescriptor* geometry =
+            [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
+        geometry.vertexBuffer = vertexBuffer;
+        geometry.vertexStride = static_cast<NSUInteger>(meshBuffers.vertexStride);
+        geometry.vertexBufferOffset = 0;
+#if defined(__MAC_13_0) || defined(__IPHONE_16_0)
+        geometry.vertexFormat = MTLAttributeFormatFloat3;
+#else
+        geometry.vertexFormat = MTLVertexFormatFloat3;
+#endif
+        geometry.indexBuffer = indexBuffer;
+        geometry.indexBufferOffset = indexOffsetBytes;
+        geometry.indexType = MTLIndexTypeUInt32;
+        geometry.triangleCount = chunkTriangles;
+        geometry.opaque = YES;
+        [geometries addObject:geometry];
+        processed += chunkTriangles;
+        indexOffsetBytes += chunkTriangles * 3 * sizeof(std::uint32_t);
+    }
+
+    rtr::core::Logger::info("ASBuilder",
+                            "Mesh '%s' chunked into %lu geometry descriptors (total tris=%lu)",
+                            label.c_str(),
+                            static_cast<unsigned long>(geometries.count),
+                            static_cast<unsigned long>(totalTriangles));
+    return geometries;
 }
 
 bool populateInstanceDescriptors(std::span<const rtr::rendering::InstanceBuildInput> instances,
@@ -109,24 +158,14 @@ std::optional<BottomLevelBuildInfo> AccelerationStructureBuilder::queryBottomLev
         return std::nullopt;
     }
 
-    MTLAccelerationStructureTriangleGeometryDescriptor* geometry =
-        [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
-    geometry.vertexBuffer = vertexBuffer;
-    geometry.vertexStride = static_cast<NSUInteger>(meshBuffers.vertexStride);
-    geometry.vertexBufferOffset = 0;
-#if defined(__MAC_13_0) || defined(__IPHONE_16_0)
-    geometry.vertexFormat = MTLAttributeFormatFloat3;
-#else
-    geometry.vertexFormat = MTLVertexFormatFloat3;
-#endif
-    geometry.indexBuffer = indexBuffer;
-    geometry.indexBufferOffset = 0;
-    geometry.indexType = MTLIndexTypeUInt32;
-    geometry.triangleCount = indexCount / 3;
-    geometry.opaque = YES;
+    NSMutableArray<MTLAccelerationStructureTriangleGeometryDescriptor*>* geometries =
+        makeTriangleDescriptors(meshBuffers, vertexBuffer, indexBuffer, label);
+    if (!geometries || geometries.count == 0) {
+        return std::nullopt;
+    }
 
     MTLPrimitiveAccelerationStructureDescriptor* descriptor = [MTLPrimitiveAccelerationStructureDescriptor descriptor];
-    descriptor.geometryDescriptors = @[ geometry ];
+    descriptor.geometryDescriptors = geometries;
 
     if (!descriptor) {
         core::Logger::error("ASBuilder", "Failed to create descriptor for '%s'", label.c_str());
@@ -184,30 +223,26 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildBottomLe
         return std::nullopt;
     }
 
-    MTLAccelerationStructureTriangleGeometryDescriptor* geometry =
-        [MTLAccelerationStructureTriangleGeometryDescriptor descriptor];
-    geometry.vertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
-    geometry.vertexStride = static_cast<NSUInteger>(meshBuffers.vertexStride);
-    geometry.vertexBufferOffset = 0;
-#if defined(__MAC_13_0) || defined(__IPHONE_16_0)
-    geometry.vertexFormat = MTLAttributeFormatFloat3;
-#else
-    geometry.vertexFormat = MTLVertexFormatFloat3;
-#endif
-    geometry.indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
-    geometry.indexBufferOffset = 0;
-    geometry.indexType = MTLIndexTypeUInt32;
-    geometry.triangleCount = static_cast<NSUInteger>(meshBuffers.indexCount / 3);
-    geometry.opaque = YES;
+    NSMutableArray<MTLAccelerationStructureTriangleGeometryDescriptor*>* geometries =
+        makeTriangleDescriptors(meshBuffers,
+                                (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle(),
+                                (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle(),
+                                label);
+    if (!geometries || geometries.count == 0) {
+        core::Logger::error("ASBuilder", "Failed to prepare geometry descriptors for '%s'", label.c_str());
+        return std::nullopt;
+    }
+    MTLAccelerationStructureTriangleGeometryDescriptor* logGeometry = geometries.firstObject;
     core::Logger::info("ASBuilder",
-                       "BLAS geometry: tris=%lu stride=%lu vertexBuffer=%p indexBuffer=%p",
-                       static_cast<unsigned long>(geometry.triangleCount),
-                       static_cast<unsigned long>(geometry.vertexStride),
-                       geometry.vertexBuffer,
-                       geometry.indexBuffer);
+                       "BLAS geometry chunks=%lu first tris=%lu stride=%lu vertexBuffer=%p indexBuffer=%p",
+                       static_cast<unsigned long>(geometries.count),
+                       static_cast<unsigned long>(logGeometry.triangleCount),
+                       static_cast<unsigned long>(logGeometry.vertexStride),
+                       logGeometry.vertexBuffer,
+                       logGeometry.indexBuffer);
 
     MTLPrimitiveAccelerationStructureDescriptor* descriptor = [MTLPrimitiveAccelerationStructureDescriptor descriptor];
-    descriptor.geometryDescriptors = @[ geometry ];
+    descriptor.geometryDescriptors = geometries;
 
     id<MTLAccelerationStructureCommandEncoder> encoder = [commandBuffer accelerationStructureCommandEncoder];
     if (!encoder) {
@@ -225,10 +260,14 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildBottomLe
     [commandBuffer waitUntilCompleted];
     const MTLCommandBufferStatus status = [commandBuffer status];
     if (status != MTLCommandBufferStatusCompleted) {
+        NSString* errorString = commandBuffer.error.localizedDescription;
+        const char* message = errorString ? errorString.UTF8String : "unknown error";
         core::Logger::error("ASBuilder",
-                            "TLAS command buffer status=%ld error=%s",
+                            "BLAS command buffer status=%ld error=%s for '%s'",
                             static_cast<long>(status),
-                            commandBuffer.error.localizedDescription.UTF8String);
+                            message,
+                            label.c_str());
+        return std::nullopt;
     }
 
     return makeAccelerationStructure(label,
@@ -420,6 +459,17 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
 
     [commandBuffer commit];
     [commandBuffer waitUntilCompleted];
+    const MTLCommandBufferStatus status = [commandBuffer status];
+    if (status != MTLCommandBufferStatusCompleted) {
+        NSString* errorString = commandBuffer.error.localizedDescription;
+        const char* message = errorString ? errorString.UTF8String : "unknown error";
+        core::Logger::error("ASBuilder",
+                            "TLAS command buffer status=%ld error=%s for '%s'",
+                            static_cast<long>(status),
+                            message,
+                            label.c_str());
+        return std::nullopt;
+    }
 
     return makeAccelerationStructure(label,
                                      sizes->accelerationStructureSize,

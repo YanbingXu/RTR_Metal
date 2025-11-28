@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -170,6 +171,7 @@ struct RayTracingResources {
     BufferHandle texcoordBuffer;
     BufferHandle indicesBuffer;
     BufferHandle primitiveMaterialBuffer;
+    BufferHandle hitDebugBuffer;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
     MPSSceneLimits sceneLimits{};
@@ -189,6 +191,7 @@ struct RayTracingResources {
         texcoordBuffer = {};
         indicesBuffer = {};
         primitiveMaterialBuffer = {};
+        hitDebugBuffer = {};
         width = 0;
         height = 0;
         sceneLimits = {};
@@ -226,9 +229,6 @@ struct Renderer::Impl {
                 core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
             } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
                 core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
-            }
-            if (!initializeScene()) {
-                core::Logger::error("Renderer", "Scene initialization failed; ray tracing unavailable");
             }
         }
     }
@@ -384,11 +384,13 @@ struct Renderer::Impl {
         id<MTLBuffer> colors = (__bridge id<MTLBuffer>)resources.colorsBuffer.nativeHandle();
         id<MTLBuffer> texcoords = (__bridge id<MTLBuffer>)resources.texcoordBuffer.nativeHandle();
         id<MTLBuffer> primitiveMaterials = (__bridge id<MTLBuffer>)resources.primitiveMaterialBuffer.nativeHandle();
-        id<MTLBuffer> materialBuffer = (__bridge id<MTLBuffer>)resources.materialBuffer.nativeHandle();
-        id<MTLBuffer> textureInfoBuffer = (__bridge id<MTLBuffer>)resources.textureInfoBuffer.nativeHandle();
-        id<MTLBuffer> textureDataBuffer = (__bridge id<MTLBuffer>)resources.textureDataBuffer.nativeHandle();
+        id<MTLBuffer> materialBuffer = resources.materialBuffer.isValid() ? (__bridge id<MTLBuffer>)resources.materialBuffer.nativeHandle() : nil;
+        id<MTLBuffer> textureInfoBuffer = resources.textureInfoBuffer.isValid() ? (__bridge id<MTLBuffer>)resources.textureInfoBuffer.nativeHandle() : nil;
+        id<MTLBuffer> textureDataBuffer = resources.textureDataBuffer.isValid() ? (__bridge id<MTLBuffer>)resources.textureDataBuffer.nativeHandle() : nil;
 
-        if (!positions || !indices || !resources.shadeTexture || !resources.sceneLimitsBuffer) {
+        id<MTLBuffer> hitDebug = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
+
+        if (!positions || !indices || !resources.shadeTexture || !resources.sceneLimitsBuffer || hitDebug == nil) {
             core::Logger::warn("Renderer", "Hardware scene buffers unavailable; skipping dispatch");
             return fail();
         }
@@ -443,10 +445,17 @@ struct Renderer::Impl {
                 [encoder setBuffer:colors offset:0 atIndex:4];
                 [encoder setBuffer:texcoords offset:0 atIndex:5];
                 [encoder setBuffer:primitiveMaterials offset:0 atIndex:6];
-                [encoder setBuffer:materialBuffer offset:0 atIndex:7];
-                [encoder setBuffer:textureInfoBuffer offset:0 atIndex:8];
-                [encoder setBuffer:textureDataBuffer offset:0 atIndex:9];
+                if (materialBuffer) {
+                    [encoder setBuffer:materialBuffer offset:0 atIndex:7];
+                }
+                if (textureInfoBuffer) {
+                    [encoder setBuffer:textureInfoBuffer offset:0 atIndex:8];
+                }
+                if (textureDataBuffer) {
+                    [encoder setBuffer:textureDataBuffer offset:0 atIndex:9];
+                }
                 [encoder setBuffer:resources.sceneLimitsBuffer offset:0 atIndex:10];
+                [encoder setBuffer:hitDebug offset:0 atIndex:11];
                 if (resources.randomTexture) {
                     [encoder setTexture:resources.randomTexture atIndex:0];
                 }
@@ -551,6 +560,34 @@ struct Renderer::Impl {
 
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        MTLCommandBufferStatus status = [commandBuffer status];
+        if (status != MTLCommandBufferStatusCompleted) {
+            NSError* error = commandBuffer.error;
+            const char* message = error ? error.localizedDescription.UTF8String : "unknown error";
+            core::Logger::error("Renderer",
+                                "Command buffer completed with status=%ld (%s)",
+                                static_cast<long>(status),
+                                message);
+            stopMetalCaptureIfNeeded();
+            return false;
+        }
+
+        if (resources.hitDebugBuffer.isValid()) {
+            id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
+            if (hitBuffer) {
+                const std::uint32_t* hits = static_cast<const std::uint32_t*>([hitBuffer contents]);
+                if (hits) {
+                    const std::size_t maxSamples = std::min<std::size_t>(resources.width * resources.height, 16);
+                    std::string hitLog;
+                    hitLog.reserve(maxSamples * 4);
+                    for (std::size_t i = 0; i < maxSamples; ++i) {
+                        hitLog += hits[i] ? '1' : '0';
+                    }
+                    core::Logger::info("Renderer", "Hit debug sample: %s", hitLog.c_str());
+                }
+            }
+        }
+
         stopMetalCaptureIfNeeded();
         return true;
     }
@@ -730,7 +767,7 @@ struct Renderer::Impl {
     }
 
     bool accumulationEnabledThisFrame() const {
-        if (!config.accumulationEnabled || resources.accumulationTexture == nil) {
+        if (!config.accumulationEnabled) {
             return false;
         }
         if (config.accumulationFrames > 0 && frameCounter >= config.accumulationFrames) {
@@ -886,6 +923,24 @@ struct Renderer::Impl {
             }
         }
 
+        const std::size_t debugBufferLength = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(std::uint32_t);
+        if (debugBufferLength > 0) {
+            if (!resources.hitDebugBuffer.isValid() || resources.hitDebugBuffer.length() < debugBufferLength) {
+                resources.hitDebugBuffer = bufferAllocator.createBuffer(debugBufferLength, nullptr, "rtr.hw.hitDebug");
+            }
+            if (resources.hitDebugBuffer.isValid()) {
+                id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
+                if (hitBuffer) {
+                    std::memset([hitBuffer contents], 0, debugBufferLength);
+                    if ([hitBuffer storageMode] == MTLStorageModeManaged) {
+                        [hitBuffer didModifyRange:NSMakeRange(0, debugBufferLength)];
+                    }
+                }
+            }
+        } else {
+            resources.hitDebugBuffer = {};
+        }
+
         resources.width = width;
         resources.height = height;
 
@@ -936,7 +991,6 @@ struct Renderer::Impl {
         return success;
     }
 
-    bool initializeScene();
     bool loadSceneInternal(const scene::Scene& scene);
     bool prepareHardwareSceneData(const MPSSceneData& sceneData);
     void writeRayTracingOutput() const;
@@ -997,18 +1051,38 @@ bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
         }
     };
 
-    uploadSceneBuffer(resources.positionsBuffer,
-                      sceneData.positions.empty() ? nullptr : sceneData.positions.data(),
-                      sceneData.positions.size() * sizeof(vector_float3),
-                      "rtr.hw.positions");
-    uploadSceneBuffer(resources.normalsBuffer,
-                      sceneData.normals.empty() ? nullptr : sceneData.normals.data(),
-                      sceneData.normals.size() * sizeof(vector_float3),
-                      "rtr.hw.normals");
-    uploadSceneBuffer(resources.colorsBuffer,
-                      sceneData.colors.empty() ? nullptr : sceneData.colors.data(),
-                      sceneData.colors.size() * sizeof(vector_float3),
-                      "rtr.hw.colors");
+    auto packFloat3 = [](const std::vector<vector_float3>& source) {
+        std::vector<float> packed;
+        packed.reserve(source.size() * 3);
+        for (const auto& value : source) {
+            packed.push_back(value.x);
+            packed.push_back(value.y);
+            packed.push_back(value.z);
+        }
+        return packed;
+    };
+
+    {
+        const auto packedPositions = packFloat3(sceneData.positions);
+        uploadSceneBuffer(resources.positionsBuffer,
+                          packedPositions.empty() ? nullptr : packedPositions.data(),
+                          packedPositions.size() * sizeof(float),
+                          "rtr.hw.positions");
+    }
+    {
+        const auto packedNormals = packFloat3(sceneData.normals);
+        uploadSceneBuffer(resources.normalsBuffer,
+                          packedNormals.empty() ? nullptr : packedNormals.data(),
+                          packedNormals.size() * sizeof(float),
+                          "rtr.hw.normals");
+    }
+    {
+        const auto packedColors = packFloat3(sceneData.colors);
+        uploadSceneBuffer(resources.colorsBuffer,
+                          packedColors.empty() ? nullptr : packedColors.data(),
+                          packedColors.size() * sizeof(float),
+                          "rtr.hw.colors");
+    }
     uploadSceneBuffer(resources.texcoordBuffer,
                       sceneData.texcoords.empty() ? nullptr : sceneData.texcoords.data(),
                       sceneData.texcoords.size() * sizeof(vector_float2),
@@ -1034,15 +1108,6 @@ bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
     return true;
 }
 
-
-bool Renderer::Impl::initializeScene() {
-    scene::Scene scene = scene::createCornellBoxScene();
-    if (!loadSceneInternal(scene)) {
-        core::Logger::warn("Renderer", "Scene load failed; hardware ray tracing unavailable");
-        return false;
-    }
-    return true;
-}
 
 bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     bottomLevelStructures.clear();
@@ -1082,10 +1147,66 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         return false;
     }
 
+    std::uint32_t primitiveMin = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t primitiveMax = 0u;
+    std::size_t invalidPrimitiveMaterials = 0;
+    for (const auto materialIndex : sceneData.primitiveMaterials) {
+        primitiveMin = std::min(primitiveMin, materialIndex);
+        primitiveMax = std::max(primitiveMax, materialIndex);
+        if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
+            ++invalidPrimitiveMaterials;
+        }
+    }
+    core::Logger::info("Renderer",
+                       "Primitive materials: count=%zu range=[%u, %u] invalid=%zu",
+                       sceneData.primitiveMaterials.size(),
+                       primitiveMin,
+                       primitiveMax,
+                       invalidPrimitiveMaterials);
+
     std::vector<std::size_t> meshUploadIndices(1, static_cast<std::size_t>(-1));
     std::vector<std::size_t> meshBLASIndices(1, static_cast<std::size_t>(-1));
 
     scene::Mesh flattenedMesh = makeCombinedMeshFromSceneData(sceneData);
+    const auto& combinedVertices = flattenedMesh.vertices();
+    for (std::size_t i = 0; i < combinedVertices.size(); ++i) {
+        const simd_float3 position = combinedVertices[i].position;
+        if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
+            core::Logger::error("Renderer",
+                                "Flattened mesh produced non-finite vertex[%zu]=(%.3f, %.3f, %.3f)",
+                                i,
+                                position.x,
+                                position.y,
+                                position.z);
+            return false;
+        }
+    }
+    const auto bounds = flattenedMesh.bounds();
+    core::Logger::info("Renderer",
+                       "Combined mesh bounds min=(%.3f, %.3f, %.3f) max=(%.3f, %.3f, %.3f) vertices=%zu indices=%zu",
+                       bounds.min.x,
+                       bounds.min.y,
+                       bounds.min.z,
+                       bounds.max.x,
+                       bounds.max.y,
+                       bounds.max.z,
+                       combinedVertices.size(),
+                       flattenedMesh.indices().size());
+
+    bool invalidIndexFound = false;
+    for (const auto index : flattenedMesh.indices()) {
+        if (index >= combinedVertices.size()) {
+            core::Logger::error("Renderer",
+                                "Flattened mesh index %u exceeds vertex count %zu",
+                                index,
+                                combinedVertices.size());
+            invalidIndexFound = true;
+            break;
+        }
+    }
+    if (invalidIndexFound) {
+        return false;
+    }
     core::Logger::info("Renderer", "DEBUG: Flattened mesh created with %zu vertices.", flattenedMesh.vertices().size());
     for (int i = 0; i < 3 && i < flattenedMesh.vertices().size(); ++i) {
         const auto& v = flattenedMesh.vertices()[i].position;
@@ -1100,12 +1221,69 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
     meshUploadIndices[0] = *uploadIndex;
     const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
+
+    // Log the first few packed vertex components so we can confirm the buffer contents match the
+    // flattened scene geometry that feeds the BLAS.
+    if (meshBuffers.gpuVertexBuffer.isValid()) {
+        id<MTLBuffer> packedBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
+        if (packedBuffer != nil && [packedBuffer storageMode] != MTLStorageModePrivate) {
+            const float* packed = static_cast<const float*>([packedBuffer contents]);
+            if (packed != nullptr) {
+                const std::size_t sampleCount = std::min<std::size_t>(meshBuffers.vertexCount * 3, 9);
+                std::array<float, 9> sampleValues{};
+                for (std::size_t i = 0; i < sampleCount; ++i) {
+                    sampleValues[i] = packed[i];
+                }
+                core::Logger::info("Renderer",
+                                   "Packed vertex sample: [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
+                                   sampleValues[0],
+                                   sampleValues[1],
+                                   sampleValues[2],
+                                   sampleValues[3],
+                                   sampleValues[4],
+                                   sampleValues[5],
+                                   sampleValues[6],
+                                   sampleValues[7],
+                                   sampleValues[8]);
+            }
+        }
+    }
+
+    if (meshBuffers.gpuIndexBuffer.isValid()) {
+        id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
+        if (indexBuffer != nil && [indexBuffer storageMode] != MTLStorageModePrivate) {
+            const std::uint32_t* indicesPtr = static_cast<const std::uint32_t*>([indexBuffer contents]);
+            if (indicesPtr != nullptr) {
+                const std::size_t indexSamples = std::min<std::size_t>(meshBuffers.indexCount, 12);
+                std::array<std::uint32_t, 12> sampleIndices{};
+                for (std::size_t i = 0; i < indexSamples; ++i) {
+                    sampleIndices[i] = indicesPtr[i];
+                }
+                core::Logger::info("Renderer",
+                                   "Index sample: [%u %u %u | %u %u %u | %u %u %u | %u %u %u]",
+                                   sampleIndices[0],
+                                   sampleIndices[1],
+                                   sampleIndices[2],
+                                   sampleIndices[3],
+                                   sampleIndices[4],
+                                   sampleIndices[5],
+                                   sampleIndices[6],
+                                   sampleIndices[7],
+                                   sampleIndices[8],
+                                   sampleIndices[9],
+                                   sampleIndices[10],
+                                   sampleIndices[11]);
+            }
+        }
+    }
+
     core::Logger::info("Renderer",
-                       "BLAS build buffers: gpuVtx=%p stride=%zu gpuIdx=%p indices=%zu",
+                       "BLAS build buffers: gpuVtx=%p stride=%zu gpuIdx=%p indices=%zu vertexBytes=%zu",
                        meshBuffers.gpuVertexBuffer.nativeHandle(),
                        meshBuffers.vertexStride,
                        meshBuffers.gpuIndexBuffer.nativeHandle(),
-                       meshBuffers.indexCount);
+                       meshBuffers.indexCount,
+                       meshBuffers.gpuVertexBuffer.length());
     auto blas = asBuilder.buildBottomLevel(meshBuffers, "scene_mesh_combined", queueHandle);
     if (!blas.has_value()) {
         core::Logger::error("Renderer", "Failed to build BLAS for flattened mesh");
@@ -1217,6 +1395,29 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
             }
         }
         materialResources.push_back(resource);
+    }
+
+    core::Logger::info("Renderer",
+                       "Captured %zu material resources (logging first %zu)",
+                       materialResources.size(),
+                       std::min<std::size_t>(materialResources.size(), 8));
+    for (std::size_t i = 0; i < materialResources.size() && i < 8; ++i) {
+        const RayTracingMaterialResource& mat = materialResources[i];
+        core::Logger::info("Renderer",
+                           "Material[%zu]: albedo=(%.3f, %.3f, %.3f) emission=(%.3f, %.3f, %.3f) rough=%.3f metal=%.3f refl=%.3f ior=%.3f tex=%u flags=0x%X",
+                           i,
+                           mat.albedo.x,
+                           mat.albedo.y,
+                           mat.albedo.z,
+                           mat.emission.x,
+                           mat.emission.y,
+                           mat.emission.z,
+                           mat.roughness,
+                           mat.metallic,
+                           mat.reflectivity,
+                           mat.indexOfRefraction,
+                           mat.textureIndex,
+                           mat.materialFlags);
     }
 
     const bool hardwareSceneReady = prepareHardwareSceneData(sceneData);
