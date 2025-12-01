@@ -31,11 +31,12 @@ float srgbChannelToLinear(float value) {
     return pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
-simd_float3 sampleSkyColor(float3 direction) {
-    const float t = clamp(direction.y * 0.5f + 0.5f, 0.0f, 1.0f);
-    const float3 skyTop = float3(0.45f, 0.55f, 0.85f);
-    const float3 skyBottom = float3(0.1f, 0.12f, 0.2f);
-    return mix(skyBottom, skyTop, t);
+simd_float3 sampleSkyColor(float3 /*direction*/) {
+    // Hardware Cornell scenes are enclosed; leaking in a bright blue sky causes
+    // long-running accumulation to drift toward a tint. Keep a neutral, dim
+    // ambient term so demos without a ceiling still have a fallback without
+    // overpowering the interior lighting.
+    return float3(0.05f, 0.05f, 0.05f);
 }
 
 inline float wrapCoordinate(float value) {
@@ -416,7 +417,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                     float3 lighting = baseColour * 0.05f + material.emission;
 
                     const RTRHardwareAreaLight light = getAreaLight(uniforms);
-                    uint randomSeed = mixBits(gid.x * 73856093u ^ gid.y * 19349663u ^ uniforms.camera.frameIndex);
+                    const uint frameSeed = uniforms.camera.sampleSeed ^ uniforms.camera.frameIndex;
+                    uint randomSeed = mixBits(gid.x * 73856093u ^ gid.y * 19349663u ^ frameSeed);
                     const float2 lightSamples = float2(halton(randomSeed, 2u), halton(randomSeed ^ 0x9e3779b9u, 3u));
                     float3 lightDir;
                     float3 lightColor;

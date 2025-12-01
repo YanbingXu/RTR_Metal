@@ -7,6 +7,8 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <simd/simd.h>
 #include <span>
@@ -368,6 +370,16 @@ void addMario(SceneBuilder& builder,
     scene.addInstance(mesh, matHandle, matrix_identity_float4x4);
 }
 
+bool marioFeatureEnabled() {
+    static const bool enabled = [] {
+        if (const char* flag = std::getenv("RTR_ENABLE_MARIO")) {
+            return std::strcmp(flag, "0") != 0;
+        }
+        return false;
+    }();
+    return enabled;
+}
+
 void addFeatureGeometry(SceneBuilder& builder,
                         Scene& scene,
                         const std::filesystem::path& assetRoot,
@@ -399,12 +411,16 @@ void addFeatureGeometry(SceneBuilder& builder,
     auto glassMesh = addSphere(builder, 48, 24, glassTransform);
     scene.addInstance(glassMesh, glassMat, matrix_identity_float4x4);
 
-    addMario(builder,
-             scene,
-             assetRoot,
-             crateTopY,
-             simd_make_float3(0.3275f, 0.6f, -0.1f),
-             0.01f);
+    if (marioFeatureEnabled()) {
+        addMario(builder,
+                 scene,
+                 assetRoot,
+                 crateTopY,
+                 simd_make_float3(0.3275f, 0.6f, -0.1f),
+                 0.01f);
+    } else {
+        rtr::core::Logger::info("CornellBox", "Mario feature disabled (RTR_ENABLE_MARIO not set)");
+    }
 }
 
 }  // namespace

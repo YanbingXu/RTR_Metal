@@ -9,6 +9,7 @@
 
 #include "RTRMetalEngine/Core/ImageLoader.hpp"
 #include "RTRMetalEngine/Core/Logger.hpp"
+#include "RTRMetalEngine/Core/Math.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructure.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructureBuilder.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
@@ -51,6 +52,7 @@ namespace {
 constexpr std::uint32_t kDiagnosticWidth = 512;
 constexpr std::uint32_t kDiagnosticHeight = 512;
 constexpr std::size_t kRayTracingPixelStride = sizeof(float) * 4;  // RGBA32F
+constexpr float kDefaultVerticalFovDegrees = 43.0f;
 
 float srgbChannelToLinear(float value) {
     if (value <= 0.0f) {
@@ -207,6 +209,11 @@ struct RayTracingResources {
 
 constexpr std::size_t kUniformRingSize = 3;
 
+struct CameraRig {
+    simd_float3 eye = simd_make_float3(0.0f, 1.2f, 5.4f);
+    simd_float3 target = simd_make_float3(0.0f, 1.0f, 0.0f);
+};
+
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
         : config(std::move(cfg)), context(), bufferAllocator(context), geometryStore(bufferAllocator),
@@ -282,11 +289,11 @@ struct Renderer::Impl {
             if (writeOutput) {
                 writeRayTracingOutput();
             }
+            frameCounter++;
         } else if (logFrame) {
             core::Logger::warn("Renderer", "No renderable output produced this frame");
         }
 
-        frameCounter++;
         if (writeOutput) {
             std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
         }
@@ -311,6 +318,7 @@ struct Renderer::Impl {
     std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
     std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
+    uint32_t accumulationFrameIndex = 0;
     bool accumulationInvalidated = false;
     std::vector<RayTracingInstanceResource> instanceResources;
     std::vector<RayTracingMaterialResource> materialResources;
@@ -325,9 +333,68 @@ struct Renderer::Impl {
     bool metalCaptureInProgress = false;
     bool metalCaptureCompleted = false;
     std::string metalCaptureOutputPath;
+    CameraRig cameraRig;
+    core::math::BoundingBox sceneBounds = core::math::BoundingBox::makeEmpty();
+    bool hitDebugLogged = false;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
+    }
+
+    [[nodiscard]] static CameraRig makeReferenceCameraRig() {
+        return CameraRig{};
+    }
+
+    [[nodiscard]] bool hasValidSceneBounds() const noexcept {
+        const simd_float3 minPoint = sceneBounds.min;
+        const simd_float3 maxPoint = sceneBounds.max;
+        return std::isfinite(minPoint.x) && std::isfinite(minPoint.y) && std::isfinite(minPoint.z) &&
+               std::isfinite(maxPoint.x) && std::isfinite(maxPoint.y) && std::isfinite(maxPoint.z) &&
+               (minPoint.x <= maxPoint.x) && (minPoint.y <= maxPoint.y) && (minPoint.z <= maxPoint.z);
+    }
+
+    void updateCameraRigFromBounds() {
+        if (!hasValidSceneBounds()) {
+            cameraRig = makeReferenceCameraRig();
+            return;
+        }
+
+        const simd_float3 center = (sceneBounds.min + sceneBounds.max) * 0.5f;
+        const simd_float3 extent = sceneBounds.extent();
+        const float sceneWidth = std::max(extent.x, 1.0f);
+        const float sceneHeight = std::max(extent.y, 1.0f);
+        const float sceneDepth = std::max(extent.z, 1.0f);
+
+        const float aspect = (targetHeight > 0u) ? static_cast<float>(targetWidth) / static_cast<float>(targetHeight)
+                                                 : 1.0f;
+        const float fovY = rtr::core::math::radians(kDefaultVerticalFovDegrees);
+        const float halfFovY = std::max(fovY * 0.5f, 1.0e-3f);
+        const float halfFovX = std::max(std::atan(std::tan(halfFovY) * aspect), 1.0e-3f);
+
+        constexpr float kVerticalCoverage = 0.6f;
+        constexpr float kHorizontalCoverage = 1.0f;
+        const float verticalDistance = (sceneHeight * kVerticalCoverage) * 0.5f / std::tan(halfFovY);
+        const float horizontalDistance = (sceneWidth * kHorizontalCoverage) * 0.5f / std::tan(halfFovX);
+        const float depthMargin = sceneDepth * 0.75f + sceneWidth * 0.35f;
+        const float aspectScale = std::max(aspect, 1.0f);
+        const float distanceFromFrontWall = std::max({verticalDistance, horizontalDistance, depthMargin}) * aspectScale;
+
+        CameraRig rig;
+        rig.target = simd_make_float3(center.x, center.y, center.z);
+        rig.eye = simd_make_float3(center.x,
+                                   center.y + sceneHeight * 0.08f,
+                                   sceneBounds.max.z + distanceFromFrontWall);
+        cameraRig = rig;
+
+        core::Logger::info("Renderer",
+                            "Camera rig eye=(%.3f, %.3f, %.3f) target=(%.3f, %.3f, %.3f) aspect=%.3f",
+                            rig.eye.x,
+                            rig.eye.y,
+                            rig.eye.z,
+                            rig.target.x,
+                            rig.target.y,
+                            rig.target.z,
+                            aspect);
     }
 
 
@@ -496,6 +563,7 @@ struct Renderer::Impl {
         }
 
         const bool doAccumulate = accumulationEnabledThisFrame();
+        bool accumulationDispatched = false;
         if (doAccumulate && resources.accumulationTexture && accumulatePipeline != nil) {
             if (!dispatch2D(accumulatePipeline, [&](id<MTLComputeCommandEncoder> encoder) {
                     [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
@@ -506,6 +574,8 @@ struct Renderer::Impl {
                 core::Logger::error("Renderer", "Failed to encode accumulate kernel");
                 return fail();
             }
+
+            accumulationDispatched = true;
 
             id<MTLBlitCommandEncoder> copyAccum = [commandBuffer blitCommandEncoder];
             if (copyAccum) {
@@ -537,6 +607,12 @@ struct Renderer::Impl {
                            destinationLevel:0
                           destinationOrigin:origin];
                 [blitColor endEncoding];
+            }
+        }
+
+        if (accumulationDispatched) {
+            if (accumulationFrameIndex < std::numeric_limits<std::uint32_t>::max()) {
+                accumulationFrameIndex++;
             }
         }
 
@@ -572,18 +648,22 @@ struct Renderer::Impl {
             return false;
         }
 
-        if (resources.hitDebugBuffer.isValid()) {
+        if (!hitDebugLogged && resources.hitDebugBuffer.isValid()) {
             id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
             if (hitBuffer) {
                 const std::uint32_t* hits = static_cast<const std::uint32_t*>([hitBuffer contents]);
                 if (hits) {
-                    const std::size_t maxSamples = std::min<std::size_t>(resources.width * resources.height, 16);
-                    std::string hitLog;
-                    hitLog.reserve(maxSamples * 4);
-                    for (std::size_t i = 0; i < maxSamples; ++i) {
-                        hitLog += hits[i] ? '1' : '0';
+                    const std::size_t sampleCount =
+                        std::min<std::size_t>(resources.width * resources.height, static_cast<std::size_t>(32));
+                    if (sampleCount > 0) {
+                        std::string hitLog;
+                        hitLog.reserve(sampleCount);
+                        for (std::size_t i = 0; i < sampleCount; ++i) {
+                            hitLog += hits[i] ? '1' : '0';
+                        }
+                        core::Logger::info("Renderer", "Hit debug sample: %s", hitLog.c_str());
+                        hitDebugLogged = true;
                     }
-                    core::Logger::info("Renderer", "Hit debug sample: %s", hitLog.c_str());
                 }
             }
         }
@@ -645,16 +725,14 @@ struct Renderer::Impl {
             return;
         }
 
-        // Camera approximating the reference Cornell composition: eye in front of the box, looking inward with a ~45°
-        // vertical FOV and aspect-derived image plane.
         const float aspect = (target.height > 0) ? static_cast<float>(target.width) / static_cast<float>(target.height)
                                                  : 1.0f;
-        const float fovY = 45.0f * (M_PI / 180.0f);
+        const float fovY = rtr::core::math::radians(kDefaultVerticalFovDegrees);
         const float halfHeight = tanf(fovY * 0.5f);
         const float halfWidth = halfHeight * aspect;
 
-        simd_float3 eye = simd_make_float3(0.0f, 1.0f, 3.38f);
-        simd_float3 targetPoint = simd_make_float3(0.0f, 1.0f, 0.0f);
+        simd_float3 eye = cameraRig.eye;
+        simd_float3 targetPoint = cameraRig.target;
         simd_float3 forward = simd_normalize(targetPoint - eye);
         simd_float3 globalUp = simd_make_float3(0.0f, 1.0f, 0.0f);
         simd_float3 right = simd_normalize(simd_cross(forward, globalUp));
@@ -677,7 +755,7 @@ struct Renderer::Impl {
         }
         uniforms->camera.flags = flags;
         uniforms->camera.samplesPerPixel = config.samplesPerPixel;
-        uniforms->camera.sampleSeed = config.sampleSeed;
+        uniforms->camera.sampleSeed = config.sampleSeed ^ frameCounter;
 
         uniforms->lightCount = 1u;
         uniforms->maxBounces = std::max<std::uint32_t>(1u, config.maxHardwareBounces);
@@ -687,7 +765,7 @@ struct Renderer::Impl {
         light.right = simd_make_float4(0.25f, 0.0f, 0.0f, 0.0f);
         light.up = simd_make_float4(0.0f, 0.0f, 0.25f, 0.0f);
         light.forward = simd_make_float4(0.0f, -1.0f, 0.0f, 0.0f);
-        light.color = simd_make_float4(4.0f, 4.0f, 4.0f, 0.0f);
+        light.color = simd_make_float4(18.0f, 17.5f, 17.0f, 0.0f);
 
         if (debugAlbedo) {
             core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->camera.flags);
@@ -750,33 +828,31 @@ struct Renderer::Impl {
 
     void resetAccumulationInternal() {
         frameCounter = 0;
+        accumulationFrameIndex = 0;
         accumulationInvalidated = true;
     }
 
-    [[nodiscard]] std::uint32_t frameIndexForUniforms() const {
-        std::uint32_t index = frameCounter;
+    [[nodiscard]] std::uint32_t accumulationLimit() const {
+        std::uint32_t limit = std::numeric_limits<std::uint32_t>::max();
         if (config.samplesPerPixel > 0) {
-            const std::uint32_t maxSample = config.samplesPerPixel - 1u;
-            index = std::min(index, maxSample);
+            limit = std::min(limit, config.samplesPerPixel);
         }
         if (config.accumulationFrames > 0) {
-            const std::uint32_t maxFrame = config.accumulationFrames - 1u;
-            index = std::min(index, maxFrame);
+            limit = std::min(limit, config.accumulationFrames);
         }
-        return index;
+        return limit;
+    }
+
+    [[nodiscard]] std::uint32_t frameIndexForUniforms() const {
+        return accumulationFrameIndex;
     }
 
     bool accumulationEnabledThisFrame() const {
         if (!config.accumulationEnabled) {
             return false;
         }
-        if (config.accumulationFrames > 0 && frameCounter >= config.accumulationFrames) {
-            return false;
-        }
-        if (config.samplesPerPixel > 0 && frameCounter >= config.samplesPerPixel) {
-            return false;
-        }
-        return true;
+        const std::uint32_t limit = accumulationLimit();
+        return accumulationFrameIndex < limit;
     }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
@@ -1127,6 +1203,9 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                        meshCount,
                        materialCount,
                        instanceCount);
+
+    sceneBounds = scene.computeSceneBounds();
+    updateCameraRigFromBounds();
 
     if (!context.isValid()) {
         core::Logger::warn("Renderer", "Metal context invalid; cannot load scene");
@@ -1505,6 +1584,7 @@ void Renderer::Impl::setRenderSizeInternal(std::uint32_t width, std::uint32_t he
     target.reset();
     resources.resetForResize();
     resetAccumulationInternal();
+    updateCameraRigFromBounds();
 }
 
 Renderer::Renderer(core::EngineConfig config)

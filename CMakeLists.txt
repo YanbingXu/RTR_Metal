@@ -118,8 +118,11 @@ set_source_files_properties(
 
 # Sample application -------------------------------------------------------
 if(RTR_BUILD_SAMPLE)
-    add_executable(RTRMetalSample sample/src/main.cpp)
+    add_executable(RTRMetalSample
+        sample/src/main.cpp
+        sample/src/SampleAppUtils.cpp)
     target_link_libraries(RTRMetalSample PRIVATE RTRMetalEngine)
+    target_include_directories(RTRMetalSample PRIVATE sample/src)
     add_dependencies(RTRMetalSample RTRMetalShaders)
     target_compile_features(RTRMetalSample PRIVATE cxx_std_20)
     target_compile_definitions(RTRMetalSample PRIVATE RTR_SOURCE_DIR="${CMAKE_SOURCE_DIR}" RTR_BINARY_DIR="${CMAKE_BINARY_DIR}")
@@ -131,9 +134,12 @@ if(RTR_BUILD_ONSCREEN_SAMPLE)
         sample/src/onscreen/AppDelegate.h
         sample/src/onscreen/AppDelegate.mm
         sample/src/onscreen/ViewController.h
-        sample/src/onscreen/ViewController.mm)
+        sample/src/onscreen/ViewController.mm
+        sample/src/SampleAppUtils.cpp)
     target_link_libraries(RTRMetalOnScreenSample PRIVATE RTRMetalEngine "-framework Cocoa" "-framework MetalKit" "-framework QuartzCore")
     target_compile_features(RTRMetalOnScreenSample PRIVATE cxx_std_20)
+    target_include_directories(RTRMetalOnScreenSample PRIVATE sample/src)
+    target_compile_definitions(RTRMetalOnScreenSample PRIVATE RTR_SOURCE_DIR="${CMAKE_SOURCE_DIR}" RTR_BINARY_DIR="${CMAKE_BINARY_DIR}")
     add_dependencies(RTRMetalOnScreenSample RTRMetalShaders)
     add_custom_command(TARGET RTRMetalOnScreenSample POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources
