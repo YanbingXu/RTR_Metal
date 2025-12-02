@@ -19,7 +19,7 @@ struct alignas(16) MPSCameraUniforms {
 
 struct alignas(16) MPSSamplingUniforms {
     std::uint32_t sampleIndex = 0;
-    std::uint32_t samplesPerPixel = 1;
+    std::uint32_t samplesPerPixel = 0;
     std::uint32_t baseSeed = 0;
     std::uint32_t padding = 0;
 };

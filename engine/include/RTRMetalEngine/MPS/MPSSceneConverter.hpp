@@ -33,6 +33,7 @@ struct MPSSceneData {
     std::vector<uint32_t> indices;
     std::vector<MPSMaterialProperties> materials;
     std::vector<uint32_t> primitiveMaterials;
+    std::vector<uint32_t> indexOffsets;
 };
 
 MPSSceneData buildSceneData(const scene::Scene& scene,

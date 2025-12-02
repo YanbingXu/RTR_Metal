@@ -2,15 +2,30 @@
 
 #import <MetalKit/MetalKit.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "RTRMetalEngine/Core/EngineConfig.hpp"
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
-#include "RTRMetalEngine/Scene/CornellBox.hpp"
+#include "SampleAppUtils.hpp"
+
+#ifndef RTR_SOURCE_DIR
+#define RTR_SOURCE_DIR ""
+#endif
+#ifndef RTR_BINARY_DIR
+#define RTR_BINARY_DIR ""
+#endif
+
+using namespace std::string_literals;
+namespace fs = std::filesystem;
 
 using RTRRendererPtr = std::unique_ptr<rtr::rendering::Renderer>;
 
@@ -30,7 +45,6 @@ struct ResolutionOption {
 constexpr ModeOption kModeOptions[] = {
     {"Auto", "auto"},
     {"Hardware", "hardware"},
-    {"Gradient", "gradient"},
 };
 
 constexpr ResolutionOption kResolutionOptions[] = {
@@ -40,41 +54,103 @@ constexpr ResolutionOption kResolutionOptions[] = {
     {"1920 x 1080", 1920u, 1080u},
 };
 
-std::string resolveShaderLibraryPath() {
-    if (NSBundle* bundle = [NSBundle mainBundle]) {
-        NSString* resourcePath = [bundle pathForResource:@"RTRShaders" ofType:@"metallib"];
-        if (resourcePath.length > 0) {
-            return std::string(resourcePath.UTF8String);
-        }
+struct RuntimeResources {
+    rtr::core::EngineConfig config;
+    fs::path assetRoot;
+};
+
+std::vector<fs::path> makeSearchBases(const fs::path& bundleResources) {
+    std::vector<fs::path> bases;
+    if (!bundleResources.empty()) {
+        bases.push_back(bundleResources);
     }
-    return "shaders/RTRShaders.metallib";
+    bases.push_back(fs::current_path());
+    bases.push_back(fs::path(RTR_BINARY_DIR));
+    bases.push_back(fs::path(RTR_SOURCE_DIR));
+    return bases;
 }
 
-std::string resolveAssetRootPath() {
+std::optional<fs::path> resolveBundleResourcePath(NSString* name, NSString* ext) {
     if (NSBundle* bundle = [NSBundle mainBundle]) {
+        NSString* resourcePath = [bundle pathForResource:name ofType:ext];
+        if (resourcePath.length > 0) {
+            return fs::path(resourcePath.UTF8String);
+        }
+    }
+    return std::nullopt;
+}
+
+RuntimeResources makeRuntimeResources() {
+    RuntimeResources resources{};
+    fs::path bundleResources;
+    NSBundle* bundle = [NSBundle mainBundle];
+    if (bundle) {
+        NSString* bundlePath = [bundle resourcePath];
+        if (bundlePath.length > 0) {
+            bundleResources = fs::path(bundlePath.UTF8String);
+        }
+    }
+
+    const std::vector<fs::path> searchBases = makeSearchBases(bundleResources);
+
+    auto configPath = rtr::sample::resolvePath("config/engine.ini", false, searchBases);
+    resources.config = rtr::sample::loadEngineConfig(configPath.value_or(fs::path{}));
+    resources.config.applicationName = "RTR Metal On-Screen";
+
+    const fs::path configDirectory = configPath ? configPath->parent_path() : fs::path{};
+
+    if (auto bundleShader = resolveBundleResourcePath(@"RTRShaders", @"metallib")) {
+        resources.config.shaderLibraryPath = bundleShader->string();
+    } else {
+        std::vector<fs::path> shaderBases = searchBases;
+        if (!configDirectory.empty()) {
+            shaderBases.insert(shaderBases.begin(), configDirectory);
+        }
+        if (auto resolvedShader = rtr::sample::resolvePath(resources.config.shaderLibraryPath,
+                                                           false,
+                                                           shaderBases)) {
+            resources.config.shaderLibraryPath = resolvedShader->string();
+        } else {
+            rtr::core::Logger::warn("OnScreenSample",
+                                    "Shader library '%s' not found via search paths",
+                                    resources.config.shaderLibraryPath.c_str());
+        }
+    }
+
+    std::vector<fs::path> assetBases = searchBases;
+    if (bundle) {
         NSString* assetsPath = [[bundle resourcePath] stringByAppendingPathComponent:@"assets"];
         BOOL isDirectory = NO;
         if ([[NSFileManager defaultManager] fileExistsAtPath:assetsPath isDirectory:&isDirectory] && isDirectory) {
-            return std::string(assetsPath.UTF8String);
+            assetBases.insert(assetBases.begin(), fs::path(assetsPath.UTF8String));
         }
     }
-    return "assets";
+    resources.assetRoot =
+        rtr::sample::resolvePath("assets", true, assetBases).value_or(fs::path("assets"));
+    if (resources.assetRoot.empty()) {
+        rtr::core::Logger::warn("OnScreenSample", "Asset root not found; demo scenes may degrade");
+    } else {
+        rtr::core::Logger::info("OnScreenSample", "Using assets from %s", resources.assetRoot.string().c_str());
+    }
+
+    resources.config.shadingMode = "hardware";
+    resources.config.accumulationEnabled = true;
+    resources.config.accumulationFrames = 0;
+    resources.config.samplesPerPixel = 0;
+    resources.config.sampleSeed = 0;
+
+    return resources;
 }
 
-rtr::core::EngineConfig buildEngineConfig() {
-    rtr::core::EngineConfig config{};
-    config.applicationName = "RTR Metal On-Screen";
-    config.shaderLibraryPath = resolveShaderLibraryPath();
-    config.shadingMode = "hardware";
-    config.accumulationEnabled = true;
-    config.accumulationFrames = 0;
-    config.samplesPerPixel = 1;
-    config.sampleSeed = 0;
-    return config;
+NSDictionary* makeResolutionInfo(std::uint32_t width, std::uint32_t height, bool dynamic) {
+    if (dynamic) {
+        return @{ @"width": @(width), @"height": @(height), @"dynamic": @YES };
+    }
+    return @{ @"width": @(width), @"height": @(height) };
 }
 
 NSDictionary* makeResolutionInfo(std::uint32_t width, std::uint32_t height) {
-    return @{ @"width": @(width), @"height": @(height) };
+    return makeResolutionInfo(width, height, false);
 }
 
 bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t height) {
@@ -86,9 +162,17 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     return storedWidth == width && storedHeight == height;
 }
 
+bool isDynamicResolution(NSDictionary* info) {
+    if (!info) {
+        return false;
+    }
+    NSNumber* marker = info[@"dynamic"];
+    return marker ? [marker boolValue] : false;
+}
+
 }  // namespace
 
-@interface RTRViewController () <MTKViewDelegate>
+@interface RTRViewController ()
 - (void)setupOverlayUI;
 - (void)modeChanged:(id)sender;
 - (void)resolutionChanged:(id)sender;
@@ -96,6 +180,9 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 - (void)selectCurrentMode;
 - (void)selectResolutionForWidth:(std::uint32_t)width height:(std::uint32_t)height;
 - (void)performPendingScreenshot;
+- (void)updateRenderSizeWithWidth:(std::uint32_t)width height:(std::uint32_t)height;
+- (void)updateDynamicResolutionMenuItem;
+- (void)handleDrawableSizeChange:(CGSize)size updateRenderer:(BOOL)updateRenderer;
 @end
 
 @implementation RTRViewController {
@@ -106,11 +193,17 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     bool _sceneLoaded;
     NSPopUpButton* _modePopup;
     NSPopUpButton* _resolutionPopup;
+    NSMenuItem* _dynamicResolutionItem;
     NSButton* _screenshotButton;
+    NSButton* _debugToggle;
     std::uint32_t _currentWidth;
     std::uint32_t _currentHeight;
+    std::uint32_t _renderWidth;
+    std::uint32_t _renderHeight;
+    bool _resolutionOverride;
     bool _pendingScreenshot;
     std::string _pendingScreenshotPath;
+    fs::path _assetRootPath;
 }
 
 - (void)loadView {
@@ -123,6 +216,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     [super viewDidLoad];
 
     _mtkView = static_cast<MTKView*>(self.view);
+    _mtkView.autoResizeDrawable = YES;
     _mtkView.colorPixelFormat = MTLPixelFormatBGRA8Unorm_sRGB;
     _mtkView.depthStencilPixelFormat = MTLPixelFormatInvalid;
     _mtkView.sampleCount = 1;
@@ -138,9 +232,16 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 }
 
 - (void)initializeRenderer {
-    rtr::core::Logger::setMinimumLevel(rtr::core::LogLevel::Warning);
-    rtr::core::EngineConfig config = buildEngineConfig();
-    _renderer = std::make_unique<rtr::rendering::Renderer>(config);
+    rtr::core::Logger::setMinimumLevel(rtr::core::LogLevel::Info);
+    RuntimeResources runtime = makeRuntimeResources();
+    _assetRootPath = runtime.assetRoot;
+    rtr::core::Logger::info("OnScreenSample",
+                            "Using shader library: %s",
+                            runtime.config.shaderLibraryPath.c_str());
+    const std::string assetPathLog = _assetRootPath.empty() ? std::string("<unset>") : _assetRootPath.string();
+    rtr::core::Logger::info("OnScreenSample", "Using asset root: %s", assetPathLog.c_str());
+
+    _renderer = std::make_unique<rtr::rendering::Renderer>(runtime.config);
 
     id<MTLDevice> engineDevice = (__bridge id<MTLDevice>)_renderer->deviceHandle();
     if (!engineDevice) {
@@ -148,21 +249,32 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     }
     _mtkView.device = engineDevice;
 
-    if (![self buildDisplayPipelineWithDevice:engineDevice shaderLibrary:config.shaderLibraryPath]) {
+    if (![self buildDisplayPipelineWithDevice:engineDevice shaderLibrary:runtime.config.shaderLibraryPath]) {
         rtr::core::Logger::error("OnScreenSample", "Failed to create display pipeline");
     }
 
     const CGSize drawableSize = _mtkView.drawableSize;
     _currentWidth = static_cast<std::uint32_t>(drawableSize.width);
     _currentHeight = static_cast<std::uint32_t>(drawableSize.height);
+    _resolutionOverride = false;
     _pendingScreenshot = false;
-    _renderer->setRenderSize(_currentWidth, _currentHeight);
+    [self updateRenderSizeWithWidth:_currentWidth height:_currentHeight];
 
-    const std::string assetRoot = resolveAssetRootPath();
-    _scene = rtr::scene::createCornellBoxScene(assetRoot);
+    const std::string sceneName = "cornell";
+    _scene = rtr::sample::buildScene(sceneName, _assetRootPath);
     _sceneLoaded = _renderer->loadScene(_scene);
     if (!_sceneLoaded) {
         rtr::core::Logger::warn("OnScreenSample", "Renderer failed to load Cornell scene");
+    } else {
+        const auto bounds = _scene.computeSceneBounds();
+        rtr::core::Logger::info("OnScreenSample",
+                                "Scene bounds min=(%.3f, %.3f, %.3f) max=(%.3f, %.3f, %.3f)",
+                                bounds.min.x,
+                                bounds.min.y,
+                                bounds.min.z,
+                                bounds.max.x,
+                                bounds.max.y,
+                                bounds.max.z);
     }
 }
 
@@ -192,6 +304,9 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
         NSMenuItem* item = [_resolutionPopup lastItem];
         item.representedObject = makeResolutionInfo(option.width, option.height);
     }
+    [_resolutionPopup addItemWithTitle:@"Window"];
+    _dynamicResolutionItem = [_resolutionPopup lastItem];
+    _dynamicResolutionItem.representedObject = makeResolutionInfo(_currentWidth, _currentHeight, true);
     _resolutionPopup.target = self;
     _resolutionPopup.action = @selector(resolutionChanged:);
 
@@ -200,7 +315,18 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
                                            action:@selector(captureScreenshot:)];
     _screenshotButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    NSStackView* stack = [NSStackView stackViewWithViews:@[_modePopup, _resolutionPopup, _screenshotButton]];
+    _debugToggle = [NSButton checkboxWithTitle:@"Debug Albedo"
+                                        target:self
+                                        action:@selector(debugModeChanged:)];
+    _debugToggle.translatesAutoresizingMaskIntoConstraints = NO;
+    _debugToggle.state = NSControlStateValueOff;
+
+    NSStackView* stack = [NSStackView stackViewWithViews:@[
+        _modePopup,
+        _resolutionPopup,
+        _screenshotButton,
+        _debugToggle,
+    ]];
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.spacing = 8.0;
     stack.edgeInsets = NSEdgeInsetsMake(6.0, 8.0, 6.0, 8.0);
@@ -218,6 +344,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
         [container.topAnchor constraintEqualToAnchor:_mtkView.topAnchor constant:16.0]
     ]];
 
+    [self updateDynamicResolutionMenuItem];
     [self selectCurrentMode];
     [self selectResolutionForWidth:_currentWidth height:_currentHeight];
 }
@@ -263,13 +390,7 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 #pragma mark - MTKViewDelegate
 
 - (void)mtkView:(MTKView *)view drawableSizeWillChange:(CGSize)size {
-    if (_renderer) {
-        _currentWidth = static_cast<std::uint32_t>(size.width);
-        _currentHeight = static_cast<std::uint32_t>(size.height);
-        _renderer->setRenderSize(_currentWidth, _currentHeight);
-        _renderer->resetAccumulation();
-        [self selectResolutionForWidth:_currentWidth height:_currentHeight];
-    }
+    [self handleDrawableSizeChange:size updateRenderer:(!_resolutionOverride)];
 }
 
 - (void)drawInMTKView:(MTKView *)view {
@@ -278,11 +399,21 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     }
 
     id<CAMetalDrawable> drawable = view.currentDrawable;
-    if (!drawable) {
+    MTLRenderPassDescriptor* passDescriptor = view.currentRenderPassDescriptor;
+    if (!drawable || !passDescriptor) {
+        rtr::core::Logger::warn("OnScreenSample",
+                                "Drawable unavailable (descriptor=%s size=%.0fx%.0f)",
+                                passDescriptor ? "ok" : "nil",
+                                view.drawableSize.width,
+                                view.drawableSize.height);
         return;
     }
 
     if (!_renderer->renderFrameInteractive()) {
+        rtr::core::Logger::warn("OnScreenSample",
+                                "Renderer skipped interactive frame (size=%ux%u)",
+                                _renderWidth,
+                                _renderHeight);
         return;
     }
 
@@ -298,12 +429,10 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 
     id<MTLTexture> sourceTexture = (__bridge id<MTLTexture>)_renderer->currentColorTexture();
     if (!sourceTexture) {
-        [commandBuffer commit];
-        return;
-    }
-
-    MTLRenderPassDescriptor* passDescriptor = view.currentRenderPassDescriptor;
-    if (!passDescriptor) {
+        rtr::core::Logger::warn("OnScreenSample",
+                                "Renderer returned nil color texture (renderSize=%ux%u)",
+                                _renderWidth,
+                                _renderHeight);
         [commandBuffer commit];
         return;
     }
@@ -341,11 +470,31 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     }
     const std::uint32_t width = static_cast<std::uint32_t>([info[@"width"] unsignedIntValue]);
     const std::uint32_t height = static_cast<std::uint32_t>([info[@"height"] unsignedIntValue]);
-    _currentWidth = width;
-    _currentHeight = height;
-    _mtkView.drawableSize = CGSizeMake(width, height);
-    _renderer->setRenderSize(width, height);
-    _renderer->resetAccumulation();
+    const bool dynamicSelection = isDynamicResolution(info);
+    _resolutionOverride = !dynamicSelection;
+    rtr::core::Logger::info("OnScreenSample",
+                            "Resolution menu -> %ux%u (%s)",
+                            width,
+                            height,
+                            dynamicSelection ? "dynamic" : "preset");
+    if (dynamicSelection) {
+        _mtkView.autoResizeDrawable = YES;
+        [self handleDrawableSizeChange:_mtkView.drawableSize updateRenderer:YES];
+        [self selectResolutionForWidth:_currentWidth height:_currentHeight];
+    } else {
+        _mtkView.autoResizeDrawable = NO;
+        CGSize drawableSize = CGSizeMake(width, height);
+        if (!CGSizeEqualToSize(_mtkView.drawableSize, drawableSize)) {
+            _mtkView.drawableSize = drawableSize;
+        }
+        rtr::core::Logger::info("OnScreenSample",
+                                "Drawable resized to %.0fx%.0f",
+                                _mtkView.drawableSize.width,
+                                _mtkView.drawableSize.height);
+        [self handleDrawableSizeChange:drawableSize updateRenderer:NO];
+        [self updateRenderSizeWithWidth:width height:height];
+        [self selectResolutionForWidth:width height:height];
+    }
 }
 
 - (void)captureScreenshot:(id)sender {
@@ -359,6 +508,15 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     _pendingScreenshotPath = fullPath.UTF8String;
     _pendingScreenshot = true;
     rtr::core::Logger::info("OnScreenSample", "Screenshot requested -> %s", _pendingScreenshotPath.c_str());
+}
+
+- (void)debugModeChanged:(id)sender {
+    if (!_renderer) {
+        return;
+    }
+    const bool enabled = (_debugToggle.state == NSControlStateValueOn);
+    _renderer->setDebugMode(enabled);
+    _renderer->resetAccumulation();
 }
 
 - (void)selectCurrentMode {
@@ -377,11 +535,10 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
 }
 
 - (void)selectResolutionForWidth:(std::uint32_t)width height:(std::uint32_t)height {
-    for (NSMenuItem* item in _resolutionPopup.itemArray) {
-        if (resolutionMatches((NSDictionary*)item.representedObject, width, height)) {
-            [_resolutionPopup selectItem:item];
-            return;
-        }
+    const bool matchesWindow = (width == _currentWidth && height == _currentHeight);
+    if (_dynamicResolutionItem && !_resolutionOverride && matchesWindow) {
+        [_resolutionPopup selectItem:_dynamicResolutionItem];
+        return;
     }
 
     NSString* customTitle = [NSString stringWithFormat:@"%u x %u", width, height];
@@ -390,7 +547,18 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
         [_resolutionPopup addItemWithTitle:customTitle];
         existing = [_resolutionPopup lastItem];
     }
-    existing.representedObject = makeResolutionInfo(width, height);
+    existing.representedObject = makeResolutionInfo(width, height, false);
+
+    for (NSMenuItem* item in _resolutionPopup.itemArray) {
+        if (item == _dynamicResolutionItem) {
+            continue;
+        }
+        if (resolutionMatches((NSDictionary*)item.representedObject, width, height)) {
+            [_resolutionPopup selectItem:item];
+            return;
+        }
+    }
+
     [_resolutionPopup selectItem:existing];
 }
 
@@ -406,6 +574,42 @@ bool resolutionMatches(NSDictionary* info, std::uint32_t width, std::uint32_t he
     rtr::core::Logger::info("OnScreenSample", "Wrote screenshot to %s", _pendingScreenshotPath.c_str());
     _pendingScreenshot = false;
     _pendingScreenshotPath.clear();
+}
+
+- (void)updateRenderSizeWithWidth:(std::uint32_t)width height:(std::uint32_t)height {
+    const bool sizeChanged = (width != _renderWidth || height != _renderHeight);
+    _renderWidth = width;
+    _renderHeight = height;
+    if (_renderer) {
+        _renderer->setRenderSize(width, height);
+        if (sizeChanged) {
+            _renderer->resetAccumulation();
+        }
+    }
+}
+
+- (void)updateDynamicResolutionMenuItem {
+    if (!_dynamicResolutionItem) {
+        return;
+    }
+    NSString* title = [NSString stringWithFormat:@"Window (%u x %u)", _currentWidth, _currentHeight];
+    _dynamicResolutionItem.title = title;
+    _dynamicResolutionItem.representedObject = makeResolutionInfo(_currentWidth, _currentHeight, true);
+    if (!_resolutionOverride) {
+        [_resolutionPopup selectItem:_dynamicResolutionItem];
+    }
+}
+
+- (void)handleDrawableSizeChange:(CGSize)size updateRenderer:(BOOL)updateRenderer {
+    _currentWidth = static_cast<std::uint32_t>(std::max(1.0, std::round(size.width)));
+    _currentHeight = static_cast<std::uint32_t>(std::max(1.0, std::round(size.height)));
+    [self updateDynamicResolutionMenuItem];
+    if (updateRenderer) {
+        [self updateRenderSizeWithWidth:_currentWidth height:_currentHeight];
+        if (!_resolutionOverride) {
+            [self selectResolutionForWidth:_currentWidth height:_currentHeight];
+        }
+    }
 }
 
 @end

@@ -2,6 +2,8 @@
 
 This document captures how each of the official Metal samples in `~/Desktop/metal_RTR_official_example` implements ray tracing or reflection effects, and outlines takeaways for the `RTR_Metal` project.
 
+> **Status (2025-11-06)**: Stage 3D is hardware-only. Notes that mention fallbacks are retained as guidance for Stage 4 when the software/MPS path returns.
+
 ## Accelerating Ray Tracing Using Metal
 - **Goal & Flow**: Builds a minimal path tracer using GPU parallelism. Acceleration structures are assembled on the CPU, then a compute kernel (`raytracingKernel`) performs traversal, shading, and accumulation. Optional custom intersection functions cover non-triangular geometry.
 - **Pipeline Type**: `MTLComputePipelineState` with linked functions. Dispatch runs via a compute command encoder.
@@ -34,13 +36,13 @@ This document captures how each of the official Metal samples in `~/Desktop/meta
    - Maintain resource buffers that pack per-geometry pointers/strides, so intersection functions can fetch data directly.
    - Use per-frame uniform ring buffers, accumulation targets, and random textures for stochastic integration.
    - Bind TLAS/BLAS with `setAccelerationStructure:` when dispatching compute kernels.
-4. **Fallback Paths Remain Valuable**: Samples always retain raster-based or simplified modes (clear fallback, reflections-only, no RT). Our project should keep a non-RT or simplified mode for unsupported hardware.
+4. **Plan for Future Fallbacks**: Samples always retain raster-based or simplified modes (clear fallback, reflections-only, no RT). We have intentionally disabled our fallback until Stage 4; these notes ensure we bring it back with intention.
 
 ## Suggested Modifications for `RTR_Metal`
 - **Adopt Compute-Based Ray Tracing Pipeline**: Replace the placeholder hardware ray tracing dispatch with a compute kernel approach mirroring these samples—build BLAS/TLAS, create a specialized ray tracing compute function (with `MTLLinkedFunctions` as needed), and dispatch via `MTLComputeCommandEncoder`.
 - **Use Intersection/Visible Function Tables**: Introduce intersection tables for procedural geometry and visible function tables for dynamic control, matching the official patterns.
 - **Resource Layout Refactor**: Implement resource buffers (geometry/material pointers) and per-frame uniform buffers. Accumulation targets and random textures should reside alongside TLAS to enable iterative path tracing.
-- **Maintain Graceful Fallbacks**: Keep the gradient or raster fallback for environments lacking acceleration structure support, but gate feature probing on `MTLDevice.supportsRaytracing` instead of non-existent headers.
+- **Defer Graceful Fallbacks**: When the fallback returns, it must gate capability checks on `MTLDevice.supportsRaytracing` rather than ad hoc header probes. For Stage 3D the renderer simply surfaces errors.
 - **Plan for Hybrid Rendering**: When integrating with the example application, consider the hybrid flow used in the reflections sample: render a thin G-buffer, dispatch compute for ray traced effects, then composite in the main render pass.
 
 Together, these changes align `RTR_Metal` with the currently documented, publicly available Metal ray tracing workflow and provide a concrete path forward even before Apple exposes dedicated ray tracing command encoders.
@@ -66,7 +68,7 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
 3. **Implications for RTR_Metal**
    - Transition our placeholder ray tracing path to match the compute-pipeline pattern: build acceleration structures, create a specialized ray tracing kernel, dispatch via `MTLComputeCommandEncoder`.
    - Introduce resource buffers, intersection/visible function tables, and per-frame accumulation textures mirroring Apple’s structure.
-   - Keep the fallback pipeline (e.g., gradient or raster mode) gated on `MTLDevice.supportsRaytracing`.
+   - (Deferred to Stage 4) Reintroduce a fallback pipeline (e.g., gradient or raster mode) gated on `MTLDevice.supportsRaytracing`.
    - Plan for hybrid rendering (thin G-buffer + compute ray tracing) when integrating reflections or other effects.
 
 ### Environment Observations
@@ -77,11 +79,11 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
 ### Next Steps
 - Replace `dispatchRayTracingPass()` stub with compute-based implementation using `setAccelerationStructure:` and a ray tracing kernel (refer to “Accelerating Ray Tracing Using Metal”).
 - Refactor renderer resource management (uniform ring buffers, accumulation textures, resource buffer strides) to align with the sample architecture.
-- Maintain compute fallback paths for unsupported devices while instrumenting `supportsRaytracing` checks.
+- Plan the compute fallback path for unsupported devices while instrumenting `supportsRaytracing` checks; implementation resumes in Stage 4.
 
 ## Final Goals & Execution Plan (Quick Reference)
 - **Engine Goals**
-  - Reusable Metal ray tracing engine on macOS 14+ / Apple Silicon using TLAS/BLAS + compute kernels (hardware traversal via `setAccelerationStructure:`) with MPS fallback.
+  - Reusable Metal ray tracing engine on macOS 14+ / Apple Silicon using TLAS/BLAS + compute kernels (hardware traversal via `setAccelerationStructure:`) with a deferred MPS fallback plan.
   - Off-screen CLI + on-screen demo rendering Cornell Box–class scenes with reflections/shadows/refraction and automated validation (hash/logs).
   - Unified resource/shading architecture across backends (scene upload, geometry/material buffers, intersection/visible function tables, accumulation/random textures).
 
@@ -95,7 +97,7 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
   2. *Resources & Buffers* – add per-frame uniform ring buffer, resource pointer buffers, accumulation/random textures; refactor renderer to consume them.
   3. *Procedural Geometry & Extensions* – support custom primitives through intersection/visible function tables; align MPS/compute resource layout.
   4. *Hybrid Rendering & Demos* – build thin G-buffer + compute RT flow for CLI & MetalKit/SwiftUI demos; expose toggles, screenshot/PPM, accumulation controls.
-  5. *Testing & Docs* – extend `ctest` (TLAS, resources, image hashes) and update README/docs with hardware requirements, fallback behaviour, validation guidance.
+  5. *Testing & Docs* – extend `ctest` (TLAS, resources, image hashes) and update README/docs with hardware requirements; document fallback behaviour when it returns.
 
 - **Immediate Focus**
   - Implement compute-based ray tracing pipeline & resource structures and replace `dispatchRayTracingPass()` stub before layering additional features.
@@ -111,8 +113,8 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
 1. **Compute Ray Tracing Pipeline**: Implement the hardware-accelerated path using a dedicated compute kernel (`raytracingKernel`), linked intersection functions, and TLAS/BLAS integration.
 2. **Resource & Buffer Architecture**: Mirror the sample structure—per-frame uniform ring buffers, resource pointer buffers, accumulation textures, random sequences, and reusable staging buffers.
 3. **Procedural Geometry Support**: Introduce intersection or visible function tables to handle custom primitives and intersection queries.
-4. **Hybrid Rendering & UI Integration**: Provide a thin G-buffer + compute ray tracing workflow for reflections/path tracing, then composite into the renderer/view model (keeping fallback/raster mode).
-5. **Robust Fallback Mode**: When `supportsRaytracing` is false, fall back to simplified compute shading (current gradient or future CPU-only path) without touching acceleration structures.
+4. **Hybrid Rendering & UI Integration**: Provide a thin G-buffer + compute ray tracing workflow for reflections/path tracing, then composite into the renderer/view model (future fallback/raster mode to follow).
+5. **Robust Fallback Mode (Deferred)**: When `supportsRaytracing` is false, the future fallback must route through simplified compute shading without touching acceleration structures. This item resumes in Stage 4.
 
 ### Implementation Plan
 1. **Pipeline Foundation**
@@ -124,7 +126,7 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
    - Encapsulate scene geometry/material uploads similar to Apple examples for predictable shader access.
 3. **Dispatch Path**
    - Replace `dispatchRayTracingPass()` stub with a compute command encoder that binds TLAS, resources, uniforms, and accumulation targets; dispatch threadgroups matching output resolution.
-   - Integrate fallback compute gradient path as a secondary branch, selected when capabilities/pipelines are unavailable.
+   - (Deferred) Integrate fallback compute gradient path as a secondary branch, selected when capabilities/pipelines are unavailable.
 4. **Hybrid Rendering (Optional Step after core path)**
    - Prepare a thin G-buffer render pass followed by compute ray tracing for reflections/path tracing, then composite results in the main render pass.
 5. **Testing & Validation**
@@ -135,4 +137,4 @@ Together, these changes align `RTR_Metal` with the currently documented, publicl
 1. Refactor renderer setup to create a ray tracing compute pipeline and ray tracing kernel shaders.
 2. Restructure acceleration structure build/upload to match the sample resource layout and expose resource buffers to shaders.
 3. Replace `dispatchRayTracingPass()` with compute dispatch logic (including accumulation target management).
-4. Preserve and polish the fallback gradient path for unsupported devices (post-refactor).
+4. (Deferred) Preserve and polish the fallback gradient path for unsupported devices once the refactor completes (Stage 4).

@@ -46,3 +46,8 @@
 .idea
 build
 cmake-build-debug
+.DS_Store
+assets/.DS_Store
+*.gputrace
+sample/.DS_Store
+sample/src/.DS_Store

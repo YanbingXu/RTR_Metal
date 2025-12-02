@@ -15,18 +15,21 @@ namespace rtr::rendering {
 
 class RayTracingPipeline::Impl {
 public:
-    Impl(id<MTLComputePipelineState> state, bool requiresAS)
-        : state_(state), requiresAccelerationStructure_(requiresAS) {}
+    Impl(id<MTLComputePipelineState> rayState, id<MTLComputePipelineState> accumulateState)
+        : rayState_(rayState), accumulateState_(accumulateState) {}
 
-    ~Impl() { state_ = nil; }
+    ~Impl() {
+        rayState_ = nil;
+        accumulateState_ = nil;
+    }
 
-    bool isValid() const noexcept { return state_ != nil; }
-    id<MTLComputePipelineState> pipeline() const noexcept { return state_; }
-    bool requiresAccelerationStructure() const noexcept { return requiresAccelerationStructure_; }
+    [[nodiscard]] bool isValid() const noexcept { return rayState_ != nil; }
+    [[nodiscard]] id<MTLComputePipelineState> rayPipeline() const noexcept { return rayState_; }
+    [[nodiscard]] id<MTLComputePipelineState> accumulatePipeline() const noexcept { return accumulateState_; }
 
 private:
-    id<MTLComputePipelineState> state_ = nil;
-    bool requiresAccelerationStructure_ = false;
+    id<MTLComputePipelineState> rayState_ = nil;
+    id<MTLComputePipelineState> accumulateState_ = nil;
 };
 
 RayTracingPipeline::RayTracingPipeline() = default;
@@ -74,51 +77,57 @@ bool RayTracingPipeline::initialize(MetalContext& context, const std::string& sh
         return false;
     }
 
-    bool usesHardwareKernel = true;
-    id<MTLFunction> kernel = [library newFunctionWithName:@"rtHardwareKernel"];
-    if (!kernel) {
-        usesHardwareKernel = false;
-        core::Logger::warn("RTPipeline", "rtHardwareKernel unavailable; falling back to rtGradientKernel");
-        kernel = [library newFunctionWithName:@"rtGradientKernel"];
-    }
+    auto makePipeline = [&](NSString* functionName, NSString* label) -> id<MTLComputePipelineState> {
+        NSError* error = nil;
+        id<MTLFunction> function = [library newFunctionWithName:functionName];
+        if (!function) {
+            core::Logger::error("RTPipeline", "Missing shader function %s", functionName.UTF8String);
+            return nil;
+        }
 
-    if (!kernel) {
-        core::Logger::error("RTPipeline", "No suitable ray tracing kernel found in %s", shaderLibraryPath.c_str());
+        id<MTLComputePipelineState> state = nil;
+        if (@available(macOS 13.0, *)) {
+            MTLComputePipelineDescriptor* descriptor = [[MTLComputePipelineDescriptor alloc] init];
+            descriptor.computeFunction = function;
+            descriptor.label = label;
+            state = [device newComputePipelineStateWithDescriptor:descriptor
+                                                          options:0
+                                                       reflection:nil
+                                                            error:&error];
+        } else {
+            state = [device newComputePipelineStateWithFunction:function error:&error];
+        }
+
+        if (!state || error) {
+            const char* message = error ? error.localizedDescription.UTF8String : "unknown error";
+            core::Logger::error("RTPipeline", "Failed to create pipeline %s (%s)", label.UTF8String, message);
+            return nil;
+        }
+        return state;
+    };
+
+    id<MTLComputePipelineState> rayState = makePipeline(@"rayKernel", @"RTRHardwareRayKernel");
+    id<MTLComputePipelineState> accumulateState = makePipeline(@"accumulateKernel", @"RTRHardwareAccumulateKernel");
+
+    if (rayState == nil) {
+        core::Logger::error("RTPipeline", "Failed to build hardware ray tracing kernel");
+        impl_.reset();
         return false;
     }
 
-    NSError* pipelineError = nil;
-    id<MTLComputePipelineState> pipelineState = nil;
-    if (@available(macOS 13.0, *)) {
-        MTLComputePipelineDescriptor* descriptor = [[MTLComputePipelineDescriptor alloc] init];
-        descriptor.computeFunction = kernel;
-        descriptor.label = @"RTRHardwareRayKernel";
-        pipelineState = [device newComputePipelineStateWithDescriptor:descriptor
-                                                              options:0
-                                                           reflection:nil
-                                                                error:&pipelineError];
-    } else {
-        pipelineState = [device newComputePipelineStateWithFunction:kernel error:&pipelineError];
-    }
-
-    if (!pipelineState || pipelineError) {
-        core::Logger::error("RTPipeline", "Failed to create compute pipeline: %s",
-                            pipelineError.localizedDescription.UTF8String ? pipelineError.localizedDescription.UTF8String : "unknown error");
-        return false;
-    }
-
-    impl_ = std::make_unique<Impl>(pipelineState, usesHardwareKernel);
+    impl_ = std::make_unique<Impl>(rayState, accumulateState);
+    core::Logger::info("RTPipeline", "Hardware ray tracing kernels initialized from %s", resolvedPath.c_str());
     return true;
 }
 
 bool RayTracingPipeline::isValid() const noexcept { return impl_ && impl_->isValid(); }
 
-void* RayTracingPipeline::rawPipelineState() const noexcept {
-    return impl_ && impl_->isValid() ? (__bridge void*)impl_->pipeline() : nullptr;
+void* RayTracingPipeline::rayPipelineState() const noexcept {
+    return impl_ ? (__bridge void*)impl_->rayPipeline() : nullptr;
 }
 
-bool RayTracingPipeline::requiresAccelerationStructure() const noexcept {
-    return impl_ && impl_->requiresAccelerationStructure();
+void* RayTracingPipeline::accumulationPipelineState() const noexcept {
+    return impl_ ? (__bridge void*)impl_->accumulatePipeline() : nullptr;
 }
 
 }  // namespace rtr::rendering

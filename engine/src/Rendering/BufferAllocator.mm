@@ -81,7 +81,9 @@ BufferHandle BufferAllocator::createBuffer(std::size_t length, const void* initi
 
         if (initialData) {
             std::memcpy([buffer contents], initialData, length);
-            [buffer didModifyRange:NSMakeRange(0, length)];
+            if ([buffer storageMode] == MTLStorageModeManaged) {
+                [buffer didModifyRange:NSMakeRange(0, length)];
+            }
         }
 
         return BufferHandle(std::make_unique<BufferHandle::Impl>(buffer, length));
@@ -138,7 +140,9 @@ BufferHandle BufferAllocator::createPrivateBuffer(std::size_t length,
             }
 
             std::memcpy([staging contents], initialData, length);
-            [staging didModifyRange:NSMakeRange(0, length)];
+            if ([staging storageMode] == MTLStorageModeManaged) {
+                [staging didModifyRange:NSMakeRange(0, length)];
+            }
 
             id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
             if (!commandBuffer) {

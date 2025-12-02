@@ -140,6 +140,14 @@ EngineConfig ConfigLoader::loadEngineConfig(const std::filesystem::path& path) {
         config.sampleSeed = parseUInt(it->second, config.sampleSeed);
     }
 
+    if (auto it = pairs.find("maxBounces"); it != pairs.end()) {
+        config.maxHardwareBounces = parseUInt(it->second, config.maxHardwareBounces);
+    }
+
+    if (config.maxHardwareBounces == 0) {
+        config.maxHardwareBounces = 1;
+    }
+
     return config;
 }
 

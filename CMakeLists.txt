@@ -9,9 +9,7 @@ include(FetchContent)
 
 # Build options
 option(RTR_BUILD_SAMPLE "Build RTR sample application" ON)
-option(RTR_BUILD_MPS_SAMPLE "Build MPS sample application" ON)
 option(RTR_BUILD_ONSCREEN_SAMPLE "Build RTR on-screen sample (MetalKit UI)" ON)
-option(RTR_ENABLE_MPS "Enable MPS path tracing backend" ON)
 option(RTR_BUILD_TESTS "Build RTR unit tests" ON)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -74,8 +72,6 @@ add_library(RTRMetalEngine STATIC
     engine/src/Rendering/GeometryStore.cpp
     engine/src/Rendering/MetalContext.mm
     engine/src/Rendering/Renderer.mm
-    engine/src/MPS/MPSPathTracer.mm
-    engine/src/MPS/MPSRenderer.mm
     engine/src/MPS/MPSSceneConverter.cpp
     engine/src/Scene/Mesh.cpp
     engine/src/Scene/Scene.cpp
@@ -116,24 +112,20 @@ set_source_files_properties(
     engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
     engine/src/Rendering/RayTracingPipeline.mm
-    engine/src/MPS/MPSPathTracer.mm
-    engine/src/MPS/MPSRenderer.mm
     engine/src/Core/ImageLoader.mm
     engine/src/Rendering/Renderer.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 
 # Sample application -------------------------------------------------------
 if(RTR_BUILD_SAMPLE)
-    add_executable(RTRMetalSample sample/src/main.cpp)
+    add_executable(RTRMetalSample
+        sample/src/main.cpp
+        sample/src/SampleAppUtils.cpp)
     target_link_libraries(RTRMetalSample PRIVATE RTRMetalEngine)
+    target_include_directories(RTRMetalSample PRIVATE sample/src)
     add_dependencies(RTRMetalSample RTRMetalShaders)
     target_compile_features(RTRMetalSample PRIVATE cxx_std_20)
-endif()
-
-if(RTR_BUILD_MPS_SAMPLE)
-    add_executable(RTRMetalMPSSample sample/src/mps_main.mm)
-    target_link_libraries(RTRMetalMPSSample PRIVATE RTRMetalEngine)
-    add_dependencies(RTRMetalMPSSample RTRMetalShaders)
+    target_compile_definitions(RTRMetalSample PRIVATE RTR_SOURCE_DIR="${CMAKE_SOURCE_DIR}" RTR_BINARY_DIR="${CMAKE_BINARY_DIR}")
 endif()
 
 if(RTR_BUILD_ONSCREEN_SAMPLE)
@@ -142,9 +134,12 @@ if(RTR_BUILD_ONSCREEN_SAMPLE)
         sample/src/onscreen/AppDelegate.h
         sample/src/onscreen/AppDelegate.mm
         sample/src/onscreen/ViewController.h
-        sample/src/onscreen/ViewController.mm)
+        sample/src/onscreen/ViewController.mm
+        sample/src/SampleAppUtils.cpp)
     target_link_libraries(RTRMetalOnScreenSample PRIVATE RTRMetalEngine "-framework Cocoa" "-framework MetalKit" "-framework QuartzCore")
     target_compile_features(RTRMetalOnScreenSample PRIVATE cxx_std_20)
+    target_include_directories(RTRMetalOnScreenSample PRIVATE sample/src)
+    target_compile_definitions(RTRMetalOnScreenSample PRIVATE RTR_SOURCE_DIR="${CMAKE_SOURCE_DIR}" RTR_BINARY_DIR="${CMAKE_BINARY_DIR}")
     add_dependencies(RTRMetalOnScreenSample RTRMetalShaders)
     add_custom_command(TARGET RTRMetalOnScreenSample POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_BUNDLE_CONTENT_DIR:RTRMetalOnScreenSample>/Resources
@@ -178,12 +173,7 @@ if(RTR_BUILD_TESTS)
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp
         tests/src/scene/ScenesTests.cpp
-        tests/src/mps/MPSSceneConverterTests.cpp
-        tests/src/mps/MPSRendererDeterminismTests.cpp
-        tests/src/mps/MPSRendererGpuHashTests.cpp
-        tests/src/mps/MPSRendererAccumulationTests.cpp
-        tests/src/mps/MPSRendererResolutionTests.mm
-        tests/src/mps/MPSRendererImageComparisonTests.mm)
+        tests/src/mps/MPSSceneConverterTests.cpp)
     target_link_libraries(RTRMetalTests
         PRIVATE RTRMetalEngine GTest::gtest_main)
     add_dependencies(RTRMetalTests RTRMetalShaders)

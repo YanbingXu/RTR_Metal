@@ -1,5 +1,7 @@
 # Stage 3B – MPS Renderer Progress Report
 
+> **Status (2025-11-06)**: Software/MPS renderer work (including `RTRMetalMPSSample`) is paused. This report is preserved as historical context while Stage 3D concentrates on hardware ray tracing.
+
 ## Current Status
 - **MPSPathTracer refactor** – Device and intersector setup now happens independently from scene upload, letting us validate hardware support and log failures clearly. `uploadTriangleScene` handles buffer creation, acceleration-structure rebuilds, and stores CPU copies for shading.
 - **Scene conversion pipeline** – `MPSSceneConverter` walks the engine `Scene`, validates geometry, and generates position/index/color arrays for the tracer. When materials are monochrome, a simple RGB palette is assigned per-vertex so diagnostic renders show obvious barycentric shading.

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstdint>
 #include <cstdlib>
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -17,10 +19,16 @@
 #include "RTRMetalEngine/Core/FileSystem.hpp"
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/Rendering/Renderer.hpp"
-#include "RTRMetalEngine/Scene/CornellBox.hpp"
-#include "RTRMetalEngine/Scene/DemoScenes.hpp"
+#include "SampleAppUtils.hpp"
 
 namespace fs = std::filesystem;
+
+#ifndef RTR_SOURCE_DIR
+#define RTR_SOURCE_DIR ""
+#endif
+#ifndef RTR_BINARY_DIR
+#define RTR_BINARY_DIR ""
+#endif
 
 namespace {
 
@@ -36,6 +44,11 @@ struct CommandLineOptions {
     bool printHash = false;
     bool debugAlbedo = false;
     bool overrideShadingMode = false;
+    std::optional<bool> accumulationEnabled;
+    std::optional<std::uint32_t> accumulationFrames;
+    std::optional<std::uint32_t> samplesPerPixel;
+    std::optional<std::uint32_t> sampleSeed;
+    std::optional<std::uint32_t> maxBounces;
 };
 
 void printUsage() {
@@ -45,8 +58,13 @@ void printUsage() {
               << "  --asset-root=<path>    资产目录，用于 reflective/glass 场景 (默认 assets)\n"
               << "  --resolution=WxH       渲染分辨率，例 1280x720 (默认 512x512)\n"
               << "  --frames=N             渲染帧数，用于累计或调试 (默认 1)\n"
-              << "  --mode=auto|hardware|fallback  选择硬件 RT 或渐变回退 (默认 auto)\n"
+              << "  --mode=auto|hardware          选择硬件模式（默认 auto，与硬件模式一致）\n"
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
+              << "  --accumulation=on|off  开启或关闭累计 (覆盖配置文件)\n"
+              << "  --accumulation-frames=N 限定累计帧数 (0 表示无限制)\n"
+              << "  --samples-per-pixel=N  每像素采样次数，0 表示无限制 (默认 1)\n"
+              << "  --sample-seed=N        采样随机种子\n"
+              << "  --max-bounces=N        硬件 RT 最大弹射次数 (至少 1)\n"
               << "  --hash                 渲染完输出图像的 FNV-1a hash\n"
               << "  --debug-albedo         调试模式：直接输出材质反照率\n"
               << "  --help                 打印帮助\n";
@@ -71,6 +89,32 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseResolution(const std
         return std::make_pair(static_cast<std::uint32_t>(width), static_cast<std::uint32_t>(height));
     } catch (const std::exception&) {
         return std::nullopt;
+    }
+}
+
+bool parseBoolArgument(std::string value, const char* optionName) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (value == "1" || value == "true" || value == "on" || value == "yes") {
+        return true;
+    }
+    if (value == "0" || value == "false" || value == "off" || value == "no") {
+        return false;
+    }
+    throw std::runtime_error(std::string("Invalid value for ") + optionName + ": " + value);
+}
+
+std::uint32_t parseUIntArgument(const std::string& text, const char* optionName) {
+    try {
+        const unsigned long parsed = std::stoul(text);
+        if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+            throw std::runtime_error("Value out of range for " + std::string(optionName));
+        }
+        return static_cast<std::uint32_t>(parsed);
+    } catch (const std::exception&) {
+        throw std::runtime_error("Invalid numeric value for " + std::string(optionName) + ": " + text);
     }
 }
 
@@ -114,35 +158,30 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             options.debugAlbedo = true;
         } else if (arg.rfind("--config=", 0) == 0) {
             options.configPath = fs::path(arg.substr(9));
+        } else if (arg.rfind("--accumulation=", 0) == 0) {
+            options.accumulationEnabled = parseBoolArgument(arg.substr(15), "--accumulation");
+        } else if (arg == "--accumulation") {
+            options.accumulationEnabled = true;
+        } else if (arg == "--no-accumulation") {
+            options.accumulationEnabled = false;
+        } else if (arg.rfind("--accumulation-frames=", 0) == 0) {
+            options.accumulationFrames = parseUIntArgument(arg.substr(22), "--accumulation-frames");
+        } else if (arg.rfind("--samples-per-pixel=", 0) == 0) {
+            options.samplesPerPixel = parseUIntArgument(arg.substr(22), "--samples-per-pixel");
+        } else if (arg.rfind("--sample-seed=", 0) == 0) {
+            options.sampleSeed = parseUIntArgument(arg.substr(14), "--sample-seed");
+        } else if (arg.rfind("--max-bounces=", 0) == 0) {
+            const auto value = parseUIntArgument(arg.substr(14), "--max-bounces");
+            if (value == 0) {
+                throw std::runtime_error("--max-bounces must be >= 1");
+            }
+            options.maxBounces = value;
         } else {
             throw std::runtime_error("Unknown option: " + arg);
         }
     }
 
     return options;
-}
-
-rtr::scene::Scene buildScene(const std::string& sceneName, const fs::path& assetRoot) {
-    const std::string lower = [&]() {
-        std::string s = sceneName;
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return s;
-    }();
-
-    if (lower == "cornell") {
-        return rtr::scene::createCornellBoxScene(assetRoot);
-    }
-    if (lower == "reflective") {
-        rtr::core::Logger::info("Sample", "Loading reflective scene from %s", assetRoot.string().c_str());
-        return rtr::scene::createReflectiveDemoScene(assetRoot);
-    }
-    if (lower == "glass") {
-        rtr::core::Logger::info("Sample", "Loading glass scene from %s", assetRoot.string().c_str());
-        return rtr::scene::createGlassDemoScene(assetRoot);
-    }
-
-    rtr::core::Logger::warn("Sample", "Unknown scene '%s', falling back to Cornell Box", sceneName.c_str());
-    return rtr::scene::createCornellBoxScene();
 }
 
 std::uint64_t computeFNVHash(const fs::path& path) {
@@ -167,22 +206,24 @@ std::uint64_t computeFNVHash(const fs::path& path) {
     return hash;
 }
 
-rtr::core::EngineConfig loadEngineConfig(const fs::path& configPath) {
-    rtr::core::EngineConfig config{};
-    if (rtr::core::FileSystem::exists(configPath)) {
-        config = rtr::core::ConfigLoader::loadEngineConfig(configPath);
-    } else {
-        config.applicationName = "RTR Metal Sample";
-        config.shaderLibraryPath = "shaders/RTRShaders.metallib";
-        config.shadingMode = "auto";
-        rtr::core::Logger::warn("Sample", "Config file not found at %s, using defaults", configPath.string().c_str());
-    }
-    return config;
-}
-
 }  // namespace
 
 int main(int argc, const char* argv[]) {
+    const fs::path sourceRoot = fs::path(RTR_SOURCE_DIR);
+    const fs::path binaryRoot = fs::path(RTR_BINARY_DIR);
+    const fs::path currentDir = fs::current_path();
+
+    auto resolveWithDefaults = [&](const fs::path& candidate,
+                                   bool requireDirectory,
+                                   std::initializer_list<fs::path> preferredBases = {}) {
+        std::vector<fs::path> bases;
+        bases.reserve(preferredBases.size() + 3);
+        bases.insert(bases.end(), preferredBases.begin(), preferredBases.end());
+        bases.push_back(currentDir);
+        bases.push_back(binaryRoot);
+        bases.push_back(sourceRoot);
+        return rtr::sample::resolvePath(candidate, requireDirectory, bases);
+    };
     CommandLineOptions options{};
     try {
         options = parseOptions(argc, argv);
@@ -193,12 +234,10 @@ int main(int argc, const char* argv[]) {
     }
 
     if (!options.assetRoot.empty()) {
-        std::error_code ec;
-        fs::path absoluteRoot = fs::absolute(options.assetRoot, ec);
-        if (!ec) {
-            options.assetRoot = absoluteRoot;
-        }
-        if (!fs::exists(options.assetRoot)) {
+        if (auto resolvedAssetRoot = resolveWithDefaults(options.assetRoot, true)) {
+            options.assetRoot = *resolvedAssetRoot;
+            rtr::core::Logger::info("Sample", "Using asset root: %s", options.assetRoot.string().c_str());
+        } else {
             rtr::core::Logger::warn("Sample",
                                     "Asset root '%s' does not exist; reflective/glass scenes may fall back",
                                     options.assetRoot.string().c_str());
@@ -206,15 +245,54 @@ int main(int argc, const char* argv[]) {
     }
 
     rtr::core::EngineConfig config{};
+    const auto configCandidate = resolveWithDefaults(options.configPath, false);
+    fs::path resolvedConfigPath = configCandidate.value_or(options.configPath);
+    fs::path configDirectory = configCandidate ? configCandidate->parent_path() : fs::path{};
+    rtr::core::Logger::info("Sample", "Loading config: %s", resolvedConfigPath.string().c_str());
+
     try {
-        config = loadEngineConfig(options.configPath);
+        config = rtr::sample::loadEngineConfig(resolvedConfigPath);
     } catch (const std::exception& ex) {
         rtr::core::Logger::error("Sample", "Failed to load config: %s", ex.what());
         return 1;
     }
 
+    std::optional<fs::path> resolvedShaderLibrary;
+    if (!configDirectory.empty()) {
+        resolvedShaderLibrary = resolveWithDefaults(config.shaderLibraryPath, false, {configDirectory});
+    } else {
+        resolvedShaderLibrary = resolveWithDefaults(config.shaderLibraryPath, false);
+    }
+    if (resolvedShaderLibrary) {
+        config.shaderLibraryPath = resolvedShaderLibrary->string();
+        rtr::core::Logger::info("Sample", "Using shader library: %s", config.shaderLibraryPath.c_str());
+    } else {
+        rtr::core::Logger::warn("Sample",
+                                "Shader library '%s' not found relative to working/binary/source/config directories",
+                                config.shaderLibraryPath.c_str());
+    }
+
     if (options.overrideShadingMode) {
         config.shadingMode = options.shadingMode;
+    }
+
+    if (options.accumulationEnabled.has_value()) {
+        config.accumulationEnabled = *options.accumulationEnabled;
+    }
+    if (options.accumulationFrames.has_value()) {
+        config.accumulationFrames = *options.accumulationFrames;
+    }
+    if (options.samplesPerPixel.has_value()) {
+        config.samplesPerPixel = *options.samplesPerPixel;
+    }
+    if (options.sampleSeed.has_value()) {
+        config.sampleSeed = *options.sampleSeed;
+    }
+    if (options.maxBounces.has_value()) {
+        config.maxHardwareBounces = *options.maxBounces;
+    }
+    if (config.maxHardwareBounces == 0) {
+        config.maxHardwareBounces = 1;
     }
 
     rtr::rendering::Renderer renderer{config};
@@ -222,7 +300,7 @@ int main(int argc, const char* argv[]) {
     renderer.setRenderSize(options.width, options.height);
     renderer.setDebugMode(options.debugAlbedo);
 
-    rtr::scene::Scene scene = buildScene(options.sceneName, options.assetRoot);
+    rtr::scene::Scene scene = rtr::sample::buildScene(options.sceneName, options.assetRoot);
     if (!renderer.loadScene(scene)) {
         rtr::core::Logger::error("Sample", "Failed to load requested scene");
         return 1;
@@ -233,10 +311,9 @@ int main(int argc, const char* argv[]) {
         return static_cast<char>(std::tolower(c));
     });
 
-    const bool expectHardware = shadingMode != "cpu" && shadingMode != "fallback" && shadingMode != "gradient";
-
-    if (expectHardware && !renderer.isRayTracingReady()) {
-        rtr::core::Logger::warn("Sample", "Ray tracing pipeline not ready; output will use fallback gradient");
+    if (!renderer.isRayTracingReady()) {
+        rtr::core::Logger::error("Sample", "Hardware ray tracing pipeline is not ready on this device");
+        return 1;
     }
 
     for (std::uint32_t i = 0; i < options.frames; ++i) {

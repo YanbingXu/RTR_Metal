@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
+#import <Metal/MTLCaptureManager.h>
 #ifndef MTL_ENABLE_RAYTRACING
 #define MTL_ENABLE_RAYTRACING 1
 #endif
@@ -8,10 +9,13 @@
 
 #include "RTRMetalEngine/Core/ImageLoader.hpp"
 #include "RTRMetalEngine/Core/Logger.hpp"
+#include "RTRMetalEngine/Core/Math.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructure.hpp"
 #include "RTRMetalEngine/Rendering/AccelerationStructureBuilder.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
+#include "RTRMetalEngine/MPS/MPSSceneConverter.hpp"
+#include "RTRMetalEngine/MPS/MPSUniforms.hpp"
 #include "RTRMetalEngine/Rendering/MetalContext.hpp"
 #include "RTRMetalEngine/Rendering/RayTracingPipeline.hpp"
 #include "RTRMetalEngine/Rendering/RayTracingShaderTypes.h"
@@ -19,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -30,9 +35,11 @@
 #include <random>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <cstdlib>
 
 #include "RTRMetalEngine/Scene/CornellBox.hpp"
 #include "RTRMetalEngine/Scene/Scene.hpp"
@@ -45,6 +52,7 @@ namespace {
 constexpr std::uint32_t kDiagnosticWidth = 512;
 constexpr std::uint32_t kDiagnosticHeight = 512;
 constexpr std::size_t kRayTracingPixelStride = sizeof(float) * 4;  // RGBA32F
+constexpr float kDefaultVerticalFovDegrees = 43.0f;
 
 float srgbChannelToLinear(float value) {
     if (value <= 0.0f) {
@@ -74,8 +82,7 @@ uint8_t floatToSRGBByte(float value) {
 enum class RayTracingShadingMode {
     Auto,
     HardwareOnly,
-    GradientOnly,
-};
+}; 
 
 std::string_view shadingModeLabel(RayTracingShadingMode mode) {
     switch (mode) {
@@ -83,8 +90,6 @@ std::string_view shadingModeLabel(RayTracingShadingMode mode) {
         return "auto";
     case RayTracingShadingMode::HardwareOnly:
         return "hardware";
-    case RayTracingShadingMode::GradientOnly:
-        return "gradient";
     }
     return "auto";
 }
@@ -98,9 +103,33 @@ RayTracingShadingMode parseShadingMode(std::string value) {
         return RayTracingShadingMode::HardwareOnly;
     }
     if (value == "cpu" || value == "fallback" || value == "gradient") {
-        return RayTracingShadingMode::GradientOnly;
+        core::Logger::warn("Renderer",
+                            "Software/fallback shading modes are no longer available; defaulting to auto");
+        return RayTracingShadingMode::Auto;
     }
     return RayTracingShadingMode::Auto;
+}
+
+scene::Mesh makeCombinedMeshFromSceneData(const MPSSceneData& sceneData) {
+    std::vector<scene::Vertex> vertices;
+    vertices.reserve(sceneData.positions.size());
+    for (std::size_t i = 0; i < sceneData.positions.size(); ++i) {
+        scene::Vertex vertex{};
+        const vector_float3 pos = sceneData.positions[i];
+        vertex.position = simd_make_float3(pos.x, pos.y, pos.z);
+        if (i < sceneData.normals.size()) {
+            const vector_float3 normal = sceneData.normals[i];
+            vertex.normal = simd_make_float3(normal.x, normal.y, normal.z);
+        }
+        if (i < sceneData.texcoords.size()) {
+            const vector_float2 tex = sceneData.texcoords[i];
+            vertex.texcoord = simd_make_float2(tex.x, tex.y);
+        }
+        vertices.push_back(vertex);
+    }
+
+    std::vector<std::uint32_t> indices(sceneData.indices.begin(), sceneData.indices.end());
+    return scene::Mesh(std::move(vertices), std::move(indices));
 }
 
 }  // namespace
@@ -132,38 +161,58 @@ struct RayTracingTarget {
 struct RayTracingResources {
     id<MTLTexture> accumulationTexture = nil;
     id<MTLTexture> randomTexture = nil;
-    id<MTLBuffer> resourceBuffer = nil;
+    id<MTLTexture> shadeTexture = nil;
+    id<MTLBuffer> sceneLimitsBuffer = nil;
     BufferHandle instanceBuffer;
     BufferHandle materialBuffer;
     BufferHandle textureInfoBuffer;
     BufferHandle textureDataBuffer;
-    BufferHandle fallbackVertexBuffer;
-    BufferHandle fallbackIndexBuffer;
+    BufferHandle positionsBuffer;
+    BufferHandle normalsBuffer;
+    BufferHandle colorsBuffer;
+    BufferHandle texcoordBuffer;
+    BufferHandle indicesBuffer;
+    BufferHandle primitiveMaterialBuffer;
+    BufferHandle hitDebugBuffer;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
-    NSUInteger resourceHeaderSize = 0;
-    std::size_t meshCount = 0;
-    std::size_t textureCount = 0;
+    MPSSceneLimits sceneLimits{};
 
     void reset() {
         accumulationTexture = nil;
         randomTexture = nil;
-        resourceBuffer = nil;
+        shadeTexture = nil;
+        sceneLimitsBuffer = nil;
         instanceBuffer = {};
         materialBuffer = {};
         textureInfoBuffer = {};
         textureDataBuffer = {};
-        fallbackVertexBuffer = {};
-        fallbackIndexBuffer = {};
+        positionsBuffer = {};
+        normalsBuffer = {};
+        colorsBuffer = {};
+        texcoordBuffer = {};
+        indicesBuffer = {};
+        primitiveMaterialBuffer = {};
+        hitDebugBuffer = {};
         width = 0;
         height = 0;
-        resourceHeaderSize = 0;
-        meshCount = 0;
-        textureCount = 0;
+        sceneLimits = {};
+    }
+
+    void resetForResize() {
+        accumulationTexture = nil;
+        shadeTexture = nil;
+        width = 0;
+        height = 0;
     }
 };
 
 constexpr std::size_t kUniformRingSize = 3;
+
+struct CameraRig {
+    simd_float3 eye = simd_make_float3(0.0f, 1.2f, 5.4f);
+    simd_float3 target = simd_make_float3(0.0f, 1.0f, 0.0f);
+};
 
 struct Renderer::Impl {
     explicit Impl(core::EngineConfig cfg)
@@ -174,25 +223,25 @@ struct Renderer::Impl {
         } else {
             core::Logger::info("Renderer", "Renderer configured for %s", config.applicationName.c_str());
             context.logDeviceInfo();
-            if (shadingMode == RayTracingShadingMode::GradientOnly) {
+            const char* captureFlag = std::getenv("RTR_METAL_CAPTURE");
+            if (captureFlag && captureFlag[0] != '\0' && std::strcmp(captureFlag, "0") != 0) {
+                metalCaptureEnabled = true;
+                std::filesystem::path capturePath = std::filesystem::current_path() / "metal_capture.gputrace";
+                metalCaptureOutputPath = capturePath.string();
                 core::Logger::info("Renderer",
-                                   "Gradient-only shading mode selected; skipping hardware ray tracing setup");
-            } else {
-                if (!asBuilder.isRayTracingSupported()) {
-                    core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
-                } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
-                    core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
-                }
+                                   "Metal capture enabled via RTR_METAL_CAPTURE (output=%s)",
+                                   metalCaptureOutputPath.c_str());
             }
-            if (!initializeScene()) {
-                core::Logger::warn("Renderer", "Scene initialization failed; falling back to gradient pipeline");
+            if (!asBuilder.isRayTracingSupported()) {
+                core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
+            } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
+                core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
             }
         }
     }
 
     ~Impl() {
         target.reset();
-        fallbackRayGenState = nil;
         resources.reset();
         for (std::size_t i = 0; i < uniformBuffers.size(); ++i) {
             uniformBuffers[i] = nil;
@@ -214,10 +263,10 @@ struct Renderer::Impl {
         }
 
         bool wroteImage = false;
-        const bool hardwareDesired = wantsHardwareRayTracing() && rayTracingPipeline.isValid();
+        const bool hardwarePipelineReady = rayTracingPipeline.isValid();
         const bool logFrame = writeOutput || frameCounter == 0;
 
-        if (hardwareDesired && isRayTracingReady()) {
+        if (hardwarePipelineReady && isRayTracingReady()) {
             if (logFrame) {
                 core::Logger::info("Renderer",
                                    "Dispatching hardware ray tracing (%ux%u, mode=%s)",
@@ -228,33 +277,23 @@ struct Renderer::Impl {
             if (dispatchRayTracingPass()) {
                 wroteImage = true;
             } else {
-                core::Logger::warn("Renderer",
-                                   "Hardware ray tracing dispatch failed; %s fallback %s",
-                                   allowsGradientFallback() ? "attempting" : "skipping",
-                                   allowsGradientFallback() ? "gradient" : "(disabled)");
+                core::Logger::warn("Renderer", "Hardware ray tracing dispatch failed");
             }
-        } else if (hardwareDesired && shadingMode == RayTracingShadingMode::HardwareOnly) {
-            core::Logger::error("Renderer",
-                                "Hardware-only mode requested but ray tracing resources are unavailable");
-        }
-
-        if (!wroteImage && allowsGradientFallback()) {
-            if (!dispatchFallbackGradient()) {
-                core::Logger::warn("Renderer", "Fallback gradient dispatch failed");
-            } else {
-                wroteImage = true;
-            }
+        } else if (hardwarePipelineReady) {
+            core::Logger::error("Renderer", "Ray tracing resources are unavailable");
+        } else if (shadingMode == RayTracingShadingMode::HardwareOnly) {
+            core::Logger::error("Renderer", "Hardware-only mode requested but ray tracing pipeline is invalid");
         }
 
         if (wroteImage) {
             if (writeOutput) {
                 writeRayTracingOutput();
             }
+            frameCounter++;
         } else if (logFrame) {
             core::Logger::warn("Renderer", "No renderable output produced this frame");
         }
 
-        frameCounter++;
         if (writeOutput) {
             std::cout << "Renderer frame stub executed using " << context.deviceName() << std::endl;
         }
@@ -276,10 +315,10 @@ struct Renderer::Impl {
     AccelerationStructure topLevelStructure;
     RayTracingTarget target;
     RayTracingResources resources;
-    id<MTLComputePipelineState> fallbackRayGenState = nil;
     std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
     std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
+    uint32_t accumulationFrameIndex = 0;
     bool accumulationInvalidated = false;
     std::vector<RayTracingInstanceResource> instanceResources;
     std::vector<RayTracingMaterialResource> materialResources;
@@ -290,154 +329,78 @@ struct Renderer::Impl {
     std::uint32_t targetHeight = kDiagnosticHeight;
     bool debugAlbedo = false;
     RayTracingShadingMode shadingMode = RayTracingShadingMode::Auto;
+    bool metalCaptureEnabled = false;
+    bool metalCaptureInProgress = false;
+    bool metalCaptureCompleted = false;
+    std::string metalCaptureOutputPath;
+    CameraRig cameraRig;
+    core::math::BoundingBox sceneBounds = core::math::BoundingBox::makeEmpty();
+    bool hitDebugLogged = false;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
     }
 
-    [[nodiscard]] bool wantsHardwareRayTracing() const noexcept {
-        return shadingMode != RayTracingShadingMode::GradientOnly;
+    [[nodiscard]] static CameraRig makeReferenceCameraRig() {
+        return CameraRig{};
     }
 
-    [[nodiscard]] bool allowsGradientFallback() const noexcept {
-        return shadingMode != RayTracingShadingMode::HardwareOnly;
+    [[nodiscard]] bool hasValidSceneBounds() const noexcept {
+        const simd_float3 minPoint = sceneBounds.min;
+        const simd_float3 maxPoint = sceneBounds.max;
+        return std::isfinite(minPoint.x) && std::isfinite(minPoint.y) && std::isfinite(minPoint.z) &&
+               std::isfinite(maxPoint.x) && std::isfinite(maxPoint.y) && std::isfinite(maxPoint.z) &&
+               (minPoint.x <= maxPoint.x) && (minPoint.y <= maxPoint.y) && (minPoint.z <= maxPoint.z);
     }
 
-    [[nodiscard]] bool ensureFallbackPipeline() {
-        if (!context.isValid()) {
-            return false;
+    void updateCameraRigFromBounds() {
+        if (!hasValidSceneBounds()) {
+            cameraRig = makeReferenceCameraRig();
+            return;
         }
 
-        if (fallbackRayGenState != nil) {
-            return true;
-        }
+        const simd_float3 center = (sceneBounds.min + sceneBounds.max) * 0.5f;
+        const simd_float3 extent = sceneBounds.extent();
+        const float sceneWidth = std::max(extent.x, 1.0f);
+        const float sceneHeight = std::max(extent.y, 1.0f);
+        const float sceneDepth = std::max(extent.z, 1.0f);
 
-        id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
-        if (!device) {
-            core::Logger::error("Renderer", "Unable to acquire Metal device for fallback pipeline");
-            return false;
-        }
+        const float aspect = (targetHeight > 0u) ? static_cast<float>(targetWidth) / static_cast<float>(targetHeight)
+                                                 : 1.0f;
+        const float fovY = rtr::core::math::radians(kDefaultVerticalFovDegrees);
+        const float halfFovY = std::max(fovY * 0.5f, 1.0e-3f);
+        const float halfFovX = std::max(std::atan(std::tan(halfFovY) * aspect), 1.0e-3f);
 
-        // Resolve shader library path using a small set of build output fallbacks to align with RayTracingPipeline.
-        auto resolveLibraryPath = [&](const std::string& preferred) {
-            namespace fs = std::filesystem;
-            std::vector<std::string> candidates = {
-                preferred,
-                "cmake-build-debug/shaders/RTRShaders.metallib",
-                "cmake-build-release/shaders/RTRShaders.metallib",
-                "build/shaders/RTRShaders.metallib",
-            };
-            for (const auto& candidate : candidates) {
-                std::error_code ec;
-                if (fs::exists(candidate, ec)) {
-                    return candidate;
-                }
-            }
-            return preferred;
-        };
+        constexpr float kVerticalCoverage = 0.6f;
+        constexpr float kHorizontalCoverage = 1.0f;
+        const float verticalDistance = (sceneHeight * kVerticalCoverage) * 0.5f / std::tan(halfFovY);
+        const float horizontalDistance = (sceneWidth * kHorizontalCoverage) * 0.5f / std::tan(halfFovX);
+        const float depthMargin = sceneDepth * 0.75f + sceneWidth * 0.35f;
+        const float aspectScale = std::max(aspect, 1.0f);
+        const float distanceFromFrontWall = std::max({verticalDistance, horizontalDistance, depthMargin}) * aspectScale;
 
-        const std::string libraryPath = resolveLibraryPath(config.shaderLibraryPath);
+        CameraRig rig;
+        rig.target = simd_make_float3(center.x, center.y, center.z);
+        rig.eye = simd_make_float3(center.x,
+                                   center.y + sceneHeight * 0.08f,
+                                   sceneBounds.max.z + distanceFromFrontWall);
+        cameraRig = rig;
 
-        NSURL* libraryURL = [NSURL fileURLWithPath:[NSString stringWithUTF8String:libraryPath.c_str()]];
-        NSError* error = nil;
-        id<MTLLibrary> library = [device newLibraryWithURL:libraryURL error:&error];
-        auto errorMessage = [](NSError* err) {
-            return err ? err.localizedDescription.UTF8String : "<unknown error>";
-        };
-        if (!library || error) {
-            core::Logger::error("Renderer", "Failed to load shader library for fallback pipeline (%s)",
-                                errorMessage(error));
-            return false;
-        }
-
-        id<MTLFunction> rayGenFunction = [library newFunctionWithName:@"rayGenMain"];
-        if (!rayGenFunction) {
-            core::Logger::error("Renderer", "Fallback shader missing function 'rayGenMain'");
-            return false;
-        }
-
-        id<MTLComputePipelineState> pipelineState = [device newComputePipelineStateWithFunction:rayGenFunction
-                                                                                           error:&error];
-        if (!pipelineState || error) {
-            core::Logger::error("Renderer", "Failed to create fallback compute pipeline (%s)",
-                                errorMessage(error));
-            return false;
-        }
-
-        fallbackRayGenState = pipelineState;
-        core::Logger::info("Renderer", "Fallback compute pipeline initialized from %s", libraryPath.c_str());
-        return true;
+        core::Logger::info("Renderer",
+                            "Camera rig eye=(%.3f, %.3f, %.3f) target=(%.3f, %.3f, %.3f) aspect=%.3f",
+                            rig.eye.x,
+                            rig.eye.y,
+                            rig.eye.z,
+                            rig.target.x,
+                            rig.target.y,
+                            rig.target.z,
+                            aspect);
     }
 
-    [[nodiscard]] bool dispatchFallbackGradient() {
-        if (!ensureOutputTarget(targetWidth, targetHeight)) {
-            core::Logger::warn("Renderer", "Fallback dispatch skipped: no output target");
-            return false;
-        }
-
-        if (!ensureFallbackPipeline()) {
-            core::Logger::warn("Renderer", "Fallback dispatch skipped: no compute pipeline");
-            return false;
-        }
-
-        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)context.rawCommandQueue();
-        if (!queue) {
-            core::Logger::error("Renderer", "Command queue unavailable for fallback dispatch");
-            return false;
-        }
-
-        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
-        if (!commandBuffer) {
-            core::Logger::error("Renderer", "Failed to create command buffer for fallback dispatch");
-            return false;
-        }
-
-        id<MTLComputeCommandEncoder> computeEncoder = [commandBuffer computeCommandEncoder];
-        if (!computeEncoder) {
-            core::Logger::error("Renderer", "Failed to create compute encoder for fallback dispatch");
-            return false;
-        }
-
-        [computeEncoder setComputePipelineState:fallbackRayGenState];
-        [computeEncoder setTexture:target.colorTexture atIndex:0];
-
-        const NSUInteger threadWidth = 8;
-        const NSUInteger threadHeight = 8;
-        MTLSize threadsPerThreadgroup = MTLSizeMake(threadWidth, threadHeight, 1);
-        MTLSize threadgroups = MTLSizeMake((target.width + threadWidth - 1) / threadWidth,
-                                           (target.height + threadHeight - 1) / threadHeight,
-                                           1);
-        [computeEncoder dispatchThreadgroups:threadgroups threadsPerThreadgroup:threadsPerThreadgroup];
-        [computeEncoder endEncoding];
-
-        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
-        if (blitEncoder) {
-            MTLOrigin origin = MTLOriginMake(0, 0, 0);
-            MTLSize size = MTLSizeMake(target.width, target.height, 1);
-            const std::size_t bytesPerRow = static_cast<std::size_t>(target.width) * target.bytesPerPixel;
-            const std::size_t bytesPerImage =
-                static_cast<std::size_t>(target.width) * target.height * target.bytesPerPixel;
-            [blitEncoder copyFromTexture:target.colorTexture
-                              sourceSlice:0
-                              sourceLevel:0
-                             sourceOrigin:origin
-                               sourceSize:size
-                                 toBuffer:target.readbackBuffer
-                        destinationOffset:0
-                   destinationBytesPerRow:bytesPerRow
-                 destinationBytesPerImage:bytesPerImage];
-            [blitEncoder endEncoding];
-        }
-
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
-        core::Logger::info("Renderer", "Fallback gradient dispatch completed");
-        return true;
-    }
 
     [[nodiscard]] bool dispatchRayTracingPass() {
         if (!rayTracingPipeline.isValid()) {
-            core::Logger::warn("Renderer", "Compute ray tracing pipeline unavailable; skipping dispatch");
+            core::Logger::warn("Renderer", "Hardware ray tracing kernels unavailable; skipping dispatch");
             return false;
         }
 
@@ -470,132 +433,188 @@ struct Renderer::Impl {
             return false;
         }
 
+        startMetalCaptureIfNeeded(queue);
+        auto fail = [&]() {
+            stopMetalCaptureIfNeeded();
+            return false;
+        };
+
         id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
         if (!commandBuffer) {
             core::Logger::error("Renderer", "Failed to create command buffer for ray tracing dispatch");
-            return false;
+            return fail();
         }
 
-        id<MTLComputePipelineState> pipelineState =
-            (__bridge id<MTLComputePipelineState>)rayTracingPipeline.rawPipelineState();
-        if (!pipelineState) {
-            core::Logger::error("Renderer", "Ray tracing compute pipeline missing");
-            return false;
+        id<MTLBuffer> positions = (__bridge id<MTLBuffer>)resources.positionsBuffer.nativeHandle();
+        id<MTLBuffer> normals = (__bridge id<MTLBuffer>)resources.normalsBuffer.nativeHandle();
+        id<MTLBuffer> indices = (__bridge id<MTLBuffer>)resources.indicesBuffer.nativeHandle();
+        id<MTLBuffer> colors = (__bridge id<MTLBuffer>)resources.colorsBuffer.nativeHandle();
+        id<MTLBuffer> texcoords = (__bridge id<MTLBuffer>)resources.texcoordBuffer.nativeHandle();
+        id<MTLBuffer> primitiveMaterials = (__bridge id<MTLBuffer>)resources.primitiveMaterialBuffer.nativeHandle();
+        id<MTLBuffer> materialBuffer = resources.materialBuffer.isValid() ? (__bridge id<MTLBuffer>)resources.materialBuffer.nativeHandle() : nil;
+        id<MTLBuffer> textureInfoBuffer = resources.textureInfoBuffer.isValid() ? (__bridge id<MTLBuffer>)resources.textureInfoBuffer.nativeHandle() : nil;
+        id<MTLBuffer> textureDataBuffer = resources.textureDataBuffer.isValid() ? (__bridge id<MTLBuffer>)resources.textureDataBuffer.nativeHandle() : nil;
+
+        id<MTLBuffer> hitDebug = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
+
+        if (!positions || !indices || !resources.shadeTexture || !resources.sceneLimitsBuffer || hitDebug == nil) {
+            core::Logger::warn("Renderer", "Hardware scene buffers unavailable; skipping dispatch");
+            return fail();
         }
 
-        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-        if (!encoder) {
-            core::Logger::error("Renderer", "Failed to create compute encoder for ray tracing dispatch");
-            return false;
+        auto dispatch2D = [&](id<MTLComputePipelineState> pipelineState,
+                              auto&& encoderSetup) -> bool {
+            if (!pipelineState) {
+                return false;
+            }
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+            if (!encoder) {
+                return false;
+            }
+            [encoder setComputePipelineState:pipelineState];
+            encoderSetup(encoder);
+            const NSUInteger threadWidth = 8;
+            const NSUInteger threadHeight = 8;
+            MTLSize threadsPerThreadgroup = MTLSizeMake(threadWidth, threadHeight, 1);
+            MTLSize threadsPerGrid = MTLSizeMake(target.width, target.height, 1);
+            [encoder dispatchThreads:threadsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
+            [encoder endEncoding];
+            return true;
+        };
+
+        id<MTLComputePipelineState> rayPipeline =
+            (__bridge id<MTLComputePipelineState>)rayTracingPipeline.rayPipelineState();
+        id<MTLComputePipelineState> accumulatePipeline =
+            (__bridge id<MTLComputePipelineState>)rayTracingPipeline.accumulationPipelineState();
+
+        if (!rayPipeline) {
+            core::Logger::error("Renderer", "Hardware ray tracing kernel unavailable");
+            return fail();
         }
 
-        [encoder setComputePipelineState:pipelineState];
-        core::Logger::info("Renderer", "Using compute pipeline '%s' (requires AS: %s)",
-                           [[pipelineState label] UTF8String],
-                           rayTracingPipeline.requiresAccelerationStructure() ? "yes" : "no");
-        if (rayTracingPipeline.requiresAccelerationStructure()) {
-            id<MTLAccelerationStructure> accelerationStructure =
-                topLevelStructure.isValid() ? (__bridge id<MTLAccelerationStructure>)topLevelStructure.rawHandle() : nil;
-            if (accelerationStructure) {
-                core::Logger::info("Renderer", "Binding TLAS %p", accelerationStructure);
-                if ([encoder respondsToSelector:@selector(setAccelerationStructure:atBufferIndex:)]) {
-                    [encoder setAccelerationStructure:accelerationStructure atBufferIndex:0];
-                } else {
-                    core::Logger::warn("Renderer", "Compute encoder missing setAccelerationStructure API; TLAS not bound");
+        id<MTLAccelerationStructure> accelerationStructure =
+            (__bridge id<MTLAccelerationStructure>)topLevelStructure.rawHandle();
+        if (!accelerationStructure) {
+            core::Logger::error("Renderer", "Top-level acceleration structure is invalid");
+            return fail();
+        }
+        const NSUInteger tlasSize = [accelerationStructure size];
+        core::Logger::info("Renderer",
+                           "TLAS handle=%p size=%lu bytes",
+                           accelerationStructure,
+                           static_cast<unsigned long>(tlasSize));
+
+        if (!dispatch2D(rayPipeline, [&](id<MTLComputeCommandEncoder> encoder) {
+                [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
+                [encoder setBuffer:positions offset:0 atIndex:1];
+                [encoder setBuffer:normals offset:0 atIndex:2];
+                [encoder setBuffer:indices offset:0 atIndex:3];
+                [encoder setBuffer:colors offset:0 atIndex:4];
+                [encoder setBuffer:texcoords offset:0 atIndex:5];
+                [encoder setBuffer:primitiveMaterials offset:0 atIndex:6];
+                if (materialBuffer) {
+                    [encoder setBuffer:materialBuffer offset:0 atIndex:7];
                 }
-
+                if (textureInfoBuffer) {
+                    [encoder setBuffer:textureInfoBuffer offset:0 atIndex:8];
+                }
+                if (textureDataBuffer) {
+                    [encoder setBuffer:textureDataBuffer offset:0 atIndex:9];
+                }
+                [encoder setBuffer:resources.sceneLimitsBuffer offset:0 atIndex:10];
+                [encoder setBuffer:hitDebug offset:0 atIndex:11];
+                if (resources.randomTexture) {
+                    [encoder setTexture:resources.randomTexture atIndex:0];
+                }
+                [encoder setTexture:resources.shadeTexture atIndex:1];
+                [encoder setAccelerationStructure:accelerationStructure atBufferIndex:15];
                 if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
                     [encoder useResource:accelerationStructure usage:MTLResourceUsageRead];
+                    [encoder useResource:positions usage:MTLResourceUsageRead];
+                    if (normals) {
+                        [encoder useResource:normals usage:MTLResourceUsageRead];
+                    }
+                    [encoder useResource:indices usage:MTLResourceUsageRead];
+                    if (colors) {
+                        [encoder useResource:colors usage:MTLResourceUsageRead];
+                    }
+                    if (texcoords) {
+                        [encoder useResource:texcoords usage:MTLResourceUsageRead];
+                    }
+                    if (primitiveMaterials) {
+                        [encoder useResource:primitiveMaterials usage:MTLResourceUsageRead];
+                    }
+                    if (materialBuffer) {
+                        [encoder useResource:materialBuffer usage:MTLResourceUsageRead];
+                    }
+                    if (textureInfoBuffer) {
+                        [encoder useResource:textureInfoBuffer usage:MTLResourceUsageRead];
+                    }
+                    if (textureDataBuffer) {
+                        [encoder useResource:textureDataBuffer usage:MTLResourceUsageRead];
+                    }
+                    if (resources.sceneLimitsBuffer) {
+                        [encoder useResource:resources.sceneLimitsBuffer usage:MTLResourceUsageRead];
+                    }
                 }
-            } else {
-                core::Logger::warn("Renderer", "TLAS unavailable; ray tracing kernel may miss scene data");
-                core::Logger::warn("Renderer", "TLAS unavailable; ray tracing kernel may miss scene data");
+            })) {
+            core::Logger::error("Renderer", "Failed to encode hardware ray tracing kernel");
+            return fail();
+        }
+
+        const bool doAccumulate = accumulationEnabledThisFrame();
+        bool accumulationDispatched = false;
+        if (doAccumulate && resources.accumulationTexture && accumulatePipeline != nil) {
+            if (!dispatch2D(accumulatePipeline, [&](id<MTLComputeCommandEncoder> encoder) {
+                    [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
+                    [encoder setTexture:resources.shadeTexture atIndex:0];
+                    [encoder setTexture:resources.accumulationTexture atIndex:1];
+                    [encoder setTexture:target.colorTexture atIndex:2];
+                })) {
+                core::Logger::error("Renderer", "Failed to encode accumulate kernel");
+                return fail();
+            }
+
+            accumulationDispatched = true;
+
+            id<MTLBlitCommandEncoder> copyAccum = [commandBuffer blitCommandEncoder];
+            if (copyAccum) {
+                MTLOrigin origin = MTLOriginMake(0, 0, 0);
+                MTLSize size = MTLSizeMake(target.width, target.height, 1);
+                [copyAccum copyFromTexture:target.colorTexture
+                                sourceSlice:0
+                                sourceLevel:0
+                               sourceOrigin:origin
+                                 sourceSize:size
+                                  toTexture:resources.accumulationTexture
+                           destinationSlice:0
+                           destinationLevel:0
+                          destinationOrigin:origin];
+                [copyAccum endEncoding];
+            }
+        } else {
+            id<MTLBlitCommandEncoder> blitColor = [commandBuffer blitCommandEncoder];
+            if (blitColor) {
+                MTLOrigin origin = MTLOriginMake(0, 0, 0);
+                MTLSize size = MTLSizeMake(target.width, target.height, 1);
+                [blitColor copyFromTexture:resources.shadeTexture
+                                sourceSlice:0
+                                sourceLevel:0
+                               sourceOrigin:origin
+                                 sourceSize:size
+                                  toTexture:target.colorTexture
+                           destinationSlice:0
+                           destinationLevel:0
+                          destinationOrigin:origin];
+                [blitColor endEncoding];
             }
         }
 
-        if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
-            for (const auto& blas : bottomLevelStructures) {
-                if (!blas.isValid()) {
-                    continue;
-                }
-                id<MTLAccelerationStructure> blasHandle = (__bridge id<MTLAccelerationStructure>)blas.rawHandle();
-                if (blasHandle) {
-                    [encoder useResource:blasHandle usage:MTLResourceUsageRead];
-                }
-            }
-
-            const auto& uploadedMeshes = geometryStore.uploadedMeshes();
-            for (const auto& meshBuffers : uploadedMeshes) {
-                id<MTLBuffer> gpuVertex = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
-                if (gpuVertex) {
-                    [encoder useResource:gpuVertex usage:MTLResourceUsageRead];
-                }
-                id<MTLBuffer> gpuIndex = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
-                if (gpuIndex) {
-                    [encoder useResource:gpuIndex usage:MTLResourceUsageRead];
-                }
+        if (accumulationDispatched) {
+            if (accumulationFrameIndex < std::numeric_limits<std::uint32_t>::max()) {
+                accumulationFrameIndex++;
             }
         }
-
-        [encoder setBuffer:uniformBuffer offset:0 atIndex:1];
-        if (resources.resourceBuffer != nil) {
-            [encoder setBuffer:resources.resourceBuffer offset:0 atIndex:2];
-            const NSUInteger meshOffset = resources.resourceHeaderSize;
-            const NSUInteger bufferLength = [resources.resourceBuffer length];
-            const NSUInteger offset = meshOffset < bufferLength ? meshOffset : 0;
-            [encoder setBuffer:resources.resourceBuffer offset:offset atIndex:3];
-        }
-        if (resources.fallbackVertexBuffer.isValid()) {
-            id<MTLBuffer> fallbackVertices = (__bridge id<MTLBuffer>)resources.fallbackVertexBuffer.nativeHandle();
-            [encoder setBuffer:fallbackVertices offset:0 atIndex:4];
-        } else {
-            [encoder setBuffer:nil offset:0 atIndex:4];
-        }
-        if (resources.fallbackIndexBuffer.isValid()) {
-            id<MTLBuffer> fallbackIndices = (__bridge id<MTLBuffer>)resources.fallbackIndexBuffer.nativeHandle();
-            [encoder setBuffer:fallbackIndices offset:0 atIndex:5];
-        } else {
-            [encoder setBuffer:nil offset:0 atIndex:5];
-        }
-        id<MTLBuffer> instanceBuffer = (__bridge id<MTLBuffer>)resources.instanceBuffer.nativeHandle();
-        if (instanceBuffer) {
-            [encoder setBuffer:instanceBuffer offset:0 atIndex:6];
-        } else {
-            [encoder setBuffer:nil offset:0 atIndex:6];
-        }
-
-        id<MTLBuffer> materialBuffer = (__bridge id<MTLBuffer>)resources.materialBuffer.nativeHandle();
-        if (materialBuffer) {
-            [encoder setBuffer:materialBuffer offset:0 atIndex:7];
-        } else {
-            [encoder setBuffer:nil offset:0 atIndex:7];
-        }
-        id<MTLBuffer> textureInfoBuffer = (__bridge id<MTLBuffer>)resources.textureInfoBuffer.nativeHandle();
-        if (textureInfoBuffer) {
-            [encoder setBuffer:textureInfoBuffer offset:0 atIndex:8];
-        } else {
-            [encoder setBuffer:nil offset:0 atIndex:8];
-        }
-        id<MTLBuffer> textureDataBuffer = (__bridge id<MTLBuffer>)resources.textureDataBuffer.nativeHandle();
-        if (textureDataBuffer) {
-            [encoder setBuffer:textureDataBuffer offset:0 atIndex:9];
-        } else {
-            [encoder setBuffer:nil offset:0 atIndex:9];
-        }
-        [encoder setTexture:target.colorTexture atIndex:0];
-        if (resources.accumulationTexture != nil) {
-            [encoder setTexture:resources.accumulationTexture atIndex:1];
-        }
-        if (resources.randomTexture != nil) {
-            [encoder setTexture:resources.randomTexture atIndex:2];
-        }
-
-        const NSUInteger threadWidth = 8;
-        const NSUInteger threadHeight = 8;
-        MTLSize threadsPerThreadgroup = MTLSizeMake(threadWidth, threadHeight, 1);
-        MTLSize threadsPerGrid = MTLSizeMake(target.width, target.height, 1);
-        [encoder dispatchThreads:threadsPerGrid threadsPerThreadgroup:threadsPerThreadgroup];
-        [encoder endEncoding];
 
         id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
         if (blitEncoder) {
@@ -617,6 +636,39 @@ struct Renderer::Impl {
 
         [commandBuffer commit];
         [commandBuffer waitUntilCompleted];
+        MTLCommandBufferStatus status = [commandBuffer status];
+        if (status != MTLCommandBufferStatusCompleted) {
+            NSError* error = commandBuffer.error;
+            const char* message = error ? error.localizedDescription.UTF8String : "unknown error";
+            core::Logger::error("Renderer",
+                                "Command buffer completed with status=%ld (%s)",
+                                static_cast<long>(status),
+                                message);
+            stopMetalCaptureIfNeeded();
+            return false;
+        }
+
+        if (!hitDebugLogged && resources.hitDebugBuffer.isValid()) {
+            id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
+            if (hitBuffer) {
+                const std::uint32_t* hits = static_cast<const std::uint32_t*>([hitBuffer contents]);
+                if (hits) {
+                    const std::size_t sampleCount =
+                        std::min<std::size_t>(resources.width * resources.height, static_cast<std::size_t>(32));
+                    if (sampleCount > 0) {
+                        std::string hitLog;
+                        hitLog.reserve(sampleCount);
+                        for (std::size_t i = 0; i < sampleCount; ++i) {
+                            hitLog += hits[i] ? '1' : '0';
+                        }
+                        core::Logger::info("Renderer", "Hit debug sample: %s", hitLog.c_str());
+                        hitDebugLogged = true;
+                    }
+                }
+            }
+        }
+
+        stopMetalCaptureIfNeeded();
         return true;
     }
 
@@ -637,7 +689,7 @@ struct Renderer::Impl {
                 continue;
             }
 
-            id<MTLBuffer> buffer = [device newBufferWithLength:sizeof(RayTracingUniforms)
+            id<MTLBuffer> buffer = [device newBufferWithLength:sizeof(HardwareRayUniforms)
                                                         options:MTLResourceStorageModeShared];
             if (!buffer) {
                 core::Logger::error("Renderer", "Failed to allocate uniform buffer %zu", i);
@@ -668,34 +720,32 @@ struct Renderer::Impl {
             return;
         }
 
-        auto* uniforms = reinterpret_cast<RayTracingUniforms*>([buffer contents]);
+        auto* uniforms = reinterpret_cast<HardwareRayUniforms*>([buffer contents]);
         if (!uniforms) {
             return;
         }
 
-        // Camera approximating the reference Cornell composition: eye in front of the box, looking inward with a ~45°
-        // vertical FOV and aspect-derived image plane.
         const float aspect = (target.height > 0) ? static_cast<float>(target.width) / static_cast<float>(target.height)
                                                  : 1.0f;
-        const float fovY = 45.0f * (M_PI / 180.0f);
+        const float fovY = rtr::core::math::radians(kDefaultVerticalFovDegrees);
         const float halfHeight = tanf(fovY * 0.5f);
         const float halfWidth = halfHeight * aspect;
 
-        simd_float3 eye = simd_make_float3(0.0f, 0.15f, 2.2f);
-        simd_float3 targetPoint = simd_make_float3(0.0f, 0.15f, -0.9f);
+        simd_float3 eye = cameraRig.eye;
+        simd_float3 targetPoint = cameraRig.target;
         simd_float3 forward = simd_normalize(targetPoint - eye);
         simd_float3 globalUp = simd_make_float3(0.0f, 1.0f, 0.0f);
         simd_float3 right = simd_normalize(simd_cross(forward, globalUp));
         simd_float3 up = simd_cross(right, forward);
 
-        uniforms->eye = simd_make_float4(eye, 1.0f);
-        uniforms->forward = simd_make_float4(forward, 0.0f);
-        uniforms->right = simd_make_float4(right, 0.0f);
-        uniforms->up = simd_make_float4(up, 0.0f);
-        uniforms->imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
-        uniforms->width = target.width;
-        uniforms->height = target.height;
-        uniforms->frameIndex = frameCounter;
+        uniforms->camera.eye = simd_make_float4(eye, 1.0f);
+        uniforms->camera.forward = simd_make_float4(forward, 0.0f);
+        uniforms->camera.right = simd_make_float4(right, 0.0f);
+        uniforms->camera.up = simd_make_float4(up, 0.0f);
+        uniforms->camera.imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
+        uniforms->camera.width = target.width;
+        uniforms->camera.height = target.height;
+        uniforms->camera.frameIndex = frameIndexForUniforms();
         std::uint32_t flags = 0u;
         if (debugAlbedo) {
             flags |= RTR_RAY_FLAG_DEBUG;
@@ -703,25 +753,106 @@ struct Renderer::Impl {
         if (accumulationEnabledThisFrame()) {
             flags |= RTR_RAY_FLAG_ACCUMULATE;
         }
-        uniforms->flags = flags;
+        uniforms->camera.flags = flags;
+        uniforms->camera.samplesPerPixel = config.samplesPerPixel;
+        uniforms->camera.sampleSeed = config.sampleSeed ^ frameCounter;
+
+        uniforms->lightCount = 1u;
+        uniforms->maxBounces = std::max<std::uint32_t>(1u, config.maxHardwareBounces);
+
+        HardwareAreaLight& light = uniforms->lights[0];
+        light.position = simd_make_float4(0.0f, 1.99f, 0.0f, 1.0f);
+        light.right = simd_make_float4(0.25f, 0.0f, 0.0f, 0.0f);
+        light.up = simd_make_float4(0.0f, 0.0f, 0.25f, 0.0f);
+        light.forward = simd_make_float4(0.0f, -1.0f, 0.0f, 0.0f);
+        light.color = simd_make_float4(18.0f, 17.5f, 17.0f, 0.0f);
 
         if (debugAlbedo) {
-            core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->flags);
+            core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->camera.flags);
         }
 
-        [buffer didModifyRange:NSMakeRange(0, sizeof(RayTracingUniforms))];
+        if ([buffer storageMode] == MTLStorageModeManaged) {
+            [buffer didModifyRange:NSMakeRange(0, sizeof(HardwareRayUniforms))];
+        }
+    }
+
+    void startMetalCaptureIfNeeded(id<MTLCommandQueue> queue) {
+        if (!metalCaptureEnabled || metalCaptureInProgress || metalCaptureCompleted || queue == nil) {
+            return;
+        }
+
+        MTLCaptureManager* manager = [MTLCaptureManager sharedCaptureManager];
+        if (!manager) {
+            core::Logger::error("Renderer", "Metal capture manager unavailable");
+            return;
+        }
+        if (manager.isCapturing) {
+            metalCaptureInProgress = true;
+            return;
+        }
+
+        if (!metalCaptureOutputPath.empty()) {
+            std::error_code removeError;
+            std::filesystem::remove(metalCaptureOutputPath, removeError);
+        }
+
+        MTLCaptureDescriptor* descriptor = [[MTLCaptureDescriptor alloc] init];
+        descriptor.captureObject = queue;
+        descriptor.destination = MTLCaptureDestinationGPUTraceDocument;
+        if (!metalCaptureOutputPath.empty()) {
+            NSString* capturePath = [NSString stringWithUTF8String:metalCaptureOutputPath.c_str()];
+            if (capturePath.length > 0) {
+                descriptor.outputURL = [NSURL fileURLWithPath:capturePath isDirectory:NO];
+            }
+        }
+
+        NSError* error = nil;
+        if (![manager startCaptureWithDescriptor:descriptor error:&error]) {
+            const char* message = error ? error.localizedDescription.UTF8String : "unknown error";
+            core::Logger::error("Renderer", "Failed to start Metal capture (%s)", message);
+        } else {
+            metalCaptureInProgress = true;
+            core::Logger::info("Renderer", "Metal capture started (output=%s)", metalCaptureOutputPath.c_str());
+        }
+    }
+
+    void stopMetalCaptureIfNeeded() {
+        if (!metalCaptureInProgress) {
+            return;
+        }
+        [[MTLCaptureManager sharedCaptureManager] stopCapture];
+        metalCaptureInProgress = false;
+        metalCaptureCompleted = true;
+        core::Logger::info("Renderer", "Metal capture saved to %s", metalCaptureOutputPath.c_str());
     }
 
     void resetAccumulationInternal() {
         frameCounter = 0;
+        accumulationFrameIndex = 0;
         accumulationInvalidated = true;
+    }
+
+    [[nodiscard]] std::uint32_t accumulationLimit() const {
+        std::uint32_t limit = std::numeric_limits<std::uint32_t>::max();
+        if (config.samplesPerPixel > 0) {
+            limit = std::min(limit, config.samplesPerPixel);
+        }
+        if (config.accumulationFrames > 0) {
+            limit = std::min(limit, config.accumulationFrames);
+        }
+        return limit;
+    }
+
+    [[nodiscard]] std::uint32_t frameIndexForUniforms() const {
+        return accumulationFrameIndex;
     }
 
     bool accumulationEnabledThisFrame() const {
         if (!config.accumulationEnabled) {
             return false;
         }
-        return resources.accumulationTexture != nil;
+        const std::uint32_t limit = accumulationLimit();
+        return accumulationFrameIndex < limit;
     }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
@@ -781,43 +912,18 @@ struct Renderer::Impl {
         id<MTLDevice> device = (__bridge id<MTLDevice>)context.rawDeviceHandle();
         if (!device) {
             core::Logger::error("Renderer", "Unable to acquire Metal device for ray tracing resources");
-            resources.reset();
             return false;
-        }
-
-        if (accumulationInvalidated) {
-            resources.accumulationTexture = nil;
-            accumulationInvalidated = false;
         }
 
         bool success = true;
 
-        if (resources.accumulationTexture == nil || resources.width != width || resources.height != height) {
-            MTLTextureDescriptor* accumulationDesc =
-                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Float
-                                                                  width:width
-                                                                 height:height
-                                                              mipmapped:NO];
-            accumulationDesc.storageMode = MTLStorageModePrivate;
-            accumulationDesc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-            id<MTLTexture> accumulation = [device newTextureWithDescriptor:accumulationDesc];
-            if (!accumulation) {
-                core::Logger::error("Renderer", "Failed to allocate accumulation texture (%ux%u)", width, height);
-                success = false;
-            } else {
-                resources.accumulationTexture = accumulation;
-                resources.width = width;
-                resources.height = height;
-            }
-        }
-
         if (resources.randomTexture == nil) {
-            const NSUInteger noiseSize = 128;
-            MTLTextureDescriptor* randomDesc =
-                [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Float
-                                                                  width:noiseSize
-                                                                 height:noiseSize
-                                                              mipmapped:NO];
+            constexpr NSUInteger kRandomTextureWidth = 256;
+            constexpr NSUInteger kRandomTextureHeight = 256;
+            MTLTextureDescriptor* randomDesc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA32Uint
+                                                                                                   width:kRandomTextureWidth
+                                                                                                  height:kRandomTextureHeight
+                                                                                               mipmapped:NO];
             randomDesc.storageMode = MTLStorageModeShared;
             randomDesc.usage = MTLTextureUsageShaderRead;
             id<MTLTexture> randomTexture = [device newTextureWithDescriptor:randomDesc];
@@ -825,168 +931,94 @@ struct Renderer::Impl {
                 core::Logger::error("Renderer", "Failed to allocate random texture");
                 success = false;
             } else {
-                std::vector<float> noise(noiseSize * noiseSize * 4);
-                std::mt19937 rng(1337u);
-                std::uniform_real_distribution<float> dist(0.0F, 1.0F);
-                for (float& value : noise) {
+                std::vector<std::uint32_t> randomData(kRandomTextureWidth * kRandomTextureHeight * 4);
+                std::mt19937 rng(static_cast<std::uint32_t>(std::random_device{}()));
+                std::uniform_int_distribution<std::uint32_t> dist(0, std::numeric_limits<std::uint32_t>::max());
+                for (auto& value : randomData) {
                     value = dist(rng);
                 }
-                MTLRegion region = MTLRegionMake2D(0, 0, noiseSize, noiseSize);
+                MTLRegion region = MTLRegionMake2D(0, 0, kRandomTextureWidth, kRandomTextureHeight);
+                const NSUInteger bytesPerRow = kRandomTextureWidth * sizeof(std::uint32_t) * 4;
                 [randomTexture replaceRegion:region
-                                  mipmapLevel:0
-                                    withBytes:noise.data()
-                                  bytesPerRow:sizeof(float) * 4 * noiseSize];
+                                 mipmapLevel:0
+                                   withBytes:randomData.data()
+                                 bytesPerRow:bytesPerRow];
                 resources.randomTexture = randomTexture;
             }
         }
 
-        const auto& uploadedMeshes = geometryStore.uploadedMeshes();
-        const std::size_t meshCount = uploadedMeshes.size();
-        const std::size_t headerSize = sizeof(RayTracingResourceHeader);
-        const std::size_t meshEntrySize = sizeof(RayTracingMeshResource);
-
-        std::vector<std::uint8_t> fallbackVertexData;
-        std::vector<std::uint32_t> fallbackIndexData;
-        const std::uint32_t kInvalidOffset = std::numeric_limits<std::uint32_t>::max();
-        const bool supportsGPUAddress = context.supportsRayTracing();
-
-        if (meshCount > 0) {
-            std::size_t estimatedVertexBytes = 0;
-            std::size_t estimatedIndexCount = 0;
-            for (const auto& mesh : uploadedMeshes) {
-                estimatedVertexBytes += mesh.vertexStride * mesh.vertexCount;
-                estimatedIndexCount += mesh.indexCount;
+        auto ensureTexture = [&](id<MTLTexture> __strong* textureSlot, MTLPixelFormat format, NSString* label) {
+            id<MTLTexture> texture = textureSlot ? *textureSlot : nil;
+            if (texture != nil && resources.width == width && resources.height == height) {
+                return true;
             }
-            fallbackVertexData.reserve(estimatedVertexBytes);
-            fallbackIndexData.reserve(estimatedIndexCount);
+            MTLTextureDescriptor* desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
+                                                                                           width:width
+                                                                                          height:height
+                                                                                       mipmapped:NO];
+            desc.storageMode = MTLStorageModePrivate;
+            desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+            id<MTLTexture> newTexture = [device newTextureWithDescriptor:desc];
+            if (!newTexture) {
+                core::Logger::error("Renderer", "Failed to allocate %s (%ux%u)", label.UTF8String, width, height);
+                return false;
+            }
+            [newTexture setLabel:label];
+            if (textureSlot) {
+                *textureSlot = newTexture;
+            }
+            return true;
+        };
+
+        if (!ensureTexture(&resources.shadeTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.lighting")) {
+            success = false;
         }
 
-        std::size_t requiredLength = headerSize + meshCount * meshEntrySize;
-        if (requiredLength == 0) {
-            requiredLength = headerSize;
-        }
-
-        if (resources.resourceBuffer == nil || static_cast<std::size_t>([resources.resourceBuffer length]) < requiredLength) {
-            id<MTLBuffer> buffer = [device newBufferWithLength:requiredLength options:MTLResourceStorageModeShared];
-            if (!buffer) {
-                core::Logger::error("Renderer", "Failed to allocate ray tracing resource buffer (%zu bytes)",
-                                    requiredLength);
+        const bool needsAccumulation = accumulationEnabledThisFrame();
+        if (needsAccumulation) {
+            if (!ensureTexture(&resources.accumulationTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.accum")) {
                 success = false;
-            } else {
-                NSString* label = @"rtr.resourcePointers";
-                [buffer setLabel:label];
-                resources.resourceBuffer = buffer;
-                resources.resourceHeaderSize = static_cast<NSUInteger>(headerSize);
+            }
+        } else if (resources.accumulationTexture != nil && (resources.width != width || resources.height != height)) {
+            resources.accumulationTexture = nil;
+        }
+
+        if (resources.sceneLimitsBuffer == nil) {
+            resources.sceneLimitsBuffer = [device newBufferWithLength:sizeof(MPSSceneLimits)
+                                                             options:MTLResourceStorageModeShared];
+            if (!resources.sceneLimitsBuffer) {
+                core::Logger::error("Renderer", "Failed to allocate scene limits buffer");
+                success = false;
             }
         }
 
-        if (resources.resourceBuffer != nil) {
-            resources.resourceHeaderSize = static_cast<NSUInteger>(headerSize);
-            auto* header = reinterpret_cast<RayTracingResourceHeader*>([resources.resourceBuffer contents]);
-            if (header) {
-                *header = {};
-                header->geometryCount = static_cast<std::uint32_t>(std::min<std::size_t>(
-                    meshCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                header->instanceCount = static_cast<std::uint32_t>(std::min<std::size_t>(
-                    instanceResources.size(), static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                header->materialCount = static_cast<std::uint32_t>(std::min<std::size_t>(
-                    materialResources.size(), static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                header->textureCount = static_cast<std::uint32_t>(std::min<std::size_t>(
-                    textureResources.size(), static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                header->randomTextureWidth = resources.randomTexture != nil
-                                               ? static_cast<std::uint32_t>([resources.randomTexture width])
-                                               : 0U;
-                header->randomTextureHeight = resources.randomTexture != nil
-                                                ? static_cast<std::uint32_t>([resources.randomTexture height])
-                                                : 0U;
-
-                auto* meshEntries = reinterpret_cast<RayTracingMeshResource*>(
-                    reinterpret_cast<std::uint8_t*>(header) + headerSize);
-
-                if (meshCount == 0) {
-                    core::Logger::warn("Renderer", "No uploaded meshes available for ray tracing scene");
-                }
-
-                for (std::size_t i = 0; i < meshCount; ++i) {
-                    const auto& meshBuffers = uploadedMeshes[i];
-                    RayTracingMeshResource entry{};
-                    entry.vertexCount = static_cast<std::uint32_t>(std::min<std::size_t>(
-                        meshBuffers.vertexCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                    entry.indexCount = static_cast<std::uint32_t>(std::min<std::size_t>(
-                        meshBuffers.indexCount, static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                    entry.vertexStride = static_cast<std::uint32_t>(
-                        std::min<std::size_t>(meshBuffers.vertexStride,
-                                              static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                    entry.materialIndex = 0U;
-                    entry.fallbackVertexOffset = kInvalidOffset;
-                    entry.fallbackIndexOffset = kInvalidOffset;
-
-                    id<MTLBuffer> gpuVertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
-                    id<MTLBuffer> gpuIndexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
-                    id<MTLBuffer> cpuVertexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuVertexBuffer.nativeHandle();
-                    id<MTLBuffer> cpuIndexBuffer = (__bridge id<MTLBuffer>)meshBuffers.cpuIndexBuffer.nativeHandle();
-
-                    if (supportsGPUAddress && gpuVertexBuffer) {
-                        entry.vertexBufferAddress = gpuVertexBuffer.gpuAddress;
-                    }
-                    if (supportsGPUAddress && gpuIndexBuffer) {
-                        entry.indexBufferAddress = gpuIndexBuffer.gpuAddress;
-                    }
-
-                    const bool needsFallback = entry.vertexBufferAddress == 0ULL || entry.indexBufferAddress == 0ULL;
-                    if (needsFallback && cpuVertexBuffer && cpuIndexBuffer) {
-                        const auto* vertexBytes = static_cast<const std::uint8_t*>([cpuVertexBuffer contents]);
-                        const auto* indexBytes = static_cast<const std::uint32_t*>([cpuIndexBuffer contents]);
-                        if (vertexBytes && indexBytes) {
-                            const std::size_t vertexByteLength = meshBuffers.vertexStride * meshBuffers.vertexCount;
-                            const std::size_t indexElementCount = meshBuffers.indexCount;
-                            const std::size_t vertexAlignment = 16;
-
-                            std::size_t vertexOffset = fallbackVertexData.size();
-                            const std::size_t padding = (vertexAlignment - (vertexOffset % vertexAlignment)) % vertexAlignment;
-                            fallbackVertexData.insert(fallbackVertexData.end(), padding, static_cast<std::uint8_t>(0));
-                            vertexOffset = fallbackVertexData.size();
-                            fallbackVertexData.insert(fallbackVertexData.end(),
-                                                      vertexBytes,
-                                                      vertexBytes + vertexByteLength);
-                            if (vertexOffset <= kInvalidOffset && vertexByteLength <= kInvalidOffset) {
-                                entry.fallbackVertexOffset = static_cast<std::uint32_t>(vertexOffset);
-                            }
-
-                            const std::size_t indexOffset = fallbackIndexData.size();
-                            fallbackIndexData.insert(fallbackIndexData.end(), indexBytes, indexBytes + indexElementCount);
-                            if (indexOffset <= kInvalidOffset) {
-                                entry.fallbackIndexOffset = static_cast<std::uint32_t>(indexOffset);
-                            }
-                        }
-                    }
-
-                    meshEntries[i] = entry;
-
-                    core::Logger::info("Renderer",
-                                        "Mesh[%zu]: vtx=%u idx=%u stride=%u gpuAddr(v=%llx, i=%llx) fallback(v=%u, i=%u)",
-                                        i,
-                                        entry.vertexCount,
-                                        entry.indexCount,
-                                        entry.vertexStride,
-                                        static_cast<unsigned long long>(entry.vertexBufferAddress),
-                                        static_cast<unsigned long long>(entry.indexBufferAddress),
-                                        entry.fallbackVertexOffset,
-                                        entry.fallbackIndexOffset);
-                }
-
-                header->instanceCount = static_cast<std::uint32_t>(
-                    std::min<std::size_t>(instanceResources.size(),
-                                           static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-                header->materialCount = static_cast<std::uint32_t>(
-                    std::min<std::size_t>(materialResources.size(),
-                                           static_cast<std::size_t>(std::numeric_limits<std::uint32_t>::max())));
-
-                const NSUInteger bytesToMark = static_cast<NSUInteger>(headerSize + meshCount * meshEntrySize);
-                [resources.resourceBuffer didModifyRange:NSMakeRange(0, bytesToMark)];
-                resources.meshCount = meshCount;
+        if (resources.sceneLimitsBuffer != nil) {
+            std::memcpy([resources.sceneLimitsBuffer contents], &resources.sceneLimits, sizeof(MPSSceneLimits));
+            if ([resources.sceneLimitsBuffer storageMode] == MTLStorageModeManaged) {
+                [resources.sceneLimitsBuffer didModifyRange:NSMakeRange(0, sizeof(MPSSceneLimits))];
             }
         }
+
+        const std::size_t debugBufferLength = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * sizeof(std::uint32_t);
+        if (debugBufferLength > 0) {
+            if (!resources.hitDebugBuffer.isValid() || resources.hitDebugBuffer.length() < debugBufferLength) {
+                resources.hitDebugBuffer = bufferAllocator.createBuffer(debugBufferLength, nullptr, "rtr.hw.hitDebug");
+            }
+            if (resources.hitDebugBuffer.isValid()) {
+                id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
+                if (hitBuffer) {
+                    std::memset([hitBuffer contents], 0, debugBufferLength);
+                    if ([hitBuffer storageMode] == MTLStorageModeManaged) {
+                        [hitBuffer didModifyRange:NSMakeRange(0, debugBufferLength)];
+                    }
+                }
+            }
+        } else {
+            resources.hitDebugBuffer = {};
+        }
+
+        resources.width = width;
+        resources.height = height;
 
         auto uploadBuffer = [&](BufferHandle& handle, const void* data, std::size_t length, const char* label) {
             if (length == 0) {
@@ -1000,40 +1032,12 @@ struct Renderer::Impl {
                 id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
                 if (buffer && data) {
                     std::memcpy([buffer contents], data, length);
-                    [buffer didModifyRange:NSMakeRange(0, length)];
+                    if ([buffer storageMode] == MTLStorageModeManaged) {
+                        [buffer didModifyRange:NSMakeRange(0, length)];
+                    }
                 }
             }
         };
-
-        uploadBuffer(resources.fallbackVertexBuffer,
-                     fallbackVertexData.empty() ? nullptr : fallbackVertexData.data(),
-                     fallbackVertexData.size(),
-                     "rtr.fallbackVertices");
-
-        uploadBuffer(resources.fallbackIndexBuffer,
-                     fallbackIndexData.empty() ? nullptr : fallbackIndexData.data(),
-                     fallbackIndexData.size() * sizeof(std::uint32_t),
-                     "rtr.fallbackIndices");
-
-        core::Logger::info("Renderer",
-                           "Ray tracing resources: fallback vertices=%zu bytes, fallback indices=%zu elements",
-                           fallbackVertexData.size(),
-                           fallbackIndexData.size());
-        if (!fallbackVertexData.empty()) {
-            const float* vertexFloats = reinterpret_cast<const float*>(fallbackVertexData.data());
-            core::Logger::info("Renderer",
-                               "First fallback vertex position = (%.3f, %.3f, %.3f)",
-                               vertexFloats[0],
-                               vertexFloats[1],
-                               vertexFloats[2]);
-        }
-        if (!fallbackIndexData.empty()) {
-            core::Logger::info("Renderer",
-                               "First fallback triangle indices = (%u, %u, %u)",
-                               fallbackIndexData[0],
-                               fallbackIndexData[1],
-                               fallbackIndexData[2]);
-        }
 
         uploadBuffer(resources.instanceBuffer,
                      instanceResources.data(),
@@ -1055,13 +1059,16 @@ struct Renderer::Impl {
                      texturePixels.size() * sizeof(float),
                      "rtr.textureData");
 
-        resources.textureCount = textureResources.size();
+        if (success) {
+            resources.width = width;
+            resources.height = height;
+        }
 
         return success;
     }
 
-    bool initializeScene();
     bool loadSceneInternal(const scene::Scene& scene);
+    bool prepareHardwareSceneData(const MPSSceneData& sceneData);
     void writeRayTracingOutput() const;
     void setOutputPathInternal(std::string path);
     void setRenderSizeInternal(std::uint32_t width, std::uint32_t height);
@@ -1082,7 +1089,7 @@ struct Renderer::Impl {
 
         shadingMode = newMode;
 
-        if (shadingMode != RayTracingShadingMode::GradientOnly && !rayTracingPipeline.isValid()) {
+        if (!rayTracingPipeline.isValid()) {
             if (!asBuilder.isRayTracingSupported()) {
                 core::Logger::warn("Renderer", "Metal device does not report ray tracing support");
             } else if (!rayTracingPipeline.initialize(context, config.shaderLibraryPath)) {
@@ -1094,14 +1101,89 @@ struct Renderer::Impl {
     }
 };
 
-bool Renderer::Impl::initializeScene() {
-    scene::Scene scene = scene::createCornellBoxScene();
-    if (!loadSceneInternal(scene)) {
-        core::Logger::warn("Renderer", "Falling back to gradient pipeline; scene load failed");
-        return false;
+bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
+
+    core::Logger::info("Renderer", "DEBUG: Preparing hardware scene data with %zu vertices.", sceneData.positions.size());
+    for (int i = 0; i < 3 && i < sceneData.positions.size(); ++i) {
+        const auto& v = sceneData.positions[i];
+        core::Logger::info("Renderer", "DEBUG: Shader-Data Vtx[%d]: (%.3f, %.3f, %.3f)", i, v.x, v.y, v.z);
     }
+
+    auto uploadSceneBuffer = [&](BufferHandle& handle, const void* data, std::size_t byteLength, const char* label) {
+        if (byteLength == 0 || data == nullptr) {
+            handle = {};
+            return;
+        }
+        if (!handle.isValid() || handle.length() < byteLength) {
+            handle = bufferAllocator.createBuffer(byteLength, data, label);
+        } else {
+            id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
+            if (buffer) {
+                std::memcpy([buffer contents], data, byteLength);
+                if ([buffer storageMode] == MTLStorageModeManaged) {
+                    [buffer didModifyRange:NSMakeRange(0, byteLength)];
+                }
+            }
+        }
+    };
+
+    auto packFloat3 = [](const std::vector<vector_float3>& source) {
+        std::vector<float> packed;
+        packed.reserve(source.size() * 3);
+        for (const auto& value : source) {
+            packed.push_back(value.x);
+            packed.push_back(value.y);
+            packed.push_back(value.z);
+        }
+        return packed;
+    };
+
+    {
+        const auto packedPositions = packFloat3(sceneData.positions);
+        uploadSceneBuffer(resources.positionsBuffer,
+                          packedPositions.empty() ? nullptr : packedPositions.data(),
+                          packedPositions.size() * sizeof(float),
+                          "rtr.hw.positions");
+    }
+    {
+        const auto packedNormals = packFloat3(sceneData.normals);
+        uploadSceneBuffer(resources.normalsBuffer,
+                          packedNormals.empty() ? nullptr : packedNormals.data(),
+                          packedNormals.size() * sizeof(float),
+                          "rtr.hw.normals");
+    }
+    {
+        const auto packedColors = packFloat3(sceneData.colors);
+        uploadSceneBuffer(resources.colorsBuffer,
+                          packedColors.empty() ? nullptr : packedColors.data(),
+                          packedColors.size() * sizeof(float),
+                          "rtr.hw.colors");
+    }
+    uploadSceneBuffer(resources.texcoordBuffer,
+                      sceneData.texcoords.empty() ? nullptr : sceneData.texcoords.data(),
+                      sceneData.texcoords.size() * sizeof(vector_float2),
+                      "rtr.hw.texcoords");
+    uploadSceneBuffer(resources.indicesBuffer,
+                      sceneData.indices.empty() ? nullptr : sceneData.indices.data(),
+                      sceneData.indices.size() * sizeof(std::uint32_t),
+                      "rtr.hw.indices");
+    uploadSceneBuffer(resources.primitiveMaterialBuffer,
+                      sceneData.primitiveMaterials.empty() ? nullptr : sceneData.primitiveMaterials.data(),
+                      sceneData.primitiveMaterials.size() * sizeof(std::uint32_t),
+                      "rtr.hw.primitiveMaterials");
+
+    resources.sceneLimits.vertexCount = static_cast<std::uint32_t>(sceneData.positions.size());
+    resources.sceneLimits.indexCount = static_cast<std::uint32_t>(sceneData.indices.size());
+    resources.sceneLimits.colorCount = static_cast<std::uint32_t>(sceneData.colors.size());
+    resources.sceneLimits.primitiveCount = static_cast<std::uint32_t>(sceneData.indices.size() / 3u);
+    resources.sceneLimits.normalCount = static_cast<std::uint32_t>(sceneData.normals.size());
+    resources.sceneLimits.texcoordCount = static_cast<std::uint32_t>(sceneData.texcoords.size());
+    resources.sceneLimits.materialCount = static_cast<std::uint32_t>(materialResources.size());
+    resources.sceneLimits.textureCount = static_cast<std::uint32_t>(textureResources.size());
+
     return true;
 }
+
 
 bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     bottomLevelStructures.clear();
@@ -1110,18 +1192,20 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     materialResources.clear();
     target.reset();
     resources.reset();
+    geometryStore.clear();
 
-    if (!wantsHardwareRayTracing()) {
-        core::Logger::info("Renderer",
-                            "Gradient-only mode active; skipping acceleration structure build for scene");
-        resetAccumulationInternal();
-        return true;
-    }
+    const std::size_t meshCount = scene.meshes().size();
+    const std::size_t materialCount = scene.materials().size();
+    const std::size_t instanceCount = scene.instances().size();
 
-    core::Logger::info("Renderer", "Loading scene with %zu meshes, %zu materials, %zu instances",
-                       scene.meshes().size(),
-                       scene.materials().size(),
-                       scene.instances().size());
+    core::Logger::info("Renderer",
+                       "Loading scene with %zu meshes, %zu materials, %zu instances",
+                       meshCount,
+                       materialCount,
+                       instanceCount);
+
+    sceneBounds = scene.computeSceneBounds();
+    updateCameraRigFromBounds();
 
     if (!context.isValid()) {
         core::Logger::warn("Renderer", "Metal context invalid; cannot load scene");
@@ -1134,94 +1218,183 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         return false;
     }
 
-    const auto& meshes = scene.meshes();
     const auto& materials = scene.materials();
-    const auto& instances = scene.instances();
 
-    std::vector<std::size_t> meshUploadIndices(meshes.size(), static_cast<std::size_t>(-1));
-    std::vector<std::size_t> meshBLASIndices(meshes.size(), static_cast<std::size_t>(-1));
-
-    for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
-        const std::string label = "scene_mesh_" + std::to_string(meshIndex);
-        const auto uploadIndex = geometryStore.uploadMesh(meshes[meshIndex], label);
-        if (!uploadIndex.has_value()) {
-            core::Logger::warn("Renderer", "Failed to upload mesh %zu", meshIndex);
-            continue;
-        }
-
-        meshUploadIndices[meshIndex] = *uploadIndex;
-        const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
-        auto blas = asBuilder.buildBottomLevel(meshBuffers, label, queueHandle);
-        if (!blas.has_value()) {
-            core::Logger::warn("Renderer", "Failed to build BLAS for mesh %zu", meshIndex);
-            continue;
-        }
-
-        meshBLASIndices[meshIndex] = bottomLevelStructures.size();
-        bottomLevelStructures.push_back(std::move(*blas));
-    }
-
-    if (bottomLevelStructures.empty()) {
-        core::Logger::warn("Renderer", "No BLAS structures available; scene load aborted");
+    const MPSSceneData sceneData = buildSceneData(scene);
+    if (sceneData.positions.empty() || sceneData.indices.empty() || sceneData.indexOffsets.empty()) {
+        core::Logger::warn("Renderer", "Flattened scene data empty; scene load aborted");
         return false;
     }
+
+    std::uint32_t primitiveMin = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t primitiveMax = 0u;
+    std::size_t invalidPrimitiveMaterials = 0;
+    for (const auto materialIndex : sceneData.primitiveMaterials) {
+        primitiveMin = std::min(primitiveMin, materialIndex);
+        primitiveMax = std::max(primitiveMax, materialIndex);
+        if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
+            ++invalidPrimitiveMaterials;
+        }
+    }
+    core::Logger::info("Renderer",
+                       "Primitive materials: count=%zu range=[%u, %u] invalid=%zu",
+                       sceneData.primitiveMaterials.size(),
+                       primitiveMin,
+                       primitiveMax,
+                       invalidPrimitiveMaterials);
+
+    std::vector<std::size_t> meshUploadIndices(1, static_cast<std::size_t>(-1));
+    std::vector<std::size_t> meshBLASIndices(1, static_cast<std::size_t>(-1));
+
+    scene::Mesh flattenedMesh = makeCombinedMeshFromSceneData(sceneData);
+    const auto& combinedVertices = flattenedMesh.vertices();
+    for (std::size_t i = 0; i < combinedVertices.size(); ++i) {
+        const simd_float3 position = combinedVertices[i].position;
+        if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z)) {
+            core::Logger::error("Renderer",
+                                "Flattened mesh produced non-finite vertex[%zu]=(%.3f, %.3f, %.3f)",
+                                i,
+                                position.x,
+                                position.y,
+                                position.z);
+            return false;
+        }
+    }
+    const auto bounds = flattenedMesh.bounds();
+    core::Logger::info("Renderer",
+                       "Combined mesh bounds min=(%.3f, %.3f, %.3f) max=(%.3f, %.3f, %.3f) vertices=%zu indices=%zu",
+                       bounds.min.x,
+                       bounds.min.y,
+                       bounds.min.z,
+                       bounds.max.x,
+                       bounds.max.y,
+                       bounds.max.z,
+                       combinedVertices.size(),
+                       flattenedMesh.indices().size());
+
+    bool invalidIndexFound = false;
+    for (const auto index : flattenedMesh.indices()) {
+        if (index >= combinedVertices.size()) {
+            core::Logger::error("Renderer",
+                                "Flattened mesh index %u exceeds vertex count %zu",
+                                index,
+                                combinedVertices.size());
+            invalidIndexFound = true;
+            break;
+        }
+    }
+    if (invalidIndexFound) {
+        return false;
+    }
+    core::Logger::info("Renderer", "DEBUG: Flattened mesh created with %zu vertices.", flattenedMesh.vertices().size());
+    for (int i = 0; i < 3 && i < flattenedMesh.vertices().size(); ++i) {
+        const auto& v = flattenedMesh.vertices()[i].position;
+        core::Logger::info("Renderer", "DEBUG: AS-Mesh Vtx[%d]: (%.3f, %.3f, %.3f)", i, v.x, v.y, v.z);
+    }
+
+    const auto uploadIndex = geometryStore.uploadMesh(flattenedMesh, "scene_mesh_combined");
+    if (!uploadIndex.has_value()) {
+        core::Logger::error("Renderer", "Failed to upload flattened mesh for scene");
+        return false;
+    }
+
+    meshUploadIndices[0] = *uploadIndex;
+    const auto& meshBuffers = geometryStore.uploadedMeshes()[*uploadIndex];
+
+    // Log the first few packed vertex components so we can confirm the buffer contents match the
+    // flattened scene geometry that feeds the BLAS.
+    if (meshBuffers.gpuVertexBuffer.isValid()) {
+        id<MTLBuffer> packedBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuVertexBuffer.nativeHandle();
+        if (packedBuffer != nil && [packedBuffer storageMode] != MTLStorageModePrivate) {
+            const float* packed = static_cast<const float*>([packedBuffer contents]);
+            if (packed != nullptr) {
+                const std::size_t sampleCount = std::min<std::size_t>(meshBuffers.vertexCount * 3, 9);
+                std::array<float, 9> sampleValues{};
+                for (std::size_t i = 0; i < sampleCount; ++i) {
+                    sampleValues[i] = packed[i];
+                }
+                core::Logger::info("Renderer",
+                                   "Packed vertex sample: [%.3f %.3f %.3f | %.3f %.3f %.3f | %.3f %.3f %.3f]",
+                                   sampleValues[0],
+                                   sampleValues[1],
+                                   sampleValues[2],
+                                   sampleValues[3],
+                                   sampleValues[4],
+                                   sampleValues[5],
+                                   sampleValues[6],
+                                   sampleValues[7],
+                                   sampleValues[8]);
+            }
+        }
+    }
+
+    if (meshBuffers.gpuIndexBuffer.isValid()) {
+        id<MTLBuffer> indexBuffer = (__bridge id<MTLBuffer>)meshBuffers.gpuIndexBuffer.nativeHandle();
+        if (indexBuffer != nil && [indexBuffer storageMode] != MTLStorageModePrivate) {
+            const std::uint32_t* indicesPtr = static_cast<const std::uint32_t*>([indexBuffer contents]);
+            if (indicesPtr != nullptr) {
+                const std::size_t indexSamples = std::min<std::size_t>(meshBuffers.indexCount, 12);
+                std::array<std::uint32_t, 12> sampleIndices{};
+                for (std::size_t i = 0; i < indexSamples; ++i) {
+                    sampleIndices[i] = indicesPtr[i];
+                }
+                core::Logger::info("Renderer",
+                                   "Index sample: [%u %u %u | %u %u %u | %u %u %u | %u %u %u]",
+                                   sampleIndices[0],
+                                   sampleIndices[1],
+                                   sampleIndices[2],
+                                   sampleIndices[3],
+                                   sampleIndices[4],
+                                   sampleIndices[5],
+                                   sampleIndices[6],
+                                   sampleIndices[7],
+                                   sampleIndices[8],
+                                   sampleIndices[9],
+                                   sampleIndices[10],
+                                   sampleIndices[11]);
+            }
+        }
+    }
+
+    core::Logger::info("Renderer",
+                       "BLAS build buffers: gpuVtx=%p stride=%zu gpuIdx=%p indices=%zu vertexBytes=%zu",
+                       meshBuffers.gpuVertexBuffer.nativeHandle(),
+                       meshBuffers.vertexStride,
+                       meshBuffers.gpuIndexBuffer.nativeHandle(),
+                       meshBuffers.indexCount,
+                       meshBuffers.gpuVertexBuffer.length());
+    auto blas = asBuilder.buildBottomLevel(meshBuffers, "scene_mesh_combined", queueHandle);
+    if (!blas.has_value()) {
+        core::Logger::error("Renderer", "Failed to build BLAS for flattened mesh");
+        return false;
+    }
+
+    meshBLASIndices[0] = bottomLevelStructures.size();
+    bottomLevelStructures.push_back(std::move(*blas));
+    core::Logger::info("Renderer", "BLAS size=%zu bytes", bottomLevelStructures.back().sizeInBytes());
 
     std::vector<InstanceBuildInput> instanceInputs;
-    instanceInputs.reserve(instances.size());
+    instanceInputs.reserve(1);
     instanceResources.clear();
-    instanceResources.reserve(instances.size());
-    std::size_t emissiveInstanceCount = 0;
+    instanceResources.reserve(1);
 
-    for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
-        const auto& instance = instances[instanceIndex];
-        if (!instance.mesh.isValid() || instance.mesh.index >= meshBLASIndices.size()) {
-            continue;
-        }
+    InstanceBuildInput input{};
+    input.structure = &bottomLevelStructures.back();
+    input.transform = matrix_identity_float4x4;
+    input.userID = 0u;
+    input.mask = RTR_TRIANGLE_MASK_GEOMETRY;
+    core::Logger::info("Renderer",
+                       "Instance mask=0x%X rayMask=0x%X",
+                       input.mask,
+                       RTR_RAY_MASK_PRIMARY);
+    instanceInputs.push_back(input);
 
-        bool isEmissive = false;
-        if (instance.material.isValid() && instance.material.index < materials.size()) {
-            const auto& material = materials[instance.material.index];
-            const auto emission = material.emission;
-            isEmissive = emission.x > 0.0f || emission.y > 0.0f || emission.z > 0.0f;
-        }
-        if (isEmissive) {
-            emissiveInstanceCount++;
-            continue;
-        }
-
-        const std::size_t blasIndex = meshBLASIndices[instance.mesh.index];
-        const std::size_t meshResourceIndex = meshUploadIndices[instance.mesh.index];
-        if (blasIndex == static_cast<std::size_t>(-1) || meshResourceIndex == static_cast<std::size_t>(-1)) {
-            continue;
-        }
-
-        InstanceBuildInput input{};
-        input.structure = &bottomLevelStructures[blasIndex];
-        input.transform = instance.transform;
-        input.userID = static_cast<std::uint32_t>(instanceInputs.size());
-        input.mask = 0xFF;
-        instanceInputs.push_back(input);
-
-        RayTracingInstanceResource resource{};
-        resource.objectToWorld = instance.transform;
-        resource.worldToObject = simd_inverse(instance.transform);
-        resource.meshIndex = static_cast<std::uint32_t>(meshResourceIndex);
-        resource.materialIndex = (instance.material.isValid() && instance.material.index < materials.size())
-                                     ? static_cast<std::uint32_t>(instance.material.index)
-                                     : 0U;
-        instanceResources.push_back(resource);
-    }
-
-    if (emissiveInstanceCount > 0) {
-        core::Logger::info("Renderer",
-                           "Skipped %zu emissive instance(s) when building TLAS (handled analytically)",
-                           emissiveInstanceCount);
-    }
-
-    if (instanceInputs.empty()) {
-        core::Logger::warn("Renderer", "No valid instances for TLAS build");
-        return false;
-    }
+    RayTracingInstanceResource resource{};
+    resource.objectToWorld = matrix_identity_float4x4;
+    resource.worldToObject = matrix_identity_float4x4;
+    resource.meshIndex = static_cast<std::uint32_t>(*uploadIndex);
+    resource.materialIndex = 0u;
+    instanceResources.push_back(resource);
 
     auto tlas = asBuilder.buildTopLevel(instanceInputs, "scene_tlas", queueHandle);
     if (!tlas.has_value()) {
@@ -1303,14 +1476,43 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         materialResources.push_back(resource);
     }
 
-    resources.textureCount = textureResources.size();
-
-    const bool pipelineReady = ensureRayTracingResources(targetWidth, targetHeight);
-    if (!pipelineReady) {
-        core::Logger::warn("Renderer", "Failed to allocate ray tracing resources for scene");
+    core::Logger::info("Renderer",
+                       "Captured %zu material resources (logging first %zu)",
+                       materialResources.size(),
+                       std::min<std::size_t>(materialResources.size(), 8));
+    for (std::size_t i = 0; i < materialResources.size() && i < 8; ++i) {
+        const RayTracingMaterialResource& mat = materialResources[i];
+        core::Logger::info("Renderer",
+                           "Material[%zu]: albedo=(%.3f, %.3f, %.3f) emission=(%.3f, %.3f, %.3f) rough=%.3f metal=%.3f refl=%.3f ior=%.3f tex=%u flags=0x%X",
+                           i,
+                           mat.albedo.x,
+                           mat.albedo.y,
+                           mat.albedo.z,
+                           mat.emission.x,
+                           mat.emission.y,
+                           mat.emission.z,
+                           mat.roughness,
+                           mat.metallic,
+                           mat.reflectivity,
+                           mat.indexOfRefraction,
+                           mat.textureIndex,
+                           mat.materialFlags);
     }
 
-    const bool loaded = topLevelStructure.isValid();
+    const bool hardwareSceneReady = prepareHardwareSceneData(sceneData);
+    if (!hardwareSceneReady) {
+        core::Logger::warn("Renderer", "Failed to prepare hardware scene data");
+    }
+
+    bool pipelineReady = false;
+    if (hardwareSceneReady) {
+        pipelineReady = ensureRayTracingResources(targetWidth, targetHeight);
+        if (!pipelineReady) {
+            core::Logger::warn("Renderer", "Failed to allocate ray tracing resources for scene");
+        }
+    }
+
+    const bool loaded = topLevelStructure.isValid() && hardwareSceneReady && pipelineReady;
     if (loaded) {
         resetAccumulationInternal();
     }
@@ -1380,8 +1582,9 @@ void Renderer::Impl::setRenderSizeInternal(std::uint32_t width, std::uint32_t he
     targetWidth = sanitizedWidth;
     targetHeight = sanitizedHeight;
     target.reset();
-    resources.reset();
+    resources.resetForResize();
     resetAccumulationInternal();
+    updateCameraRigFromBounds();
 }
 
 Renderer::Renderer(core::EngineConfig config)
