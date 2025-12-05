@@ -136,8 +136,6 @@ RuntimeResources makeRuntimeResources() {
     resources.config.shadingMode = "hardware";
     resources.config.accumulationEnabled = true;
     resources.config.accumulationFrames = 0;
-    resources.config.samplesPerPixel = 0;
-    resources.config.sampleSeed = 0;
 
     return resources;
 }

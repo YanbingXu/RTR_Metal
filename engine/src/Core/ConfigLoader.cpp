@@ -132,14 +132,6 @@ EngineConfig ConfigLoader::loadEngineConfig(const std::filesystem::path& path) {
         config.accumulationFrames = parseUInt(it->second, config.accumulationFrames);
     }
 
-    if (auto it = pairs.find("samplesPerPixel"); it != pairs.end()) {
-        config.samplesPerPixel = parseUInt(it->second, config.samplesPerPixel);
-    }
-
-    if (auto it = pairs.find("sampleSeed"); it != pairs.end()) {
-        config.sampleSeed = parseUInt(it->second, config.sampleSeed);
-    }
-
     if (auto it = pairs.find("maxBounces"); it != pairs.end()) {
         config.maxHardwareBounces = parseUInt(it->second, config.maxHardwareBounces);
     }

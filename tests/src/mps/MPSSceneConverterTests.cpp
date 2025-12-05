@@ -43,6 +43,9 @@ TEST(MPSSceneConverterTests, ConvertsSingleInstance) {
     ASSERT_EQ(sceneData.positions.size(), 3U);
     ASSERT_EQ(sceneData.colors.size(), 3U);
     ASSERT_EQ(sceneData.indices.size(), 3U);
+    ASSERT_EQ(sceneData.instanceRanges.size(), 1U);
+    EXPECT_EQ(sceneData.instanceRanges[0].vertexCount, 3U);
+    EXPECT_EQ(sceneData.instanceRanges[0].indexCount, 3U);
 
     expectVectorNear(sceneData.positions[0], simd_make_float3(-0.25f, -0.25f, 0.0f));
     expectVectorNear(sceneData.positions[1], simd_make_float3(0.25f, -0.25f, 0.0f));
@@ -76,6 +79,7 @@ TEST(MPSSceneConverterTests, FallsBackToMeshesWhenNoInstancesAndAppliesDefaultCo
     ASSERT_EQ(sceneData.positions.size(), 3U);
     ASSERT_EQ(sceneData.colors.size(), 3U);
     ASSERT_EQ(sceneData.indices.size(), 3U);
+    ASSERT_EQ(sceneData.instanceRanges.size(), 1U);
 
     expectVectorNear(sceneData.positions[0], simd_make_float3(0.0f, 0.0f, 0.0f));
     expectVectorNear(sceneData.positions[1], simd_make_float3(1.0f, 0.0f, 0.0f));
@@ -112,6 +116,9 @@ TEST(MPSSceneConverterTests, MultipleInstancesAppendWithOffsetIndices) {
     const auto sceneData = buildSceneData(scene);
     ASSERT_EQ(sceneData.positions.size(), 6U);
     ASSERT_EQ(sceneData.indices.size(), 6U);
+    ASSERT_EQ(sceneData.instanceRanges.size(), 2U);
+    EXPECT_EQ(sceneData.instanceRanges[0].indexCount, 3U);
+    EXPECT_EQ(sceneData.instanceRanges[1].indexCount, 3U);
 
     EXPECT_EQ(sceneData.indices[0], 0U);
     EXPECT_EQ(sceneData.indices[1], 1U);

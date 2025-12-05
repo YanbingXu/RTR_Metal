@@ -17,16 +17,13 @@ vector_float3 clampColor(vector_float3 value) {
     return simd_clamp(value, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
 }
 
-bool isMonochrome(vector_float3 value, float epsilon = 1e-3f) {
-    return std::fabs(value.x - value.y) <= epsilon && std::fabs(value.x - value.z) <= epsilon;
-}
-
 bool appendMeshInstance(const scene::Mesh& mesh,
                         const scene::Material* material,
                         std::uint32_t materialIndex,
                         simd_float4x4 transform,
                         vector_float3 defaultColor,
-                        MPSSceneData& outScene) {
+                        MPSSceneData& outScene,
+                        MPSInstanceRange& outRange) {
     const auto& vertices = mesh.vertices();
     const auto& indices = mesh.indices();
     if (vertices.empty() || indices.empty()) {
@@ -46,8 +43,7 @@ bool appendMeshInstance(const scene::Mesh& mesh,
         return false;
     }
 
-    const vector_float3 materialColor = material ? clampColor(material->albedo) : clampColor(defaultColor);
-    const vector_float3 emissionColor = material ? clampColor(material->emission) : vector_float3{0.0f, 0.0f, 0.0f};
+    const vector_float3 vertexColor = {1.0f, 1.0f, 1.0f};
 
     const std::size_t positionStart = outScene.positions.size();
     const std::size_t normalStart = outScene.normals.size();
@@ -68,7 +64,7 @@ bool appendMeshInstance(const scene::Mesh& mesh,
         const simd_float3 normal = simd_normalize(simd_make_float3(normal4.x, normal4.y, normal4.z));
         outScene.normals.push_back(normal);
         outScene.texcoords.push_back(vertex.texcoord);
-        outScene.colors.push_back(materialColor);
+        outScene.colors.push_back(vertexColor);
     }
 
     outScene.indices.reserve(outScene.indices.size() + indices.size());
@@ -91,6 +87,11 @@ bool appendMeshInstance(const scene::Mesh& mesh,
     const std::uint32_t storedMaterialIndex = validMaterial ? materialIndex : 0u;
     outScene.primitiveMaterials.insert(outScene.primitiveMaterials.end(), triangleCount, storedMaterialIndex);
 
+    outRange.vertexOffset = static_cast<std::uint32_t>(positionStart);
+    outRange.vertexCount = static_cast<std::uint32_t>(vertexCount);
+    outRange.indexOffset = static_cast<std::uint32_t>(indexStart);
+    outRange.indexCount = static_cast<std::uint32_t>(indices.size());
+
     return true;
 }
 
@@ -98,11 +99,11 @@ bool appendMeshInstance(const scene::Mesh& mesh,
 
 MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColor) {
     MPSSceneData sceneData{};
-    sceneData.indexOffsets.clear();
-
     const auto& meshes = scene.meshes();
     const auto& materials = scene.materials();
     const auto& instances = scene.instances();
+
+    sceneData.instanceRanges.reserve(instances.size());
 
     sceneData.materials.reserve(materials.size());
     for (const auto& mat : materials) {
@@ -144,11 +145,15 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
             core::Logger::warn("MPSSceneConverter", "Instance %zu references invalid material", instanceIndex);
         }
 
-        if (appendMeshInstance(mesh, material, materialIndex, instance.transform, defaultColor, sceneData)) {
-            if (sceneData.indexOffsets.empty()) {
-                sceneData.indexOffsets.push_back(0);
-            }
-            sceneData.indexOffsets.push_back(sceneData.indices.size());
+        MPSInstanceRange range{};
+        if (appendMeshInstance(mesh,
+                               material,
+                               materialIndex,
+                               instance.transform,
+                               defaultColor,
+                               sceneData,
+                               range)) {
+            sceneData.instanceRanges.push_back(range);
             appendedAny = true;
         } else {
             core::Logger::warn("MPSSceneConverter", "Skipped mesh instance %zu due to invalid geometry", instanceIndex);
@@ -158,16 +163,15 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
     if (!appendedAny) {
         for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
             const scene::Mesh& mesh = meshes[meshIndex];
+            MPSInstanceRange range{};
             if (appendMeshInstance(mesh,
-                                    nullptr,
-                                    0u,
-                                    matrix_identity_float4x4,
-                                    defaultColor,
-                                    sceneData)) {
-                if (sceneData.indexOffsets.empty()) {
-                    sceneData.indexOffsets.push_back(0);
-                }
-                sceneData.indexOffsets.push_back(sceneData.indices.size());
+                                   nullptr,
+                                   0u,
+                                   matrix_identity_float4x4,
+                                   defaultColor,
+                                   sceneData,
+                                   range)) {
+                sceneData.instanceRanges.push_back(range);
                 appendedAny = true;
             } else {
                 core::Logger::warn("MPSSceneConverter", "Skipped mesh %zu due to invalid geometry", meshIndex);

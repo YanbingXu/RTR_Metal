@@ -370,14 +370,20 @@ void addMario(SceneBuilder& builder,
     scene.addInstance(mesh, matHandle, matrix_identity_float4x4);
 }
 
-bool marioFeatureEnabled() {
-    static const bool enabled = [] {
-        if (const char* flag = std::getenv("RTR_ENABLE_MARIO")) {
-            return std::strcmp(flag, "0") != 0;
-        }
-        return false;
-    }();
-    return enabled;
+bool marioFeatureEnabled(const std::filesystem::path& assetRoot) {
+    if (const char* flag = std::getenv("RTR_ENABLE_MARIO")) {
+        return std::strcmp(flag, "0") != 0;
+    }
+
+    const std::filesystem::path marioMesh = assetRoot / "mario.obj";
+    std::error_code ec;
+    const bool assetExists = std::filesystem::exists(marioMesh, ec);
+    if (!assetExists) {
+        rtr::core::Logger::warn("CornellBox",
+                                "Mario asset missing at %s; set RTR_ENABLE_MARIO=1 to force the feature",
+                                marioMesh.string().c_str());
+    }
+    return assetExists;
 }
 
 void addFeatureGeometry(SceneBuilder& builder,
@@ -411,7 +417,7 @@ void addFeatureGeometry(SceneBuilder& builder,
     auto glassMesh = addSphere(builder, 48, 24, glassTransform);
     scene.addInstance(glassMesh, glassMat, matrix_identity_float4x4);
 
-    if (marioFeatureEnabled()) {
+    if (marioFeatureEnabled(assetRoot)) {
         addMario(builder,
                  scene,
                  assetRoot,
@@ -419,7 +425,7 @@ void addFeatureGeometry(SceneBuilder& builder,
                  simd_make_float3(0.3275f, 0.6f, -0.1f),
                  0.01f);
     } else {
-        rtr::core::Logger::info("CornellBox", "Mario feature disabled (RTR_ENABLE_MARIO not set)");
+        rtr::core::Logger::info("CornellBox", "Mario feature disabled (enable by setting RTR_ENABLE_MARIO or providing assets)");
     }
 }
 

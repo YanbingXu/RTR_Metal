@@ -39,6 +39,8 @@ struct MPSSceneLimits {
     std::uint32_t texcoordCount = 0;
     std::uint32_t materialCount = 0;
     std::uint32_t textureCount = 0;
+    std::uint32_t instanceCount = 0;
+    std::uint32_t padding[3] = {0u, 0u, 0u};
 };
 
 struct alignas(16) MPSAccumulationUniforms {

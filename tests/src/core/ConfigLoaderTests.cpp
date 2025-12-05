@@ -75,16 +75,12 @@ TEST(ConfigLoader, ParsesAccumulationOptions) {
 shaderLibraryPath = assets/RTR.metallib
 accumulation = off
 accumulationFrames = 8
-samplesPerPixel = 4
-sampleSeed = 123
 maxBounces = 3
 )");
 
     const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
     EXPECT_FALSE(config.accumulationEnabled);
     EXPECT_EQ(config.accumulationFrames, 8u);
-    EXPECT_EQ(config.samplesPerPixel, 4u);
-    EXPECT_EQ(config.sampleSeed, 123u);
     EXPECT_EQ(config.maxHardwareBounces, 3u);
 
     std::filesystem::remove(path);

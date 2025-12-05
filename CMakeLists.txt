@@ -26,7 +26,6 @@ set(RTR_METAL_MODULE_CACHE ${RTR_SHADER_OUTPUT_DIR}/metal_module_cache)
 file(MAKE_DIRECTORY ${RTR_METAL_MODULE_CACHE})
 
 set(RTR_METAL_SOURCES
-    ${RTR_SHADER_DIR}/RTRShaders.metal
     ${RTR_SHADER_DIR}/RTRRayTracing.metal)
 
 set(RTR_METALLIB ${RTR_SHADER_OUTPUT_DIR}/RTRShaders.metallib)
@@ -58,13 +57,11 @@ add_custom_target(RTRMetalShaders ALL DEPENDS ${RTR_METALLIB})
 
 # Library ------------------------------------------------------------------
 add_library(RTRMetalEngine STATIC
-    ${RTR_METAL_SOURCES}
     engine/src/Core/ConfigLoader.cpp
     engine/src/Core/FileSystem.cpp
     engine/src/Core/Math.cpp
     engine/src/Core/Logger.cpp
     engine/src/Core/ImageLoader.mm
-    engine/src/Core/placeholder.cpp
     engine/src/Rendering/AccelerationStructure.mm
     engine/src/Rendering/AccelerationStructureBuilder.mm
     engine/src/Rendering/RayTracingPipeline.mm
@@ -79,11 +76,6 @@ add_library(RTRMetalEngine STATIC
     engine/src/Scene/OBJLoader.cpp
     engine/src/Scene/DemoScenes.cpp
     engine/src/Scene/CornellBox.cpp)
-
-# Placeholder source to satisfy library creation until core module fills out
-if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/Core/placeholder.cpp)
-    file(WRITE ${CMAKE_CURRENT_SOURCE_DIR}/engine/src/Core/placeholder.cpp "// placeholder stub to be replaced\n")
-endif()
 
 target_include_directories(RTRMetalEngine PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/engine/include)

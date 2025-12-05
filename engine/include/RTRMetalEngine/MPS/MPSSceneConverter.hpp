@@ -7,8 +7,8 @@
 
 #include <simd/simd.h>
 
-#include <vector>
 #include <cstdint>
+#include <vector>
 
 namespace rtr::scene {
 class Scene;
@@ -25,6 +25,13 @@ struct MPSMaterialProperties {
     float indexOfRefraction;
 };
 
+struct MPSInstanceRange {
+    std::uint32_t vertexOffset = 0;
+    std::uint32_t vertexCount = 0;
+    std::uint32_t indexOffset = 0;
+    std::uint32_t indexCount = 0;
+};
+
 struct MPSSceneData {
     std::vector<vector_float3> positions;
     std::vector<vector_float3> normals;
@@ -33,7 +40,7 @@ struct MPSSceneData {
     std::vector<uint32_t> indices;
     std::vector<MPSMaterialProperties> materials;
     std::vector<uint32_t> primitiveMaterials;
-    std::vector<uint32_t> indexOffsets;
+    std::vector<MPSInstanceRange> instanceRanges;
 };
 
 MPSSceneData buildSceneData(const scene::Scene& scene,

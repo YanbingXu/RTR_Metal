@@ -62,8 +62,8 @@ typedef struct RTRRayTracingInstanceResource {
     float4x4 worldToObject;
     uint meshIndex;
     uint materialIndex;
-    uint padding0;
-    uint padding1;
+    uint primitiveOffset;
+    uint primitiveCount;
 } RTRRayTracingInstanceResource;
 
 #define RTR_INVALID_TEXTURE_INDEX 0xFFFFFFFFu
@@ -159,8 +159,8 @@ struct alignas(16) RayTracingInstanceResource {
     simd_float4x4 worldToObject = matrix_identity_float4x4;
     std::uint32_t meshIndex = 0;
     std::uint32_t materialIndex = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
+    std::uint32_t primitiveOffset = 0;
+    std::uint32_t primitiveCount = 0;
 };
 
 struct alignas(16) RayTracingTextureResource {

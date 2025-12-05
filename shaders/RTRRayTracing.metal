@@ -17,6 +17,7 @@ using namespace metal;
 namespace {
 
 constant uint kMaxTextureSize = 2048u;
+constant uint kLightSamplesPerPixel = 4u;
 
 float srgbChannelToLinear(float value) {
     if (value <= 0.0f) {
@@ -208,17 +209,6 @@ inline void sampleAreaLight(RTRHardwareAreaLight light,
     lightColor *= clamp(dot(-lightDir, normal), 0.0f, 1.0f);
 }
 
-inline uint mixBits(uint value) {
-    value ^= value >> 17;
-    value *= 0xed5ad4bbu;
-    value ^= value >> 11;
-    value *= 0xac4c1b51u;
-    value ^= value >> 15;
-    value *= 0x31848babu;
-    value ^= value >> 14;
-    return value;
-}
-
 constant uint kHaltonPrimes[] = {
     2,   3,   5,   7,   11,  13,  17,  19,
     23,  29,  31,  37,  41,  43,  47,  53,
@@ -251,6 +241,7 @@ struct HardwareHit {
     uint primitiveIndex;
     float2 bary;
     float distance;
+    uint instanceId;
 };
 
 inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStructure,
@@ -273,6 +264,7 @@ inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStr
         hit.primitiveIndex = result.primitive_id;
         hit.distance = result.distance;
         hit.bary = result.triangle_barycentric_coord;
+        hit.instanceId = result.instance_id;
     }
     return hit;
 }
@@ -305,6 +297,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                       const device float* texturePixels [[buffer(9)]],
                       constant MPSSceneLimits& limits [[buffer(10)]],
                       device uint* hitDebug [[buffer(11)]],
+                      const device RTRRayTracingInstanceResource* instances [[buffer(12)]],
                       acceleration_structure<instancing> accelerationStructure [[buffer(15)]],
                       texture2d<unsigned int> randomTex [[texture(0)]],
                       texture2d<float, access::write> dstTex [[texture(1)]],
@@ -367,7 +360,16 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     float3 color = sampleSkyColor(rayDirection);
 
     if (hit.hit) {
-        const uint base = hit.primitiveIndex * 3u;
+        uint primitiveIndex = hit.primitiveIndex;
+        if (instances != nullptr && limits.instanceCount > 0u) {
+            const uint safeInstance = min(hit.instanceId, limits.instanceCount - 1u);
+            RTRRayTracingInstanceResource instanceInfo = instances[safeInstance];
+            const uint primitiveBase = instanceInfo.primitiveOffset + hit.primitiveIndex;
+            const uint primitiveCap = (limits.primitiveCount > 0u) ? (limits.primitiveCount - 1u) : 0u;
+            primitiveIndex = min(primitiveBase, primitiveCap);
+        }
+
+        const uint base = primitiveIndex * 3u;
         if (indices && base + 2u < limits.indexCount) {
             const uint i0 = indices[base + 0];
             const uint i1 = indices[base + 1];
@@ -397,18 +399,19 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                 }
 
                 float3 normal = computeNormal(i0, i1, i2, v0, v1, v2, normals, limits.normalCount, baryFull);
-                const RTRRayTracingMaterial material = loadMaterial(hit.primitiveIndex,
+                const RTRRayTracingMaterial material = loadMaterial(primitiveIndex,
                                                                     primitiveMaterials,
                                                                     materials,
                                                                     limits.primitiveCount,
                                                                     limits.materialCount);
-                const float3 baseColour = clamp(sampleMaterialColor(material,
-                                                                    uv,
-                                                                    textureInfos,
-                                                                    limits.textureCount,
-                                                                    texturePixels),
-                                                0.0f,
-                                                1.0f) * vertexColour;
+                const float3 sampledColour = clamp(sampleMaterialColor(material,
+                                                                       uv,
+                                                                       textureInfos,
+                                                                       limits.textureCount,
+                                                                       texturePixels),
+                                                    0.0f,
+                                                    1.0f);
+                const float3 baseColour = sampledColour * vertexColour;
 
                 if (debugAlbedo) {
                     color = baseColour;
@@ -417,30 +420,36 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                     float3 lighting = baseColour * 0.05f + material.emission;
 
                     const RTRHardwareAreaLight light = getAreaLight(uniforms);
-                    const uint frameSeed = uniforms.camera.sampleSeed ^ uniforms.camera.frameIndex;
-                    uint randomSeed = mixBits(gid.x * 73856093u ^ gid.y * 19349663u ^ frameSeed);
-                    const float2 lightSamples = float2(halton(randomSeed, 2u), halton(randomSeed ^ 0x9e3779b9u, 3u));
-                    float3 lightDir;
-                    float3 lightColor;
-                    float lightDistance;
-                    sampleAreaLight(light, lightSamples, hitPos, lightDir, lightColor, lightDistance);
+                    const uint pixelSeed = gid.x * 73856093u ^ gid.y * 19349663u;
+                    const uint frameBase = uniforms.camera.frameIndex * kLightSamplesPerPixel;
+                    const float sampleWeight = 1.0f / static_cast<float>(kLightSamplesPerPixel);
+                    for (uint sampleIdx = 0u; sampleIdx < kLightSamplesPerPixel; ++sampleIdx) {
+                        const uint sequenceIndex = pixelSeed + frameBase + sampleIdx + 1u;
+                        const float2 lightSamples = float2(halton(sequenceIndex, 2u),
+                                                           halton(sequenceIndex, 3u));
+                        float3 lightDir;
+                        float3 lightColor;
+                        float lightDistance;
+                        sampleAreaLight(light, lightSamples, hitPos, lightDir, lightColor, lightDistance);
 
-                    const float NdotL = max(dot(normal, lightDir), 0.0f);
-                    const float NdotV = max(dot(normal, viewDir), 0.0f);
-                    if (NdotL > 1.0e-4f && NdotV > 1.0e-4f && all(isfinite(lightDir))) {
-                        const bool occluded = isOccluded(accelerationStructure, hitPos, lightDir, lightDistance);
-                        if (!occluded) {
-                            const float3 halfVec = normalize(lightDir + viewDir);
-                            const float NdotH = max(dot(normal, halfVec), 0.0f);
-                            const float VdotH = max(dot(viewDir, halfVec), 0.0f);
-                            const float alpha = max(material.roughness * material.roughness, 1.0e-3f);
-                            const float D = distributionGGX(NdotH, alpha);
-                            const float G = geometrySmith(NdotV, NdotL, material.roughness);
-                            const float3 F = fresnelSchlick(VdotH, mix(float3(0.04f), baseColour, material.metallic));
-                            const float3 specular = (D * G * F) / max(4.0f * NdotV * NdotL, 1.0e-4f);
-                            const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
-                            const float3 diffuse = kd * baseColour / 3.14159265f;
-                            lighting += (diffuse + specular) * lightColor * NdotL;
+                        const float NdotL = max(dot(normal, lightDir), 0.0f);
+                        const float NdotV = max(dot(normal, viewDir), 0.0f);
+                        if (NdotL > 1.0e-4f && NdotV > 1.0e-4f && all(isfinite(lightDir))) {
+                            const bool occluded = isOccluded(accelerationStructure, hitPos, lightDir, lightDistance);
+                            if (!occluded) {
+                                const float3 halfVec = normalize(lightDir + viewDir);
+                                const float NdotH = max(dot(normal, halfVec), 0.0f);
+                                const float VdotH = max(dot(viewDir, halfVec), 0.0f);
+                                const float alpha = max(material.roughness * material.roughness, 1.0e-3f);
+                                const float D = distributionGGX(NdotH, alpha);
+                                const float G = geometrySmith(NdotV, NdotL, material.roughness);
+                                const float3 F = fresnelSchlick(VdotH,
+                                                                mix(float3(0.04f), baseColour, material.metallic));
+                                const float3 specular = (D * G * F) / max(4.0f * NdotV * NdotL, 1.0e-4f);
+                                const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
+                                const float3 diffuse = kd * baseColour / 3.14159265f;
+                                lighting += (diffuse + specular) * lightColor * NdotL * sampleWeight;
+                            }
                         }
                     }
 
@@ -449,40 +458,51 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                         const float3 reflectedDir = normalize(reflect(rayDirection, normal));
                         HardwareHit bounce = traceScene(accelerationStructure, hitPos, reflectedDir, 1.0e-3f, FLT_MAX);
                         float3 reflection = sampleSkyColor(reflectedDir);
-                        if (bounce.hit && bounce.primitiveIndex * 3u + 2u < limits.indexCount) {
-                            const uint bounceBase = bounce.primitiveIndex * 3u;
-                            const uint bi0 = indices[bounceBase + 0];
-                            const uint bi1 = indices[bounceBase + 1];
-                            const uint bi2 = indices[bounceBase + 2];
-                            if (bi0 < limits.vertexCount && bi1 < limits.vertexCount && bi2 < limits.vertexCount) {
-                                const float wBounce = clamp(1.0f - bounce.bary.x - bounce.bary.y, 0.0f, 1.0f);
-                                const float3 baryBounce = float3(wBounce, bounce.bary.x, bounce.bary.y);
-                                const float3 rb0 = float3(positions[bi0]);
-                                const float3 rb1 = float3(positions[bi1]);
-                                const float3 rb2 = float3(positions[bi2]);
-                                const float3 bouncePos = rb0 * baryBounce.x + rb1 * baryBounce.y + rb2 * baryBounce.z;
-                                float2 bounceUV = float2(0.0f);
-                                if (texcoords && bi0 < limits.texcoordCount && bi1 < limits.texcoordCount && bi2 < limits.texcoordCount) {
-                                    const float2 t0 = float2(texcoords[bi0]);
-                                    const float2 t1 = float2(texcoords[bi1]);
-                                    const float2 t2 = float2(texcoords[bi2]);
-                                    bounceUV = t0 * baryBounce.x + t1 * baryBounce.y + t2 * baryBounce.z;
+                        if (bounce.hit) {
+                            uint bouncePrimitiveIndex = bounce.primitiveIndex;
+                            if (instances != nullptr && limits.instanceCount > 0u) {
+                                const uint bounceInstance = min(bounce.instanceId, limits.instanceCount - 1u);
+                                RTRRayTracingInstanceResource bounceInfo = instances[bounceInstance];
+                                const uint bounceOffset = bounceInfo.primitiveOffset + bounce.primitiveIndex;
+                                const uint primitiveCap = (limits.primitiveCount > 0u) ? (limits.primitiveCount - 1u) : 0u;
+                                bouncePrimitiveIndex = min(bounceOffset, primitiveCap);
+                            }
+
+                            if (bouncePrimitiveIndex * 3u + 2u < limits.indexCount) {
+                                const uint bounceBase = bouncePrimitiveIndex * 3u;
+                                const uint bi0 = indices[bounceBase + 0];
+                                const uint bi1 = indices[bounceBase + 1];
+                                const uint bi2 = indices[bounceBase + 2];
+                                if (bi0 < limits.vertexCount && bi1 < limits.vertexCount && bi2 < limits.vertexCount) {
+                                    const float wBounce = clamp(1.0f - bounce.bary.x - bounce.bary.y, 0.0f, 1.0f);
+                                    const float3 baryBounce = float3(wBounce, bounce.bary.x, bounce.bary.y);
+                                    const float3 rb0 = float3(positions[bi0]);
+                                    const float3 rb1 = float3(positions[bi1]);
+                                    const float3 rb2 = float3(positions[bi2]);
+                                    const float3 bouncePos = rb0 * baryBounce.x + rb1 * baryBounce.y + rb2 * baryBounce.z;
+                                    float2 bounceUV = float2(0.0f);
+                                    if (texcoords && bi0 < limits.texcoordCount && bi1 < limits.texcoordCount && bi2 < limits.texcoordCount) {
+                                        const float2 t0 = float2(texcoords[bi0]);
+                                        const float2 t1 = float2(texcoords[bi1]);
+                                        const float2 t2 = float2(texcoords[bi2]);
+                                        bounceUV = t0 * baryBounce.x + t1 * baryBounce.y + t2 * baryBounce.z;
+                                    }
+                                    const RTRRayTracingMaterial bounceMaterial = loadMaterial(bouncePrimitiveIndex,
+                                                                                               primitiveMaterials,
+                                                                                               materials,
+                                                                                               limits.primitiveCount,
+                                                                                               limits.materialCount);
+                                    reflection = clamp(sampleMaterialColor(bounceMaterial,
+                                                                           bounceUV,
+                                                                           textureInfos,
+                                                                           limits.textureCount,
+                                                                           texturePixels),
+                                                       0.0f,
+                                                       1.0f);
+                                    reflection += bounceMaterial.emission;
+                                    const float bounceFade = exp(-0.2f * length(bouncePos - hitPos));
+                                    reflection *= bounceFade;
                                 }
-                                const RTRRayTracingMaterial bounceMaterial = loadMaterial(bounce.primitiveIndex,
-                                                                                           primitiveMaterials,
-                                                                                           materials,
-                                                                                           limits.primitiveCount,
-                                                                                           limits.materialCount);
-                                reflection = clamp(sampleMaterialColor(bounceMaterial,
-                                                                       bounceUV,
-                                                                       textureInfos,
-                                                                       limits.textureCount,
-                                                                       texturePixels),
-                                                   0.0f,
-                                                   1.0f);
-                                reflection += bounceMaterial.emission;
-                                const float bounceFade = exp(-0.2f * length(bouncePos - hitPos));
-                                reflection *= bounceFade;
                             }
                         }
                         lighting += reflection * reflectivity;
@@ -494,16 +514,12 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
         }
     }
 
-    if (gid.x == 0u && gid.y == 0u) {
-        color = hit.hit ? float3(1.0f, 0.0f, 0.0f) : float3(0.0f, 0.0f, 1.0f);
-    }
-
     dstTex.write(float4(color, 1.0f), gid);
 }
 
 kernel void accumulateKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                              texture2d<float, access::read> renderTex [[texture(0)]],
-                             texture2d<float, access::read> prevTex [[texture(1)]],
+                             texture2d<float, access::read_write> sumTex [[texture(1)]],
                              texture2d<float, access::write> accumTex [[texture(2)]],
                              uint2 gid [[thread_position_in_grid]]) {
     const uint width = uniforms.camera.width;
@@ -512,13 +528,15 @@ kernel void accumulateKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(
         return;
     }
 
-    float3 color = renderTex.read(gid).xyz;
+    float3 currentSum = renderTex.read(gid).xyz;
     if (uniforms.camera.frameIndex > 0u) {
-        float3 prev = prevTex.read(gid).xyz * static_cast<float>(uniforms.camera.frameIndex);
-        color = (color + prev) / static_cast<float>(uniforms.camera.frameIndex + 1u);
+        currentSum += sumTex.read(gid).xyz;
     }
 
-    accumTex.write(float4(color, 1.0f), gid);
+    sumTex.write(float4(currentSum, 1.0f), gid);
+    const float frameCount = static_cast<float>(uniforms.camera.frameIndex + 1u);
+    const float3 averaged = currentSum / max(frameCount, 1.0f);
+    accumTex.write(float4(averaged, 1.0f), gid);
 }
 
 #endif // RTR_HAS_RAYTRACING
@@ -535,13 +553,10 @@ vertex RTRDisplayVertexOutput RTRDisplayVertex(uint vertexID [[vertex_id]]) {
         float2(3.0f, -1.0f),
         float2(-1.0f, 3.0f),
     };
-    const float2 texcoords[3] = {
-        float2(0.0f, 0.0f),
-        float2(2.0f, 0.0f),
-        float2(0.0f, 2.0f),
-    };
-    out.position = float4(positions[vertexID], 0.0f, 1.0f);
-    out.uv = texcoords[vertexID] * 0.5f;
+    const float2 clipPosition = positions[vertexID];
+    out.position = float4(clipPosition, 0.0f, 1.0f);
+    // Map clip-space coordinates [-1, 1] directly into texture space [0, 1].
+    out.uv = clipPosition * 0.5f + 0.5f;
     return out;
 }
 

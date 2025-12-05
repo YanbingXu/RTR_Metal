@@ -10,6 +10,7 @@
 #include <iostream>
 #include <initializer_list>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -42,12 +43,11 @@ struct CommandLineOptions {
     std::uint32_t height = 512;
     std::uint32_t frames = 1;
     bool printHash = false;
+    std::optional<std::string> expectedHash;
     bool debugAlbedo = false;
     bool overrideShadingMode = false;
     std::optional<bool> accumulationEnabled;
     std::optional<std::uint32_t> accumulationFrames;
-    std::optional<std::uint32_t> samplesPerPixel;
-    std::optional<std::uint32_t> sampleSeed;
     std::optional<std::uint32_t> maxBounces;
 };
 
@@ -62,10 +62,9 @@ void printUsage() {
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
               << "  --accumulation=on|off  开启或关闭累计 (覆盖配置文件)\n"
               << "  --accumulation-frames=N 限定累计帧数 (0 表示无限制)\n"
-              << "  --samples-per-pixel=N  每像素采样次数，0 表示无限制 (默认 1)\n"
-              << "  --sample-seed=N        采样随机种子\n"
               << "  --max-bounces=N        硬件 RT 最大弹射次数 (至少 1)\n"
               << "  --hash                 渲染完输出图像的 FNV-1a hash\n"
+              << "  --expect-hash=0xHASH  计算图像 hash 并与给定值比对\n"
               << "  --debug-albedo         调试模式：直接输出材质反照率\n"
               << "  --help                 打印帮助\n";
 }
@@ -154,6 +153,9 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             }
         } else if (arg == "--hash") {
             options.printHash = true;
+        } else if (arg.rfind("--expect-hash=", 0) == 0) {
+            options.printHash = true;
+            options.expectedHash = arg.substr(14);
         } else if (arg == "--debug-albedo") {
             options.debugAlbedo = true;
         } else if (arg.rfind("--config=", 0) == 0) {
@@ -166,10 +168,6 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             options.accumulationEnabled = false;
         } else if (arg.rfind("--accumulation-frames=", 0) == 0) {
             options.accumulationFrames = parseUIntArgument(arg.substr(22), "--accumulation-frames");
-        } else if (arg.rfind("--samples-per-pixel=", 0) == 0) {
-            options.samplesPerPixel = parseUIntArgument(arg.substr(22), "--samples-per-pixel");
-        } else if (arg.rfind("--sample-seed=", 0) == 0) {
-            options.sampleSeed = parseUIntArgument(arg.substr(14), "--sample-seed");
         } else if (arg.rfind("--max-bounces=", 0) == 0) {
             const auto value = parseUIntArgument(arg.substr(14), "--max-bounces");
             if (value == 0) {
@@ -282,12 +280,6 @@ int main(int argc, const char* argv[]) {
     if (options.accumulationFrames.has_value()) {
         config.accumulationFrames = *options.accumulationFrames;
     }
-    if (options.samplesPerPixel.has_value()) {
-        config.samplesPerPixel = *options.samplesPerPixel;
-    }
-    if (options.sampleSeed.has_value()) {
-        config.sampleSeed = *options.sampleSeed;
-    }
     if (options.maxBounces.has_value()) {
         config.maxHardwareBounces = *options.maxBounces;
     }
@@ -322,12 +314,38 @@ int main(int argc, const char* argv[]) {
 
     std::cout << "Rendered " << options.frames << " frame(s) to " << options.outputPath << std::endl;
 
-    if (options.printHash) {
+    auto normalizeHash = [](std::string value) {
+        if (value.rfind("0x", 0) == 0 || value.rfind("0X", 0) == 0) {
+            value = value.substr(2);
+        }
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::toupper(c));
+        });
+        return value;
+    };
+
+    if (options.printHash || options.expectedHash.has_value()) {
         try {
             const auto hash = computeFNVHash(options.outputPath);
             std::cout << "FNV-1a hash: 0x" << std::hex << std::uppercase << hash << std::dec << std::nouppercase << std::endl;
+            if (options.expectedHash.has_value()) {
+                const std::string expected = normalizeHash(*options.expectedHash);
+                std::ostringstream stream;
+                stream << std::hex << std::uppercase << hash;
+                const std::string actual = stream.str();
+                if (actual != expected) {
+                    rtr::core::Logger::error("Sample",
+                                              "Hash mismatch: expected 0x%s, got 0x%s",
+                                              expected.c_str(),
+                                              actual.c_str());
+                    return 1;
+                }
+            }
         } catch (const std::exception& ex) {
             rtr::core::Logger::warn("Sample", "Hash computation failed: %s", ex.what());
+            if (options.expectedHash.has_value()) {
+                return 1;
+            }
         }
     }
 
