@@ -1,14 +1,10 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <simd/simd.h>
-
-#include <simd/simd.h>
-
-#include <cstdint>
-#include <vector>
 
 namespace rtr::scene {
 class Scene;
@@ -30,6 +26,10 @@ struct MPSInstanceRange {
     std::uint32_t vertexCount = 0;
     std::uint32_t indexOffset = 0;
     std::uint32_t indexCount = 0;
+    std::uint32_t materialIndex = std::numeric_limits<std::uint32_t>::max();
+    std::uint32_t padding = 0;
+    simd_float4x4 transform = matrix_identity_float4x4;
+    simd_float4x4 inverseTransform = matrix_identity_float4x4;
 };
 
 struct MPSSceneData {

@@ -83,14 +83,21 @@ inline RTRRayTracingMaterial loadMaterial(uint primitiveIndex,
                                           const device uint* primitiveMaterials,
                                           const device RTRRayTracingMaterial* materials,
                                           uint primitiveCount,
-                                          uint materialCount) {
+                                          uint materialCount,
+                                          uint fallbackMaterialIndex) {
     if (!primitiveMaterials || !materials || primitiveCount == 0 || materialCount == 0) {
         return makeFallbackMaterial();
     }
     const uint clampedPrimitive = min(primitiveIndex, primitiveCount - 1u);
     uint materialIndex = primitiveMaterials[clampedPrimitive];
     if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
+        materialIndex = fallbackMaterialIndex;
+    }
+    if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
         materialIndex = 0u;
+    }
+    if (materialIndex >= materialCount) {
+        materialIndex = fallbackMaterialIndex < materialCount ? fallbackMaterialIndex : (materialCount - 1u);
     }
     materialIndex = min(materialIndex, materialCount - 1u);
     return materials[materialIndex];
@@ -310,7 +317,11 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
 
     float2 jitter = float2(0.0f);
     if (randomTex.get_width() > 0 && randomTex.get_height() > 0) {
-        const uint2 coord = uint2(gid.x % randomTex.get_width(), gid.y % randomTex.get_height());
+        const uint widthMask = randomTex.get_width();
+        const uint heightMask = randomTex.get_height();
+        const uint framePhaseX = (uniforms.camera.frameIndex * 12582917u) % max(widthMask, 1u);
+        const uint framePhaseY = (uniforms.camera.frameIndex * 4256249u) % max(heightMask, 1u);
+        const uint2 coord = uint2((gid.x + framePhaseX) % widthMask, (gid.y + framePhaseY) % heightMask);
         const uint4 noise = randomTex.read(coord);
         jitter.x = (static_cast<float>(noise.x & 0xFFFFu) + 0.5f) / 65536.0f - 0.5f;
         jitter.y = (static_cast<float>(noise.y & 0xFFFFu) + 0.5f) / 65536.0f - 0.5f;
@@ -361,12 +372,17 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
 
     if (hit.hit) {
         uint primitiveIndex = hit.primitiveIndex;
+        RTRRayTracingInstanceResource instanceInfo;
         if (instances != nullptr && limits.instanceCount > 0u) {
             const uint safeInstance = min(hit.instanceId, limits.instanceCount - 1u);
-            RTRRayTracingInstanceResource instanceInfo = instances[safeInstance];
+            instanceInfo = instances[safeInstance];
             const uint primitiveBase = instanceInfo.primitiveOffset + hit.primitiveIndex;
             const uint primitiveCap = (limits.primitiveCount > 0u) ? (limits.primitiveCount - 1u) : 0u;
             primitiveIndex = min(primitiveBase, primitiveCap);
+        } else {
+            instanceInfo.objectToWorld = float4x4(1.0f);
+            instanceInfo.worldToObject = float4x4(1.0f);
+            instanceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
         }
 
         const uint base = primitiveIndex * 3u;
@@ -403,7 +419,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                                                     primitiveMaterials,
                                                                     materials,
                                                                     limits.primitiveCount,
-                                                                    limits.materialCount);
+                                                                    limits.materialCount,
+                                                                    instanceInfo.materialIndex);
                 const float3 sampledColour = clamp(sampleMaterialColor(material,
                                                                        uv,
                                                                        textureInfos,
@@ -460,12 +477,15 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                         float3 reflection = sampleSkyColor(reflectedDir);
                         if (bounce.hit) {
                             uint bouncePrimitiveIndex = bounce.primitiveIndex;
+                            RTRRayTracingInstanceResource bounceInfo;
                             if (instances != nullptr && limits.instanceCount > 0u) {
                                 const uint bounceInstance = min(bounce.instanceId, limits.instanceCount - 1u);
-                                RTRRayTracingInstanceResource bounceInfo = instances[bounceInstance];
+                                bounceInfo = instances[bounceInstance];
                                 const uint bounceOffset = bounceInfo.primitiveOffset + bounce.primitiveIndex;
                                 const uint primitiveCap = (limits.primitiveCount > 0u) ? (limits.primitiveCount - 1u) : 0u;
                                 bouncePrimitiveIndex = min(bounceOffset, primitiveCap);
+                            } else {
+                                bounceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
                             }
 
                             if (bouncePrimitiveIndex * 3u + 2u < limits.indexCount) {
@@ -491,7 +511,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                                                                                primitiveMaterials,
                                                                                                materials,
                                                                                                limits.primitiveCount,
-                                                                                               limits.materialCount);
+                                                                                               limits.materialCount,
+                                                                                               bounceInfo.materialIndex);
                                     reflection = clamp(sampleMaterialColor(bounceMaterial,
                                                                            bounceUV,
                                                                            textureInfos,

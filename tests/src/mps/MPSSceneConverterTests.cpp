@@ -55,6 +55,19 @@ TEST(MPSSceneConverterTests, ConvertsSingleInstance) {
     expectVectorNear(sceneData.colors[1], customMaterial.albedo);
     expectVectorNear(sceneData.colors[2], customMaterial.albedo);
 
+    ASSERT_EQ(sceneData.instanceRanges.size(), 1U);
+    const auto& range = sceneData.instanceRanges[0];
+    EXPECT_EQ(range.materialIndex, 0U);
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            EXPECT_FLOAT_EQ(range.transform.columns[column][row], matrix_identity_float4x4.columns[column][row]);
+            EXPECT_FLOAT_EQ(range.inverseTransform.columns[column][row], matrix_identity_float4x4.columns[column][row]);
+        }
+    }
+
+    ASSERT_EQ(sceneData.materials.size(), 1U);
+    expectVectorNear(sceneData.materials[0].albedo, customMaterial.albedo);
+
     EXPECT_EQ(sceneData.indices[0], 0U);
     EXPECT_EQ(sceneData.indices[1], 1U);
     EXPECT_EQ(sceneData.indices[2], 2U);
@@ -88,6 +101,9 @@ TEST(MPSSceneConverterTests, FallsBackToMeshesWhenNoInstancesAndAppliesDefaultCo
     expectVectorNear(sceneData.colors[0], defaultColor);
     expectVectorNear(sceneData.colors[1], defaultColor);
     expectVectorNear(sceneData.colors[2], defaultColor);
+
+    ASSERT_EQ(sceneData.materials.size(), 1U);
+    expectVectorNear(sceneData.materials[0].albedo, defaultColor);
 }
 
 TEST(MPSSceneConverterTests, MultipleInstancesAppendWithOffsetIndices) {

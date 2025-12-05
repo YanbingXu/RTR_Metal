@@ -161,6 +161,7 @@ if(RTR_BUILD_TESTS)
         tests/src/rendering/BufferAllocatorTests.cpp
         tests/src/rendering/GeometryStoreTests.cpp
         tests/src/rendering/AccelerationStructureBuilderTests.cpp
+        tests/src/rendering/AccumulationTests.cpp
         tests/src/rendering/RendererTests.cpp
         tests/src/scene/SceneTests.cpp
         tests/src/scene/SceneBuilderTests.cpp

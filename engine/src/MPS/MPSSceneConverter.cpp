@@ -91,6 +91,23 @@ bool appendMeshInstance(const scene::Mesh& mesh,
     outRange.vertexCount = static_cast<std::uint32_t>(vertexCount);
     outRange.indexOffset = static_cast<std::uint32_t>(indexStart);
     outRange.indexCount = static_cast<std::uint32_t>(indices.size());
+    outRange.materialIndex = material ? materialIndex : std::numeric_limits<std::uint32_t>::max();
+    outRange.transform = transform;
+    bool invertible = true;
+    simd_float4x4 inverse = simd_inverse(transform);
+    for (int column = 0; column < 4; ++column) {
+        for (int row = 0; row < 4; ++row) {
+            const float value = inverse.columns[column][row];
+            if (!std::isfinite(value)) {
+                invertible = false;
+                break;
+            }
+        }
+        if (!invertible) {
+            break;
+        }
+    }
+    outRange.inverseTransform = invertible ? inverse : matrix_identity_float4x4;
 
     return true;
 }

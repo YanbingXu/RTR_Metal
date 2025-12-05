@@ -181,7 +181,7 @@ struct RayTracingTarget {
 };
 
 struct RayTracingResources {
-    id<MTLTexture> accumulationTexture = nil;
+    id<MTLTexture> accumulationHistoryTexture = nil;
     id<MTLTexture> randomTexture = nil;
     id<MTLTexture> shadeTexture = nil;
     id<MTLBuffer> sceneLimitsBuffer = nil;
@@ -201,7 +201,7 @@ struct RayTracingResources {
     MPSSceneLimits sceneLimits{};
 
     void reset() {
-        accumulationTexture = nil;
+        accumulationHistoryTexture = nil;
         randomTexture = nil;
         shadeTexture = nil;
         sceneLimitsBuffer = nil;
@@ -222,7 +222,7 @@ struct RayTracingResources {
     }
 
     void resetForResize() {
-        accumulationTexture = nil;
+        accumulationHistoryTexture = nil;
         shadeTexture = nil;
         width = 0;
         height = 0;
@@ -593,11 +593,17 @@ struct Renderer::Impl {
 
         const bool doAccumulate = accumulationEnabledThisFrame();
         bool accumulationDispatched = false;
-        if (doAccumulate && resources.accumulationTexture && accumulatePipeline != nil) {
+        core::Logger::info("Renderer",
+                           "Accumulation state: enabled=%s frameIndex=%u limit=%u history=%s",
+                           doAccumulate ? "true" : "false",
+                           accumulationFrameIndex,
+                           accumulationLimit(),
+                           resources.accumulationHistoryTexture ? "yes" : "no");
+        if (doAccumulate && resources.accumulationHistoryTexture && accumulatePipeline != nil) {
             if (!dispatch2D(accumulatePipeline, [&](id<MTLComputeCommandEncoder> encoder) {
                     [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
                     [encoder setTexture:resources.shadeTexture atIndex:0];
-                    [encoder setTexture:resources.accumulationTexture atIndex:1];
+                    [encoder setTexture:resources.accumulationHistoryTexture atIndex:1];
                     [encoder setTexture:target.colorTexture atIndex:2];
                 })) {
                 core::Logger::error("Renderer", "Failed to encode accumulate kernel");
@@ -605,7 +611,9 @@ struct Renderer::Impl {
             }
 
             accumulationDispatched = true;
-        } else {
+        }
+
+        if (!doAccumulate) {
             id<MTLBlitCommandEncoder> blitColor = [commandBuffer blitCommandEncoder];
             if (blitColor) {
                 MTLOrigin origin = MTLOriginMake(0, 0, 0);
@@ -626,6 +634,12 @@ struct Renderer::Impl {
         if (accumulationDispatched) {
             if (accumulationFrameIndex < std::numeric_limits<std::uint32_t>::max()) {
                 accumulationFrameIndex++;
+            }
+            if (resources.accumulationHistoryTexture && accumulationFrameIndex <= 4) {
+                core::Logger::info("Renderer",
+                                    "Accumulation frame advanced to %u (history texture %p)",
+                                    accumulationFrameIndex,
+                                    resources.accumulationHistoryTexture);
             }
         }
 
@@ -843,6 +857,7 @@ struct Renderer::Impl {
         frameCounter = 0;
         accumulationFrameIndex = 0;
         accumulationInvalidated = true;
+        resources.accumulationHistoryTexture = nil;
     }
 
     [[nodiscard]] std::uint32_t accumulationLimit() const {
@@ -957,7 +972,10 @@ struct Renderer::Impl {
             }
         }
 
-        auto ensureTexture = [&](id<MTLTexture> __strong* textureSlot, MTLPixelFormat format, NSString* label) {
+        auto ensureTexture = [&](id<MTLTexture> __strong* textureSlot,
+                                 MTLPixelFormat format,
+                                 NSString* label,
+                                 bool clearOnCreate = false) {
             id<MTLTexture> texture = textureSlot ? *textureSlot : nil;
             if (texture != nil && resources.width == width && resources.height == height) {
                 return true;
@@ -966,7 +984,7 @@ struct Renderer::Impl {
                                                                                            width:width
                                                                                           height:height
                                                                                        mipmapped:NO];
-            desc.storageMode = MTLStorageModePrivate;
+            desc.storageMode = clearOnCreate ? MTLStorageModeShared : MTLStorageModePrivate;
             desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
             id<MTLTexture> newTexture = [device newTextureWithDescriptor:desc];
             if (!newTexture) {
@@ -977,6 +995,13 @@ struct Renderer::Impl {
             if (textureSlot) {
                 *textureSlot = newTexture;
             }
+
+            if (clearOnCreate) {
+                std::vector<float> zeros(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u);
+                MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+                const NSUInteger bytesPerRow = static_cast<NSUInteger>(width) * sizeof(float) * 4u;
+                [newTexture replaceRegion:region mipmapLevel:0 withBytes:zeros.data() bytesPerRow:bytesPerRow];
+            }
             return true;
         };
 
@@ -986,11 +1011,14 @@ struct Renderer::Impl {
 
         const bool needsAccumulation = accumulationEnabledThisFrame();
         if (needsAccumulation) {
-            if (!ensureTexture(&resources.accumulationTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.accum")) {
+            if (!ensureTexture(&resources.accumulationHistoryTexture,
+                               MTLPixelFormatRGBA32Float,
+                               @"rtr.hw.accum",
+                               true)) {
                 success = false;
             }
-        } else if (resources.accumulationTexture != nil && (resources.width != width || resources.height != height)) {
-            resources.accumulationTexture = nil;
+        } else if (resources.accumulationHistoryTexture != nil && (resources.width != width || resources.height != height)) {
+            resources.accumulationHistoryTexture = nil;
         }
 
         if (resources.sceneLimitsBuffer == nil) {
@@ -1264,7 +1292,30 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     std::uint32_t runningPrimitiveOffset = 0u;
 
     for (std::size_t rangeIndex = 0; rangeIndex < sceneData.instanceRanges.size(); ++rangeIndex) {
+        const auto isMatrixFinite = [](const simd_float4x4& matrix) {
+            for (int column = 0; column < 4; ++column) {
+                for (int row = 0; row < 4; ++row) {
+                    if (!std::isfinite(matrix.columns[column][row])) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+
         const MPSInstanceRange& range = sceneData.instanceRanges[rangeIndex];
+        simd_float4x4 objectToWorld = range.transform;
+        if (!isMatrixFinite(objectToWorld)) {
+            objectToWorld = matrix_identity_float4x4;
+        }
+
+        simd_float4x4 worldToObject = range.inverseTransform;
+        if (!isMatrixFinite(worldToObject)) {
+            worldToObject = simd_inverse(objectToWorld);
+        }
+        if (!isMatrixFinite(worldToObject)) {
+            worldToObject = matrix_identity_float4x4;
+        }
         const std::uint32_t primitiveCount = range.indexCount / 3u;
         scene::Mesh mesh = makeMeshFromSceneRange(sceneData, range);
         if (mesh.vertices().empty() || mesh.indices().empty()) {
@@ -1294,17 +1345,18 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
         InstanceBuildInput input{};
         input.structure = &bottomLevelStructures.back();
-        input.transform = matrix_identity_float4x4;
+        input.transform = objectToWorld;
         input.userID = static_cast<std::uint32_t>(blasIndex);
         input.mask = RTR_TRIANGLE_MASK_GEOMETRY;
         input.intersectionFunctionTableOffset = 0u;
         instanceInputs.push_back(input);
 
         RayTracingInstanceResource resource{};
-        resource.objectToWorld = matrix_identity_float4x4;
-        resource.worldToObject = matrix_identity_float4x4;
+        resource.objectToWorld = objectToWorld;
+        resource.worldToObject = worldToObject;
         resource.meshIndex = static_cast<std::uint32_t>(blasIndex);
-        resource.materialIndex = 0u;
+        const std::uint32_t safeMaterialIndex = (range.materialIndex < materials.size()) ? range.materialIndex : 0u;
+        resource.materialIndex = safeMaterialIndex;
         resource.primitiveOffset = runningPrimitiveOffset;
         resource.primitiveCount = primitiveCount;
         instanceResources.push_back(resource);
