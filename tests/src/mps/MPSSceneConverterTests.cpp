@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <limits>
 
 #include <simd/simd.h>
 
@@ -43,20 +44,25 @@ TEST(MPSSceneConverterTests, ConvertsSingleInstance) {
     ASSERT_EQ(sceneData.positions.size(), 3U);
     ASSERT_EQ(sceneData.colors.size(), 3U);
     ASSERT_EQ(sceneData.indices.size(), 3U);
+    ASSERT_EQ(sceneData.meshRanges.size(), 1U);
     ASSERT_EQ(sceneData.instanceRanges.size(), 1U);
-    EXPECT_EQ(sceneData.instanceRanges[0].vertexCount, 3U);
-    EXPECT_EQ(sceneData.instanceRanges[0].indexCount, 3U);
 
     expectVectorNear(sceneData.positions[0], simd_make_float3(-0.25f, -0.25f, 0.0f));
     expectVectorNear(sceneData.positions[1], simd_make_float3(0.25f, -0.25f, 0.0f));
     expectVectorNear(sceneData.positions[2], simd_make_float3(0.0f, 0.35f, 0.0f));
 
-    expectVectorNear(sceneData.colors[0], customMaterial.albedo);
-    expectVectorNear(sceneData.colors[1], customMaterial.albedo);
-    expectVectorNear(sceneData.colors[2], customMaterial.albedo);
+    const vector_float3 expectedColour = customMaterial.albedo;
+    expectVectorNear(sceneData.colors[0], expectedColour);
+    expectVectorNear(sceneData.colors[1], expectedColour);
+    expectVectorNear(sceneData.colors[2], expectedColour);
 
-    ASSERT_EQ(sceneData.instanceRanges.size(), 1U);
+    const auto& meshRange = sceneData.meshRanges[0];
+    EXPECT_EQ(meshRange.vertexCount, 3U);
+    EXPECT_EQ(meshRange.indexCount, 3U);
+    EXPECT_EQ(meshRange.materialIndex, 0U);
+
     const auto& range = sceneData.instanceRanges[0];
+    EXPECT_EQ(range.meshIndex, 0U);
     EXPECT_EQ(range.materialIndex, 0U);
     for (int column = 0; column < 4; ++column) {
         for (int row = 0; row < 4; ++row) {
@@ -93,14 +99,19 @@ TEST(MPSSceneConverterTests, FallsBackToMeshesWhenNoInstancesAndAppliesDefaultCo
     ASSERT_EQ(sceneData.colors.size(), 3U);
     ASSERT_EQ(sceneData.indices.size(), 3U);
     ASSERT_EQ(sceneData.instanceRanges.size(), 1U);
+    ASSERT_EQ(sceneData.meshRanges.size(), 1U);
 
     expectVectorNear(sceneData.positions[0], simd_make_float3(0.0f, 0.0f, 0.0f));
     expectVectorNear(sceneData.positions[1], simd_make_float3(1.0f, 0.0f, 0.0f));
     expectVectorNear(sceneData.positions[2], simd_make_float3(0.0f, 1.0f, 0.0f));
 
-    expectVectorNear(sceneData.colors[0], defaultColor);
-    expectVectorNear(sceneData.colors[1], defaultColor);
-    expectVectorNear(sceneData.colors[2], defaultColor);
+    const vector_float3 expectedColour = defaultColor;
+    expectVectorNear(sceneData.colors[0], expectedColour);
+    expectVectorNear(sceneData.colors[1], expectedColour);
+    expectVectorNear(sceneData.colors[2], expectedColour);
+
+    ASSERT_EQ(sceneData.meshRanges.size(), 1U);
+    EXPECT_EQ(sceneData.meshRanges[0].materialIndex, std::numeric_limits<std::uint32_t>::max());
 
     ASSERT_EQ(sceneData.materials.size(), 1U);
     expectVectorNear(sceneData.materials[0].albedo, defaultColor);
@@ -132,9 +143,10 @@ TEST(MPSSceneConverterTests, MultipleInstancesAppendWithOffsetIndices) {
     const auto sceneData = buildSceneData(scene);
     ASSERT_EQ(sceneData.positions.size(), 6U);
     ASSERT_EQ(sceneData.indices.size(), 6U);
+    ASSERT_EQ(sceneData.meshRanges.size(), 2U);
     ASSERT_EQ(sceneData.instanceRanges.size(), 2U);
-    EXPECT_EQ(sceneData.instanceRanges[0].indexCount, 3U);
-    EXPECT_EQ(sceneData.instanceRanges[1].indexCount, 3U);
+    EXPECT_EQ(sceneData.meshRanges[0].indexCount, 3U);
+    EXPECT_EQ(sceneData.meshRanges[1].indexCount, 3U);
 
     EXPECT_EQ(sceneData.indices[0], 0U);
     EXPECT_EQ(sceneData.indices[1], 1U);

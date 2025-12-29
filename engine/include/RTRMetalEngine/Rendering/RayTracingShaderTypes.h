@@ -47,14 +47,14 @@ typedef struct RTRRayTracingResourceHeader {
 } RTRRayTracingResourceHeader;
 
 typedef struct RTRRayTracingMeshResource {
-    ulong vertexBufferAddress;
-    ulong indexBufferAddress;
+    uint positionOffset;
+    uint normalOffset;
+    uint texcoordOffset;
+    uint colorOffset;
+    uint indexOffset;
     uint vertexCount;
     uint indexCount;
-    uint vertexStride;
     uint materialIndex;
-    uint padding0;
-    uint padding1;
 } RTRRayTracingMeshResource;
 
 typedef struct RTRRayTracingInstanceResource {
@@ -144,14 +144,14 @@ struct alignas(16) RayTracingResourceHeader {
 };
 
 struct alignas(16) RayTracingMeshResource {
-    std::uint64_t vertexBufferAddress = 0ULL;
-    std::uint64_t indexBufferAddress = 0ULL;
+    std::uint32_t positionOffset = 0;
+    std::uint32_t normalOffset = 0;
+    std::uint32_t texcoordOffset = 0;
+    std::uint32_t colorOffset = 0;
+    std::uint32_t indexOffset = 0;
     std::uint32_t vertexCount = 0;
     std::uint32_t indexCount = 0;
-    std::uint32_t vertexStride = 0;
-    std::uint32_t materialIndex = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
+    std::uint32_t materialIndex = std::numeric_limits<std::uint32_t>::max();
 };
 
 struct alignas(16) RayTracingInstanceResource {

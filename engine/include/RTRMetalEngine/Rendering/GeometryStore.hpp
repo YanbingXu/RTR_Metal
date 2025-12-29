@@ -15,19 +15,16 @@ struct MeshBuffers {
     MeshBuffers(BufferHandle&& gpuVb,
                 BufferHandle&& gpuIb,
                 std::size_t vtxCount,
-                std::size_t idxCount,
-                std::size_t stride)
+                std::size_t idxCount)
         : gpuVertexBuffer(std::move(gpuVb)),
           gpuIndexBuffer(std::move(gpuIb)),
           vertexCount(vtxCount),
-          indexCount(idxCount),
-          vertexStride(stride) {}
+          indexCount(idxCount) {}
 
     BufferHandle gpuVertexBuffer;
     BufferHandle gpuIndexBuffer;
     std::size_t vertexCount = 0;
     std::size_t indexCount = 0;
-    std::size_t vertexStride = 0;
 };
 
 class GeometryStore {

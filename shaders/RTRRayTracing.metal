@@ -79,25 +79,18 @@ inline float3 computeNormal(uint i0,
     return normalize(cross(v1 - v0, v2 - v0));
 }
 
-inline RTRRayTracingMaterial loadMaterial(uint primitiveIndex,
-                                          const device uint* primitiveMaterials,
+inline RTRRayTracingMaterial loadMaterial(uint materialIndex,
                                           const device RTRRayTracingMaterial* materials,
-                                          uint primitiveCount,
                                           uint materialCount,
                                           uint fallbackMaterialIndex) {
-    if (!primitiveMaterials || !materials || primitiveCount == 0 || materialCount == 0) {
+    if (!materials || materialCount == 0) {
         return makeFallbackMaterial();
     }
-    const uint clampedPrimitive = min(primitiveIndex, primitiveCount - 1u);
-    uint materialIndex = primitiveMaterials[clampedPrimitive];
     if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
         materialIndex = fallbackMaterialIndex;
     }
     if (materialIndex == RTR_INVALID_MATERIAL_INDEX) {
         materialIndex = 0u;
-    }
-    if (materialIndex >= materialCount) {
-        materialIndex = fallbackMaterialIndex < materialCount ? fallbackMaterialIndex : (materialCount - 1u);
     }
     materialIndex = min(materialIndex, materialCount - 1u);
     return materials[materialIndex];
@@ -160,6 +153,16 @@ inline float3 sampleMaterialColor(const RTRRayTracingMaterial material,
     }
     const float4 sampled = sampleTexture(material.textureIndex, infos, textureCount, pixels, uv);
     return float3(sampled.rgb) * material.albedo;
+}
+
+inline float3 transformPosition(float4x4 matrix, float3 position) {
+    const float4 result = matrix * float4(position, 1.0f);
+    return result.xyz;
+}
+
+inline float3 transformNormal(float4x4 worldToObject, float3 normal) {
+    const float4 transformed = transpose(worldToObject) * float4(normal, 0.0f);
+    return normalize(transformed.xyz);
 }
 
 inline float geometrySchlickGGX(float nDotV, float k) {
@@ -298,7 +301,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                       const device uint* indices [[buffer(3)]],
                       const device packed_float3* colors [[buffer(4)]],
                       const device packed_float2* texcoords [[buffer(5)]],
-                      const device uint* primitiveMaterials [[buffer(6)]],
+                      const device RTRRayTracingMeshResource* meshes [[buffer(6)]],
                       const device RTRRayTracingMaterial* materials [[buffer(7)]],
                       constant RTRRayTracingTextureResource* textureInfos [[buffer(8)]],
                       const device float* texturePixels [[buffer(9)]],
@@ -371,21 +374,43 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     float3 color = sampleSkyColor(rayDirection);
 
     if (hit.hit) {
-        uint primitiveIndex = hit.primitiveIndex;
         RTRRayTracingInstanceResource instanceInfo;
         if (instances != nullptr && limits.instanceCount > 0u) {
             const uint safeInstance = min(hit.instanceId, limits.instanceCount - 1u);
             instanceInfo = instances[safeInstance];
-            const uint primitiveBase = instanceInfo.primitiveOffset + hit.primitiveIndex;
-            const uint primitiveCap = (limits.primitiveCount > 0u) ? (limits.primitiveCount - 1u) : 0u;
-            primitiveIndex = min(primitiveBase, primitiveCap);
         } else {
             instanceInfo.objectToWorld = float4x4(1.0f);
             instanceInfo.worldToObject = float4x4(1.0f);
             instanceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+            instanceInfo.meshIndex = 0u;
         }
 
-        const uint base = primitiveIndex * 3u;
+        RTRRayTracingMeshResource meshResource;
+        if (meshes != nullptr && limits.meshCount > 0u) {
+            const uint safeMesh = min(instanceInfo.meshIndex, limits.meshCount - 1u);
+            meshResource = meshes[safeMesh];
+        } else {
+            meshResource.positionOffset = 0u;
+            meshResource.normalOffset = 0u;
+            meshResource.texcoordOffset = 0u;
+            meshResource.colorOffset = 0u;
+            meshResource.indexOffset = 0u;
+            meshResource.vertexCount = limits.vertexCount;
+            meshResource.indexCount = limits.indexCount;
+            meshResource.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+        }
+
+        float4x4 objectToWorld = instanceInfo.objectToWorld;
+        float4x4 worldToObject = instanceInfo.worldToObject;
+
+        const uint meshPrimitiveCount = max(meshResource.indexCount / 3u, 1u);
+        const uint localPrimitive = min(hit.primitiveIndex, meshPrimitiveCount - 1u);
+        uint globalPrimitive = instanceInfo.primitiveOffset + localPrimitive;
+        if (instanceInfo.primitiveCount > 0u) {
+            const uint primitiveEnd = instanceInfo.primitiveOffset + instanceInfo.primitiveCount - 1u;
+            globalPrimitive = min(globalPrimitive, primitiveEnd);
+        }
+        const uint base = globalPrimitive * 3u;
         if (indices && base + 2u < limits.indexCount) {
             const uint i0 = indices[base + 0];
             const uint i1 = indices[base + 1];
@@ -393,10 +418,11 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
             if (i0 < limits.vertexCount && i1 < limits.vertexCount && i2 < limits.vertexCount) {
                 const float w = clamp(1.0f - hit.bary.x - hit.bary.y, 0.0f, 1.0f);
                 const float3 baryFull = float3(w, hit.bary.x, hit.bary.y);
-                const float3 v0 = float3(positions[i0]);
-                const float3 v1 = float3(positions[i1]);
-                const float3 v2 = float3(positions[i2]);
-                const float3 hitPos = v0 * baryFull.x + v1 * baryFull.y + v2 * baryFull.z;
+                const float3 localV0 = float3(positions[i0]);
+                const float3 localV1 = float3(positions[i1]);
+                const float3 localV2 = float3(positions[i2]);
+                const float3 localHit = localV0 * baryFull.x + localV1 * baryFull.y + localV2 * baryFull.z;
+                const float3 hitPos = transformPosition(objectToWorld, localHit);
 
                 float2 uv = float2(0.0f);
                 if (texcoords && i0 < limits.texcoordCount && i1 < limits.texcoordCount && i2 < limits.texcoordCount) {
@@ -414,13 +440,20 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                     vertexColour = clamp(c0 * baryFull.x + c1 * baryFull.y + c2 * baryFull.z, 0.0f, 1.0f);
                 }
 
-                float3 normal = computeNormal(i0, i1, i2, v0, v1, v2, normals, limits.normalCount, baryFull);
-                const RTRRayTracingMaterial material = loadMaterial(primitiveIndex,
-                                                                    primitiveMaterials,
+                const float3 localNormal = computeNormal(i0,
+                                                        i1,
+                                                        i2,
+                                                        localV0,
+                                                        localV1,
+                                                        localV2,
+                                                        normals,
+                                                        limits.normalCount,
+                                                        baryFull);
+                float3 normal = transformNormal(worldToObject, localNormal);
+                const RTRRayTracingMaterial material = loadMaterial(instanceInfo.materialIndex,
                                                                     materials,
-                                                                    limits.primitiveCount,
                                                                     limits.materialCount,
-                                                                    instanceInfo.materialIndex);
+                                                                    meshResource.materialIndex);
                 const float3 sampledColour = clamp(sampleMaterialColor(material,
                                                                        uv,
                                                                        textureInfos,
@@ -476,20 +509,36 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                         HardwareHit bounce = traceScene(accelerationStructure, hitPos, reflectedDir, 1.0e-3f, FLT_MAX);
                         float3 reflection = sampleSkyColor(reflectedDir);
                         if (bounce.hit) {
-                            uint bouncePrimitiveIndex = bounce.primitiveIndex;
                             RTRRayTracingInstanceResource bounceInfo;
                             if (instances != nullptr && limits.instanceCount > 0u) {
                                 const uint bounceInstance = min(bounce.instanceId, limits.instanceCount - 1u);
                                 bounceInfo = instances[bounceInstance];
-                                const uint bounceOffset = bounceInfo.primitiveOffset + bounce.primitiveIndex;
-                                const uint primitiveCap = (limits.primitiveCount > 0u) ? (limits.primitiveCount - 1u) : 0u;
-                                bouncePrimitiveIndex = min(bounceOffset, primitiveCap);
                             } else {
                                 bounceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                                bounceInfo.meshIndex = 0u;
                             }
 
-                            if (bouncePrimitiveIndex * 3u + 2u < limits.indexCount) {
-                                const uint bounceBase = bouncePrimitiveIndex * 3u;
+                            RTRRayTracingMeshResource bounceMesh;
+                            if (meshes != nullptr && limits.meshCount > 0u) {
+                                const uint safeBounceMesh = min(bounceInfo.meshIndex, limits.meshCount - 1u);
+                                bounceMesh = meshes[safeBounceMesh];
+                            } else {
+                                bounceMesh.positionOffset = 0u;
+                                bounceMesh.indexOffset = 0u;
+                                bounceMesh.vertexCount = limits.vertexCount;
+                                bounceMesh.indexCount = limits.indexCount;
+                                bounceMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                            }
+
+                            const uint bounceMeshPrimitiveCount = max(bounceMesh.indexCount / 3u, 1u);
+                            const uint bounceLocalPrimitive = min(bounce.primitiveIndex, bounceMeshPrimitiveCount - 1u);
+                            uint bounceGlobalPrimitive = bounceInfo.primitiveOffset + bounceLocalPrimitive;
+                            if (bounceInfo.primitiveCount > 0u) {
+                                const uint bounceEnd = bounceInfo.primitiveOffset + bounceInfo.primitiveCount - 1u;
+                                bounceGlobalPrimitive = min(bounceGlobalPrimitive, bounceEnd);
+                            }
+                            const uint bounceBase = bounceGlobalPrimitive * 3u;
+                            if (bounceBase + 2u < limits.indexCount) {
                                 const uint bi0 = indices[bounceBase + 0];
                                 const uint bi1 = indices[bounceBase + 1];
                                 const uint bi2 = indices[bounceBase + 2];
@@ -499,7 +548,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                     const float3 rb0 = float3(positions[bi0]);
                                     const float3 rb1 = float3(positions[bi1]);
                                     const float3 rb2 = float3(positions[bi2]);
-                                    const float3 bouncePos = rb0 * baryBounce.x + rb1 * baryBounce.y + rb2 * baryBounce.z;
+                                    const float3 bounceLocalPos = rb0 * baryBounce.x + rb1 * baryBounce.y + rb2 * baryBounce.z;
+                                    const float3 bouncePos = transformPosition(bounceInfo.objectToWorld, bounceLocalPos);
                                     float2 bounceUV = float2(0.0f);
                                     if (texcoords && bi0 < limits.texcoordCount && bi1 < limits.texcoordCount && bi2 < limits.texcoordCount) {
                                         const float2 t0 = float2(texcoords[bi0]);
@@ -507,12 +557,10 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                         const float2 t2 = float2(texcoords[bi2]);
                                         bounceUV = t0 * baryBounce.x + t1 * baryBounce.y + t2 * baryBounce.z;
                                     }
-                                    const RTRRayTracingMaterial bounceMaterial = loadMaterial(bouncePrimitiveIndex,
-                                                                                               primitiveMaterials,
+                                    const RTRRayTracingMaterial bounceMaterial = loadMaterial(bounceInfo.materialIndex,
                                                                                                materials,
-                                                                                               limits.primitiveCount,
                                                                                                limits.materialCount,
-                                                                                               bounceInfo.materialIndex);
+                                                                                               bounceMesh.materialIndex);
                                     reflection = clamp(sampleMaterialColor(bounceMaterial,
                                                                            bounceUV,
                                                                            textureInfos,

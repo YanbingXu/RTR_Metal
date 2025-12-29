@@ -39,7 +39,7 @@ TEST(GeometryStore, HandlesContextAvailabilityGracefully) {
         EXPECT_TRUE(buffers.gpuVertexBuffer.isValid());
         EXPECT_TRUE(buffers.gpuIndexBuffer.isValid());
         EXPECT_EQ(buffers.indexCount, indices.size());
-        EXPECT_EQ(buffers.vertexStride, sizeof(float) * 3);
+        EXPECT_EQ(buffers.vertexCount, mesh.vertices().size());
     } else {
         EXPECT_FALSE(result.has_value());
         EXPECT_TRUE(store.uploadedMeshes().empty());

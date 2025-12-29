@@ -50,8 +50,7 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
     meshes_.emplace_back(std::move(gpuVertexBuffer),
                          std::move(gpuIndexBuffer),
                          vertices.size(),
-                         indices.size(),
-                         kPackedPositionStride);
+                         indices.size());
     return meshes_.size() - 1;
 }
 

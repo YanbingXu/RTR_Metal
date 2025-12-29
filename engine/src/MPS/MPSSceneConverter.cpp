@@ -17,13 +17,10 @@ vector_float3 clampColor(vector_float3 value) {
     return simd_clamp(value, (vector_float3){0.0f, 0.0f, 0.0f}, (vector_float3){1.0f, 1.0f, 1.0f});
 }
 
-bool appendMeshInstance(const scene::Mesh& mesh,
-                        const scene::Material* material,
-                        std::uint32_t materialIndex,
-                        simd_float4x4 transform,
-                        vector_float3 defaultColor,
+bool appendMeshGeometry(const scene::Mesh& mesh,
+                        vector_float3 vertexColor,
                         MPSSceneData& outScene,
-                        MPSInstanceRange& outRange) {
+                        MPSMeshRange& outRange) {
     const auto& vertices = mesh.vertices();
     const auto& indices = mesh.indices();
     if (vertices.empty() || indices.empty()) {
@@ -43,28 +40,23 @@ bool appendMeshInstance(const scene::Mesh& mesh,
         return false;
     }
 
-    const vector_float3 vertexColor = {1.0f, 1.0f, 1.0f};
+    const vector_float3 clampedColor = clampColor(vertexColor);
 
     const std::size_t positionStart = outScene.positions.size();
     const std::size_t normalStart = outScene.normals.size();
     const std::size_t texcoordStart = outScene.texcoords.size();
     const std::size_t colorStart = outScene.colors.size();
     const std::size_t indexStart = outScene.indices.size();
-    const std::size_t primitiveStart = outScene.primitiveMaterials.size();
 
     outScene.positions.reserve(outScene.positions.size() + vertexCount);
     outScene.normals.reserve(outScene.normals.size() + vertexCount);
     outScene.texcoords.reserve(outScene.texcoords.size() + vertexCount);
     outScene.colors.reserve(outScene.colors.size() + vertexCount);
-    for (std::size_t vertexIndex = 0; vertexIndex < vertices.size(); ++vertexIndex) {
-        const auto& vertex = vertices[vertexIndex];
-        const simd_float4 position4 = simd_mul(transform, simd_make_float4(vertex.position, 1.0f));
-        outScene.positions.push_back(simd_make_float3(position4.x, position4.y, position4.z));
-        const simd_float4 normal4 = simd_mul(transform, simd_make_float4(vertex.normal, 0.0f));
-        const simd_float3 normal = simd_normalize(simd_make_float3(normal4.x, normal4.y, normal4.z));
-        outScene.normals.push_back(normal);
+    for (const auto& vertex : vertices) {
+        outScene.positions.push_back(vertex.position);
+        outScene.normals.push_back(vertex.normal);
         outScene.texcoords.push_back(vertex.texcoord);
-        outScene.colors.push_back(vertexColor);
+        outScene.colors.push_back(clampedColor);
     }
 
     outScene.indices.reserve(outScene.indices.size() + indices.size());
@@ -76,39 +68,15 @@ bool appendMeshInstance(const scene::Mesh& mesh,
             outScene.texcoords.resize(texcoordStart);
             outScene.colors.resize(colorStart);
             outScene.indices.resize(indexStart);
-            outScene.primitiveMaterials.resize(primitiveStart);
             return false;
         }
         outScene.indices.push_back(static_cast<std::uint32_t>(transformedIndex));
     }
 
-    const std::size_t triangleCount = indices.size() / 3;
-    const bool validMaterial = material && materialIndex < outScene.materials.size();
-    const std::uint32_t storedMaterialIndex = validMaterial ? materialIndex : 0u;
-    outScene.primitiveMaterials.insert(outScene.primitiveMaterials.end(), triangleCount, storedMaterialIndex);
-
     outRange.vertexOffset = static_cast<std::uint32_t>(positionStart);
     outRange.vertexCount = static_cast<std::uint32_t>(vertexCount);
     outRange.indexOffset = static_cast<std::uint32_t>(indexStart);
     outRange.indexCount = static_cast<std::uint32_t>(indices.size());
-    outRange.materialIndex = material ? materialIndex : std::numeric_limits<std::uint32_t>::max();
-    outRange.transform = transform;
-    bool invertible = true;
-    simd_float4x4 inverse = simd_inverse(transform);
-    for (int column = 0; column < 4; ++column) {
-        for (int row = 0; row < 4; ++row) {
-            const float value = inverse.columns[column][row];
-            if (!std::isfinite(value)) {
-                invertible = false;
-                break;
-            }
-        }
-        if (!invertible) {
-            break;
-        }
-    }
-    outRange.inverseTransform = invertible ? inverse : matrix_identity_float4x4;
-
     return true;
 }
 
@@ -121,6 +89,7 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
     const auto& instances = scene.instances();
 
     sceneData.instanceRanges.reserve(instances.size());
+    sceneData.meshRanges.reserve(meshes.size());
 
     sceneData.materials.reserve(materials.size());
     for (const auto& mat : materials) {
@@ -144,55 +113,88 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
         core::Logger::warn("MPSSceneConverter", "Scene contained no materials; inserted fallback material");
     }
 
-    bool appendedAny = false;
+    std::vector<std::uint32_t> meshRangeLookup(meshes.size(), std::numeric_limits<std::uint32_t>::max());
+    std::vector<std::uint32_t> meshMaterialLookup(meshes.size(), std::numeric_limits<std::uint32_t>::max());
+
+    for (const auto& instance : instances) {
+        if (!instance.mesh.isValid() || instance.mesh.index >= meshMaterialLookup.size()) {
+            continue;
+        }
+        if (meshMaterialLookup[instance.mesh.index] != std::numeric_limits<std::uint32_t>::max()) {
+            continue;
+        }
+        if (instance.material.isValid() && instance.material.index < materials.size()) {
+            meshMaterialLookup[instance.mesh.index] = static_cast<std::uint32_t>(instance.material.index);
+        }
+    }
+    for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
+        const scene::Mesh& mesh = meshes[meshIndex];
+        const std::uint32_t meshMaterialIndex = meshMaterialLookup[meshIndex];
+        vector_float3 vertexColor = defaultColor;
+        if (meshMaterialIndex != std::numeric_limits<std::uint32_t>::max() &&
+            meshMaterialIndex < materials.size()) {
+            const auto& selectedMaterial = materials[meshMaterialIndex];
+            vertexColor = selectedMaterial.albedo;
+        }
+        MPSMeshRange range{};
+        if (appendMeshGeometry(mesh, vertexColor, sceneData, range)) {
+            range.materialIndex = meshMaterialIndex;
+            meshRangeLookup[meshIndex] = static_cast<std::uint32_t>(sceneData.meshRanges.size());
+            sceneData.meshRanges.push_back(range);
+        } else {
+            core::Logger::warn("MPSSceneConverter", "Skipped mesh %zu due to invalid geometry", meshIndex);
+        }
+    }
+
+    auto computeInverse = [](const simd_float4x4& matrix) {
+        simd_float4x4 inverse = simd_inverse(matrix);
+        for (int column = 0; column < 4; ++column) {
+            for (int row = 0; row < 4; ++row) {
+                if (!std::isfinite(inverse.columns[column][row])) {
+                    return matrix_identity_float4x4;
+                }
+            }
+        }
+        return inverse;
+    };
+
     for (std::size_t instanceIndex = 0; instanceIndex < instances.size(); ++instanceIndex) {
         const auto& instance = instances[instanceIndex];
-        if (!instance.mesh.isValid() || instance.mesh.index >= meshes.size()) {
+        if (!instance.mesh.isValid() || instance.mesh.index >= meshRangeLookup.size()) {
             core::Logger::warn("MPSSceneConverter", "Instance %zu references invalid mesh", instanceIndex);
             continue;
         }
 
-        const scene::Mesh& mesh = meshes[instance.mesh.index];
-        const scene::Material* material = nullptr;
-        std::uint32_t materialIndex = 0u;
-        if (instance.material.isValid() && instance.material.index < materials.size()) {
-            material = &materials[instance.material.index];
-            materialIndex = static_cast<std::uint32_t>(instance.material.index);
-        } else if (instance.material.isValid()) {
-            core::Logger::warn("MPSSceneConverter", "Instance %zu references invalid material", instanceIndex);
+        const std::uint32_t meshRangeIndex = meshRangeLookup[instance.mesh.index];
+        if (meshRangeIndex == std::numeric_limits<std::uint32_t>::max()) {
+            core::Logger::warn("MPSSceneConverter", "Mesh %zu missing range; instance %zu skipped", instance.mesh.index, instanceIndex);
+            continue;
         }
 
         MPSInstanceRange range{};
-        if (appendMeshInstance(mesh,
-                               material,
-                               materialIndex,
-                               instance.transform,
-                               defaultColor,
-                               sceneData,
-                               range)) {
-            sceneData.instanceRanges.push_back(range);
-            appendedAny = true;
+        range.meshIndex = meshRangeIndex;
+        if (instance.material.isValid() && instance.material.index < materials.size()) {
+            range.materialIndex = static_cast<std::uint32_t>(instance.material.index);
         } else {
-            core::Logger::warn("MPSSceneConverter", "Skipped mesh instance %zu due to invalid geometry", instanceIndex);
+            range.materialIndex = 0u;
         }
+        range.transform = instance.transform;
+        range.inverseTransform = computeInverse(instance.transform);
+        sceneData.instanceRanges.push_back(range);
     }
 
-    if (!appendedAny) {
-        for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
-            const scene::Mesh& mesh = meshes[meshIndex];
-            MPSInstanceRange range{};
-            if (appendMeshInstance(mesh,
-                                   nullptr,
-                                   0u,
-                                   matrix_identity_float4x4,
-                                   defaultColor,
-                                   sceneData,
-                                   range)) {
-                sceneData.instanceRanges.push_back(range);
-                appendedAny = true;
-            } else {
-                core::Logger::warn("MPSSceneConverter", "Skipped mesh %zu due to invalid geometry", meshIndex);
+    if (sceneData.instanceRanges.empty()) {
+        for (std::size_t meshIndex = 0; meshIndex < meshRangeLookup.size(); ++meshIndex) {
+            const std::uint32_t meshRangeIndex = meshRangeLookup[meshIndex];
+            if (meshRangeIndex == std::numeric_limits<std::uint32_t>::max()) {
+                continue;
             }
+            MPSInstanceRange range{};
+            range.meshIndex = meshRangeIndex;
+            range.materialIndex = 0u;
+            range.transform = matrix_identity_float4x4;
+            range.inverseTransform = matrix_identity_float4x4;
+            sceneData.instanceRanges.push_back(range);
         }
     }
 
