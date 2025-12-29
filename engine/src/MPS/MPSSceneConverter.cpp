@@ -127,14 +127,15 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
             meshMaterialLookup[instance.mesh.index] = static_cast<std::uint32_t>(instance.material.index);
         }
     }
+    const vector_float3 neutralColor{1.0f, 1.0f, 1.0f};
     for (std::size_t meshIndex = 0; meshIndex < meshes.size(); ++meshIndex) {
         const scene::Mesh& mesh = meshes[meshIndex];
         const std::uint32_t meshMaterialIndex = meshMaterialLookup[meshIndex];
         vector_float3 vertexColor = defaultColor;
         if (meshMaterialIndex != std::numeric_limits<std::uint32_t>::max() &&
             meshMaterialIndex < materials.size()) {
-            const auto& selectedMaterial = materials[meshMaterialIndex];
-            vertexColor = selectedMaterial.albedo;
+            // Keep shared vertex colors neutral so per-instance materials remain accurate.
+            vertexColor = neutralColor;
         }
         MPSMeshRange range{};
         if (appendMeshGeometry(mesh, vertexColor, sceneData, range)) {
