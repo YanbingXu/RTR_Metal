@@ -184,6 +184,16 @@ inline float3 fresnelSchlick(float cosTheta, float3 F0) {
     return F0 + (float3(1.0f) - F0) * pow(clamp(1.0f - cosTheta, 0.0f, 1.0f), 5.0f);
 }
 
+inline float3 debugInstanceColor(uint value) {
+    uint hash = value * 1664525u + 1013904223u;
+    const float r = static_cast<float>((hash >> 16) & 0xFFu) / 255.0f;
+    hash = hash * 1664525u + 1013904223u;
+    const float g = static_cast<float>((hash >> 8) & 0xFFu) / 255.0f;
+    hash = hash * 1664525u + 1013904223u;
+    const float b = static_cast<float>(hash & 0xFFu) / 255.0f;
+    return clamp(float3(r, g, b), 0.05f, 1.0f);
+}
+
 inline RTRHardwareAreaLight defaultAreaLight() {
     RTRHardwareAreaLight light;
     light.position = float4(0.0f, 0.95f, -0.9f, 1.0f);
@@ -200,6 +210,20 @@ inline RTRHardwareAreaLight getAreaLight(constant RTRHardwareRayUniforms& unifor
     }
     const uint clamped = min(index, uniforms.lightCount - 1u);
     return uniforms.lights[clamped];
+}
+
+inline void writeHitDebug(uint2 gid,
+                          uint width,
+                          uint height,
+                          device uint* buffer,
+                          uint value) {
+    if (buffer == nullptr || width == 0u || height == 0u) {
+        return;
+    }
+    const uint linearIndex = gid.y * width + gid.x;
+    if (linearIndex < width * height) {
+        buffer[linearIndex] = value;
+    }
 }
 
 inline void sampleAreaLight(RTRHardwareAreaLight light,
@@ -341,37 +365,20 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     const float3 rayDirection = normalize(target - eye);
 
     const bool debugAlbedo = (uniforms.camera.flags & RTR_RAY_FLAG_DEBUG) != 0u;
+    const bool debugInstanceColors = (uniforms.camera.flags & RTR_RAY_FLAG_INSTANCE_COLOR) != 0u;
+    const bool debugInstanceTrace = (uniforms.camera.flags & RTR_RAY_FLAG_INSTANCE_TRACE) != 0u;
 
     bool accelerationStructureNull = is_null_instance_acceleration_structure(accelerationStructure);
 
     if (accelerationStructureNull) {
         dstTex.write(float4(1.0f, 0.0f, 1.0f, 1.0f), gid);
-        if (hitDebug != nullptr) {
-            const uint width = uniforms.camera.width;
-            const uint height = uniforms.camera.height;
-            if (width > 0 && height > 0) {
-                const uint linearIndex = gid.y * width + gid.x;
-                if (linearIndex < width * height) {
-                    hitDebug[linearIndex] = 3u;
-                }
-            }
-        }
+        writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, 3u);
         return;
     }
 
     HardwareHit hit = traceScene(accelerationStructure, eye, rayDirection, 1.0e-3f, FLT_MAX);
-
-    if (hitDebug != nullptr) {
-        const uint width = uniforms.camera.width;
-        const uint height = uniforms.camera.height;
-        if (width > 0 && height > 0) {
-            const uint linearIndex = gid.y * width + gid.x;
-            if (linearIndex < width * height) {
-                hitDebug[linearIndex] = hit.hit ? 1u : 0u;
-            }
-        }
-    }
     float3 color = sampleSkyColor(rayDirection);
+    uint hitDebugValue = 0u;
 
     if (hit.hit) {
         RTRRayTracingInstanceResource instanceInfo;
@@ -384,6 +391,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
             instanceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
             instanceInfo.meshIndex = 0u;
         }
+
+        hitDebugValue = debugInstanceTrace ? (instanceInfo.meshIndex + 1u) : 1u;
 
         RTRRayTracingMeshResource meshResource;
         if (meshes != nullptr && limits.meshCount > 0u) {
@@ -463,7 +472,9 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                                     1.0f);
                 const float3 baseColour = sampledColour * vertexColour;
 
-                if (debugAlbedo) {
+                if (debugInstanceColors) {
+                    color = debugInstanceColor(instanceInfo.meshIndex);
+                } else if (debugAlbedo) {
                     color = baseColour;
                 } else {
                     const float3 viewDir = normalize(-rayDirection);
@@ -504,7 +515,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                     }
 
                     const float reflectivity = clamp(material.reflectivity, 0.0f, 1.0f);
-                    if (reflectivity > 0.0f && uniforms.maxBounces > 1u) {
+                    if (!debugInstanceColors && reflectivity > 0.0f && uniforms.maxBounces > 1u) {
                         const float3 reflectedDir = normalize(reflect(rayDirection, normal));
                         HardwareHit bounce = traceScene(accelerationStructure, hitPos, reflectedDir, 1.0e-3f, FLT_MAX);
                         float3 reflection = sampleSkyColor(reflectedDir);
@@ -582,6 +593,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
             }
         }
     }
+
+    writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
 
     dstTex.write(float4(color, 1.0f), gid);
 }

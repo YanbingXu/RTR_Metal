@@ -680,20 +680,52 @@ struct Renderer::Impl {
         }
 
         if (!hitDebugLogged && resources.hitDebugBuffer.isValid()) {
+            const bool debugInstanceTrace = std::getenv("RTR_DEBUG_INSTANCE_TRACE") != nullptr;
             id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
             if (hitBuffer) {
                 const std::uint32_t* hits = static_cast<const std::uint32_t*>([hitBuffer contents]);
                 if (hits) {
-                    const std::size_t sampleCount =
-                        std::min<std::size_t>(resources.width * resources.height, static_cast<std::size_t>(32));
-                    if (sampleCount > 0) {
-                        std::string hitLog;
-                        hitLog.reserve(sampleCount);
-                        for (std::size_t i = 0; i < sampleCount; ++i) {
-                            hitLog += hits[i] ? '1' : '0';
+                    const std::size_t totalPixels =
+                        static_cast<std::size_t>(resources.width) * static_cast<std::size_t>(resources.height);
+                    if (debugInstanceTrace) {
+                        std::vector<std::size_t> hitCounts(meshResources.size(), 0u);
+                        for (std::size_t i = 0; i < totalPixels; ++i) {
+                            const std::uint32_t value = hits[i];
+                            if (value == 0u) {
+                                continue;
+                            }
+                            const std::size_t meshIndex = static_cast<std::size_t>(value - 1u);
+                            if (meshIndex < hitCounts.size()) {
+                                hitCounts[meshIndex]++;
+                            }
                         }
-                        core::Logger::info("Renderer", "Hit debug sample: %s", hitLog.c_str());
+                        std::string hitLog;
+                        for (std::size_t meshIndex = 0; meshIndex < hitCounts.size(); ++meshIndex) {
+                            if (hitCounts[meshIndex] == 0) {
+                                continue;
+                            }
+                            if (!hitLog.empty()) {
+                                hitLog += ' ';
+                            }
+                            hitLog += "[" + std::to_string(meshIndex) + ":" + std::to_string(hitCounts[meshIndex]) + "]";
+                        }
+                        if (hitLog.empty()) {
+                            hitLog = "<none>";
+                        }
+                        core::Logger::info("Renderer", "Hit trace counts: %s", hitLog.c_str());
                         hitDebugLogged = true;
+                    } else {
+                        const std::size_t sampleCount =
+                            std::min<std::size_t>(totalPixels, static_cast<std::size_t>(32));
+                        if (sampleCount > 0) {
+                            std::string hitLog;
+                            hitLog.reserve(sampleCount);
+                            for (std::size_t i = 0; i < sampleCount; ++i) {
+                                hitLog += hits[i] ? '1' : '0';
+                            }
+                            core::Logger::info("Renderer", "Hit debug sample: %s", hitLog.c_str());
+                            hitDebugLogged = true;
+                        }
                     }
                 }
             }
@@ -762,6 +794,9 @@ struct Renderer::Impl {
         const float halfHeight = tanf(fovY * 0.5f);
         const float halfWidth = halfHeight * aspect;
 
+        const bool debugInstanceColors = std::getenv("RTR_DEBUG_INSTANCE_COLORS") != nullptr;
+        const bool debugInstanceTrace = std::getenv("RTR_DEBUG_INSTANCE_TRACE") != nullptr;
+
         simd_float3 eye = cameraRig.eye;
         simd_float3 targetPoint = cameraRig.target;
         simd_float3 forward = simd_normalize(targetPoint - eye);
@@ -783,6 +818,12 @@ struct Renderer::Impl {
         }
         if (accumulationEnabledThisFrame()) {
             flags |= RTR_RAY_FLAG_ACCUMULATE;
+        }
+        if (debugInstanceColors) {
+            flags |= RTR_RAY_FLAG_INSTANCE_COLOR;
+        }
+        if (debugInstanceTrace) {
+            flags |= RTR_RAY_FLAG_INSTANCE_TRACE;
         }
         uniforms->camera.flags = flags;
         uniforms->camera.samplesPerPixel = 1u;
@@ -1144,6 +1185,8 @@ struct Renderer::Impl {
 };
 
 bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
+    const bool debugSceneDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
+    const bool debugGeometryTrace = std::getenv("RTR_DEBUG_GEOMETRY_TRACE") != nullptr;
 
     std::vector<float> stagedPositions;
     std::vector<float> stagedNormals;
@@ -1229,6 +1272,37 @@ bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
         meshResource.indexOffset = currentIndexBase;
         meshResource.vertexCount = vertexCount;
         meshResource.indexCount = indexCount;
+
+        if (debugGeometryTrace && meshIndex >= 6) {
+            const std::uint32_t sampleVertices = std::min<std::uint32_t>(vertexCount, 4u);
+            for (std::uint32_t i = 0; i < sampleVertices; ++i) {
+                const std::uint32_t base = meshResource.positionOffset + i;
+                if (base * 3u + 2u < stagedPositions.size()) {
+                    const float x = stagedPositions[base * 3u + 0u];
+                    const float y = stagedPositions[base * 3u + 1u];
+                    const float z = stagedPositions[base * 3u + 2u];
+                    core::Logger::info("Renderer",
+                                       "TRACE mesh[%zu] vertex[%u] = (%.3f, %.3f, %.3f)",
+                                       meshIndex,
+                                       i,
+                                       x,
+                                       y,
+                                       z);
+                }
+            }
+
+            const std::uint32_t sampleIndices = std::min<std::uint32_t>(indexCount, 6u);
+            for (std::uint32_t i = 0; i < sampleIndices; ++i) {
+                const std::uint32_t base = meshResource.indexOffset + i;
+                if (base < stagedIndices.size()) {
+                    core::Logger::info("Renderer",
+                                       "TRACE mesh[%zu] index[%u] = %u",
+                                       meshIndex,
+                                       i,
+                                       stagedIndices[base]);
+                }
+            }
+        }
 
         currentVertexBase += vertexCount;
         currentIndexBase += indexCount;
@@ -1340,8 +1414,28 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                        materialCount,
                        instanceCount);
 
+    const bool debugSceneDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
+    if (debugSceneDump) {
+        core::Logger::info("Renderer", "RTR_DEBUG_SCENE_DUMP enabled; dumping mesh/instance metadata");
+    }
+
     sceneBounds = scene.computeSceneBounds();
+    core::Logger::info("Renderer",
+                       "Scene bounds min=(%.3f, %.3f, %.3f) max=(%.3f, %.3f, %.3f)",
+                       sceneBounds.min.x,
+                       sceneBounds.min.y,
+                       sceneBounds.min.z,
+                       sceneBounds.max.x,
+                       sceneBounds.max.y,
+                       sceneBounds.max.z);
     updateCameraRigFromBounds();
+
+    const MPSSceneData sceneData = buildSceneData(scene);
+    if (sceneData.positions.empty() || sceneData.indices.empty() || sceneData.meshRanges.empty() ||
+        sceneData.instanceRanges.empty()) {
+        core::Logger::warn("Renderer", "Flattened scene data empty; scene load aborted");
+        return false;
+    }
 
     if (!context.isValid()) {
         core::Logger::warn("Renderer", "Metal context invalid; cannot load scene");
@@ -1355,13 +1449,6 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     }
 
     const auto& materials = scene.materials();
-
-    const MPSSceneData sceneData = buildSceneData(scene);
-    if (sceneData.positions.empty() || sceneData.indices.empty() || sceneData.meshRanges.empty() ||
-        sceneData.instanceRanges.empty()) {
-        core::Logger::warn("Renderer", "Flattened scene data empty; scene load aborted");
-        return false;
-    }
 
     bottomLevelStructures.reserve(sceneData.meshRanges.size());
 
@@ -1391,6 +1478,15 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         meshResource.vertexCount = meshRange.vertexCount;
         meshResource.indexCount = meshRange.indexCount;
         meshResource.materialIndex = meshRange.materialIndex;
+
+        if (debugSceneDump) {
+            core::Logger::info("Renderer",
+                               "MeshRange[%zu]: verts=%u indices=%u material=%u",
+                               meshIndex,
+                               meshRange.vertexCount,
+                               meshRange.indexCount,
+                               meshRange.materialIndex);
+        }
 
         const std::string meshLabel = "scene_mesh_" + std::to_string(meshIndex);
         const auto uploadIndex = geometryStore.uploadMesh(mesh, meshLabel);
@@ -1448,6 +1544,18 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         }
         if (!isMatrixFinite(worldToObject)) {
             worldToObject = matrix_identity_float4x4;
+        }
+
+        if (debugSceneDump) {
+            const simd_float4& translation = objectToWorld.columns[3];
+            core::Logger::info("Renderer",
+                               "Instance[%zu]: meshRange=%u material=%u translation=(%.3f, %.3f, %.3f)",
+                               instanceIndex,
+                               range.meshIndex,
+                               range.materialIndex,
+                               translation.x,
+                               translation.y,
+                               translation.z);
         }
 
         const std::uint32_t tlasInstanceIndex = static_cast<std::uint32_t>(instanceResources.size());

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
@@ -87,6 +88,7 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
     const auto& meshes = scene.meshes();
     const auto& materials = scene.materials();
     const auto& instances = scene.instances();
+    const bool debugDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
 
     sceneData.instanceRanges.reserve(instances.size());
     sceneData.meshRanges.reserve(meshes.size());
@@ -142,6 +144,15 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
             range.materialIndex = meshMaterialIndex;
             meshRangeLookup[meshIndex] = static_cast<std::uint32_t>(sceneData.meshRanges.size());
             sceneData.meshRanges.push_back(range);
+            if (debugDump) {
+                core::Logger::info("MPSSceneConverter",
+                                    "Mesh[%zu] -> range=%u verts=%u indices=%u material=%u",
+                                    meshIndex,
+                                    meshRangeLookup[meshIndex],
+                                    range.vertexCount,
+                                    range.indexCount,
+                                    meshMaterialIndex);
+            }
         } else {
             core::Logger::warn("MPSSceneConverter", "Skipped mesh %zu due to invalid geometry", meshIndex);
         }
@@ -182,6 +193,17 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
         range.transform = instance.transform;
         range.inverseTransform = computeInverse(instance.transform);
         sceneData.instanceRanges.push_back(range);
+        if (debugDump) {
+            const simd_float4& translation = range.transform.columns[3];
+            core::Logger::info("MPSSceneConverter",
+                                "Instance[%zu] meshRange=%u material=%u translation=(%.3f, %.3f, %.3f)",
+                                instanceIndex,
+                                range.meshIndex,
+                                range.materialIndex,
+                                translation.x,
+                                translation.y,
+                                translation.z);
+        }
     }
 
     if (sceneData.instanceRanges.empty()) {

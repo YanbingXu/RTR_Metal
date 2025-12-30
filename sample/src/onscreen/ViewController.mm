@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -232,6 +233,21 @@ bool isDynamicResolution(NSDictionary* info) {
 - (void)initializeRenderer {
     rtr::core::Logger::setMinimumLevel(rtr::core::LogLevel::Info);
     RuntimeResources runtime = makeRuntimeResources();
+
+    const fs::path forcedAssetRoot = fs::path(RTR_SOURCE_DIR) / "assets";
+    if (!forcedAssetRoot.empty() && fs::exists(forcedAssetRoot)) {
+        runtime.assetRoot = forcedAssetRoot;
+        rtr::core::Logger::info("OnScreenSample",
+                                "Forcing asset root to %s for feature verification",
+                                forcedAssetRoot.string().c_str());
+    } else {
+        rtr::core::Logger::warn("OnScreenSample",
+                                "Forced asset root %s missing; continuing with resolved path",
+                                forcedAssetRoot.string().c_str());
+    }
+
+    setenv("RTR_ENABLE_MARIO", "1", 1);
+
     _assetRootPath = runtime.assetRoot;
     rtr::core::Logger::info("OnScreenSample",
                             "Using shader library: %s",
