@@ -135,9 +135,6 @@ RuntimeResources makeRuntimeResources() {
     }
 
     resources.config.shadingMode = "hardware";
-    resources.config.accumulationEnabled = true;
-    resources.config.accumulationFrames = 0;
-
     return resources;
 }
 
@@ -452,9 +449,31 @@ bool isDynamicResolution(NSDictionary* info) {
     }
 
     id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:passDescriptor];
+    id<MTLTexture> drawableTexture = passDescriptor.colorAttachments[0].texture;
+    const double viewportWidth = drawableTexture ? drawableTexture.width : view.drawableSize.width;
+    const double viewportHeight = drawableTexture ? drawableTexture.height : view.drawableSize.height;
+    rtr::core::Logger::info("OnScreenSample",
+                            "Display pass viewport %.0fx%.0f drawableSize=%.0fx%.0f renderSize=%ux%u",
+                            viewportWidth,
+                            viewportHeight,
+                            view.drawableSize.width,
+                            view.drawableSize.height,
+                            _renderWidth,
+                            _renderHeight);
+    MTLViewport viewport = {0.0, 0.0, viewportWidth, viewportHeight, 0.0, 1.0};
+    [encoder setViewport:viewport];
+    MTLScissorRect scissor = {0, 0, static_cast<NSUInteger>(viewportWidth), static_cast<NSUInteger>(viewportHeight)};
+    [encoder setScissorRect:scissor];
     [encoder setRenderPipelineState:_displayPipeline];
     [encoder setFragmentTexture:sourceTexture atIndex:0];
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    const auto renderWidth = sourceTexture.width;
+    const auto renderHeight = sourceTexture.height;
+    const simd_float2 invRenderSize = simd_make_float2(renderWidth > 0 ? 1.0f / static_cast<float>(renderWidth)
+                                                                      : 0.0f,
+                                                       renderHeight > 0 ? 1.0f / static_cast<float>(renderHeight)
+                                                                       : 0.0f);
+    [encoder setFragmentBytes:&invRenderSize length:sizeof(invRenderSize) atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
     [encoder endEncoding];
 
     [commandBuffer presentDrawable:drawable];

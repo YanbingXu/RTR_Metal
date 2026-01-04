@@ -63,26 +63,6 @@ std::unordered_map<std::string, std::string> parseKeyValuePairs(const std::strin
     return pairs;
 }
 
-bool parseBool(const std::string& value, bool defaultValue = false) {
-    if (value.empty()) {
-        return defaultValue;
-    }
-
-    std::string lowered;
-    lowered.resize(value.size());
-    std::transform(value.begin(), value.end(), lowered.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-
-    if (lowered == "1" || lowered == "true" || lowered == "on" || lowered == "yes") {
-        return true;
-    }
-    if (lowered == "0" || lowered == "false" || lowered == "off" || lowered == "no") {
-        return false;
-    }
-    return defaultValue;
-}
-
 std::uint32_t parseUInt(const std::string& value, std::uint32_t defaultValue = 0) {
     if (value.empty()) {
         return defaultValue;
@@ -122,14 +102,6 @@ EngineConfig ConfigLoader::loadEngineConfig(const std::filesystem::path& path) {
 
     if (auto it = pairs.find("shadingMode"); it != pairs.end()) {
         config.shadingMode = it->second;
-    }
-
-    if (auto it = pairs.find("accumulation"); it != pairs.end()) {
-        config.accumulationEnabled = parseBool(it->second, config.accumulationEnabled);
-    }
-
-    if (auto it = pairs.find("accumulationFrames"); it != pairs.end()) {
-        config.accumulationFrames = parseUInt(it->second, config.accumulationFrames);
     }
 
     if (auto it = pairs.find("maxBounces"); it != pairs.end()) {

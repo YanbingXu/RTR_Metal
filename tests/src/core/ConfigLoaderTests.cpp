@@ -69,23 +69,6 @@ shadingMode = cpu
     std::filesystem::remove(path);
 }
 
-TEST(ConfigLoader, ParsesAccumulationOptions) {
-    const auto path = makeTempFile("rtr_engine_config_accum.ini",
-                                   R"(applicationName = Sample
-shaderLibraryPath = assets/RTR.metallib
-accumulation = off
-accumulationFrames = 8
-maxBounces = 3
-)");
-
-    const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
-    EXPECT_FALSE(config.accumulationEnabled);
-    EXPECT_EQ(config.accumulationFrames, 8u);
-    EXPECT_EQ(config.maxHardwareBounces, 3u);
-
-    std::filesystem::remove(path);
-}
-
 TEST(ConfigLoader, ClampsZeroMaxBounces) {
     const auto path = makeTempFile("rtr_engine_config_bounces.ini",
                                    R"(applicationName = Sample

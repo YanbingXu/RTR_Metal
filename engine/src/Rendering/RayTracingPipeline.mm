@@ -15,21 +15,15 @@ namespace rtr::rendering {
 
 class RayTracingPipeline::Impl {
 public:
-    Impl(id<MTLComputePipelineState> rayState, id<MTLComputePipelineState> accumulateState)
-        : rayState_(rayState), accumulateState_(accumulateState) {}
+    explicit Impl(id<MTLComputePipelineState> rayState) : rayState_(rayState) {}
 
-    ~Impl() {
-        rayState_ = nil;
-        accumulateState_ = nil;
-    }
+    ~Impl() { rayState_ = nil; }
 
     [[nodiscard]] bool isValid() const noexcept { return rayState_ != nil; }
     [[nodiscard]] id<MTLComputePipelineState> rayPipeline() const noexcept { return rayState_; }
-    [[nodiscard]] id<MTLComputePipelineState> accumulatePipeline() const noexcept { return accumulateState_; }
 
 private:
     id<MTLComputePipelineState> rayState_ = nil;
-    id<MTLComputePipelineState> accumulateState_ = nil;
 };
 
 RayTracingPipeline::RayTracingPipeline() = default;
@@ -107,7 +101,6 @@ bool RayTracingPipeline::initialize(MetalContext& context, const std::string& sh
     };
 
     id<MTLComputePipelineState> rayState = makePipeline(@"rayKernel", @"RTRHardwareRayKernel");
-    id<MTLComputePipelineState> accumulateState = makePipeline(@"accumulateKernel", @"RTRHardwareAccumulateKernel");
 
     if (rayState == nil) {
         core::Logger::error("RTPipeline", "Failed to build hardware ray tracing kernel");
@@ -115,7 +108,7 @@ bool RayTracingPipeline::initialize(MetalContext& context, const std::string& sh
         return false;
     }
 
-    impl_ = std::make_unique<Impl>(rayState, accumulateState);
+    impl_ = std::make_unique<Impl>(rayState);
     core::Logger::info("RTPipeline", "Hardware ray tracing kernels initialized from %s", resolvedPath.c_str());
     return true;
 }
@@ -124,10 +117,6 @@ bool RayTracingPipeline::isValid() const noexcept { return impl_ && impl_->isVal
 
 void* RayTracingPipeline::rayPipelineState() const noexcept {
     return impl_ ? (__bridge void*)impl_->rayPipeline() : nullptr;
-}
-
-void* RayTracingPipeline::accumulationPipelineState() const noexcept {
-    return impl_ ? (__bridge void*)impl_->accumulatePipeline() : nullptr;
 }
 
 }  // namespace rtr::rendering

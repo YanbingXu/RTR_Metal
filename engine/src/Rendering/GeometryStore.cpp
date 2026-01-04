@@ -1,5 +1,6 @@
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 
+#include <cstdlib>
 #include <cstdint>
 #include <vector>
 
@@ -45,6 +46,19 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
     if (!gpuVertexBuffer.isValid() || !gpuIndexBuffer.isValid()) {
         core::Logger::error("GeometryStore", "Failed to upload mesh '%s'", label.c_str());
         return std::nullopt;
+    }
+
+    const bool debugUpload = std::getenv("RTR_DEBUG_GEOMETRY_TRACE") != nullptr;
+    if (debugUpload) {
+        core::Logger::info("GeometryStore",
+                           "Upload '%s': vertices=%zu (%zu bytes) indices=%zu (%zu bytes) gpuVB=%zu gpuIB=%zu",
+                           label.c_str(),
+                           vertices.size(),
+                           packedLength,
+                           indices.size(),
+                           indexLength,
+                           gpuVertexBuffer.length(),
+                           gpuIndexBuffer.length());
     }
 
     meshes_.emplace_back(std::move(gpuVertexBuffer),

@@ -1,0 +1,3165 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 46;
+	objects = {
+
+/* Begin PBXAggregateTarget section */
+		2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = B0C3F42243B8455E90A34B55 /* Build configuration list for PBXAggregateTarget "RTRMetalShaders" */;
+			buildPhases = (
+				132AA915F0D9AF01648CE013 /* Generate shaders/RTRRayTracing.air */,
+				FA19635C153439C71E4AD2FD /* Generate shaders/RTRShaders.metallib */,
+				D6264C121AD09A937C556D68 /* Generate CMakeFiles/RTRMetalShaders */,
+			);
+			dependencies = (
+				A6B0BCB261AF4999BC64F420 /* PBXTargetDependency */,
+			);
+			name = RTRMetalShaders;
+			productName = RTRMetalShaders;
+		};
+		31B191FEFEB1E29C6795BF55 /* ALL_BUILD */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 028E62F56DAE4F2A9C9ED8DC /* Build configuration list for PBXAggregateTarget "ALL_BUILD" */;
+			buildPhases = (
+				85A034CF65102EC91F5D2EA5 /* Generate CMakeFiles/ALL_BUILD */,
+			);
+			dependencies = (
+				45050AA61E244ADBB3149A3E /* PBXTargetDependency */,
+				9D3CFF66996740E59289F19F /* PBXTargetDependency */,
+				3F03BC1B39A5497A8C98CA0B /* PBXTargetDependency */,
+				66AAE01167D14E2B984845F5 /* PBXTargetDependency */,
+				BDF5DB18E97545FD873EC871 /* PBXTargetDependency */,
+				0CE28212A7CD4DBDA8B9EED9 /* PBXTargetDependency */,
+				13C44CE936914A41BBCEBFD6 /* PBXTargetDependency */,
+				4467A0C6D18F4B898B60814D /* PBXTargetDependency */,
+				5D8A4CF5C068459DADD9CA68 /* PBXTargetDependency */,
+				F7480A68EBEF4A26B9A30B0B /* PBXTargetDependency */,
+			);
+			name = ALL_BUILD;
+			productName = ALL_BUILD;
+		};
+		3A88BF22C283F2C1F692A787 /* ZERO_CHECK */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = B67B78EF5413401FA14B5A74 /* Build configuration list for PBXAggregateTarget "ZERO_CHECK" */;
+			buildPhases = (
+				772648B301D136BB601746CE /* Generate CMakeFiles/ZERO_CHECK */,
+			);
+			dependencies = (
+			);
+			name = ZERO_CHECK;
+			productName = ZERO_CHECK;
+		};
+		94C04A73E6982CC9F9FDD771 /* RUN_TESTS */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = DE69FFC25F3741EDB60A4559 /* Build configuration list for PBXAggregateTarget "RUN_TESTS" */;
+			buildPhases = (
+				003C8D08B0008F35F218E126 /* CMake PostBuild Rules */,
+			);
+			dependencies = (
+			);
+			name = RUN_TESTS;
+			productName = RUN_TESTS;
+		};
+		C724D558423227C9C1C79A17 /* install */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = C34E25455F7E40FC94637CC5 /* Build configuration list for PBXAggregateTarget "install" */;
+			buildPhases = (
+				93426DA6A4AC2C2AC9CE883C /* CMake PostBuild Rules */,
+			);
+			dependencies = (
+				8137118156AD4671BFB91C6E /* PBXTargetDependency */,
+			);
+			name = install;
+			productName = install;
+		};
+/* End PBXAggregateTarget section */
+
+/* Begin PBXBuildFile section */
+		00E943C069E9436682600FD2 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */ = {isa = PBXBuildFile; fileRef = C8ED740E288940B7867FA8E9 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */; };
+		04FE621D8517416CACF0E5E6 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Logger.cpp */ = {isa = PBXBuildFile; fileRef = 38844AA3DBE044CA9151CED7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Logger.cpp */; };
+		0918F2917C0645D5AC7FED98 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Mesh.cpp */ = {isa = PBXBuildFile; fileRef = AF3361536C2E47B1ACBADF28 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Mesh.cpp */; };
+		0AB7FD03187D404882F9E397 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ConfigLoader.cpp */ = {isa = PBXBuildFile; fileRef = FE3C778DF729400688F9641F /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ConfigLoader.cpp */; };
+		0DCA8A1624454372A7A3F747 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest_main.cc */ = {isa = PBXBuildFile; fileRef = 9659B5675A534827A6B1E41F /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest_main.cc */; };
+		0ED873717DF14E94AD2B0CEB /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/OBJLoader.cpp */ = {isa = PBXBuildFile; fileRef = E378200AA61A448D97C6385D /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/OBJLoader.cpp */; };
+		1B6FC6AFDCE04FF6A254C4EE /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/CornellBox.cpp */ = {isa = PBXBuildFile; fileRef = 3F60EEA38C534302812209FA /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/CornellBox.cpp */; };
+		2658BDE813C74D24ADB171CE /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/GeometryStoreTests.cpp */ = {isa = PBXBuildFile; fileRef = 8F13D92E76B44615A46E6340 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/GeometryStoreTests.cpp */; };
+		26C3D21B2FD6427681853E8F /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneTests.cpp */ = {isa = PBXBuildFile; fileRef = 1E4707AB85ED40AAAD609D52 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneTests.cpp */; };
+		277282391F4846249B321FE8 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = B4A28121CCE6431DA77058CA /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */; };
+		30CBA877B31342AC8209B6A7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/FileSystem.cpp */ = {isa = PBXBuildFile; fileRef = 0681BBD1B0F54866A0F8FB80 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/FileSystem.cpp */; };
+		31EE3394EA004B429983606A /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/EngineConfigTests.cpp */ = {isa = PBXBuildFile; fileRef = 1068CD1345CF49158C2011B7 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/EngineConfigTests.cpp */; };
+		33FD542CF992454ABA000D45 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = 0B4F7F9C9D8B4DFBBDF6980E /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */; };
+		3473D18EFBE94DC8B02C5847 /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/ImageIO.framework */ = {isa = PBXBuildFile; fileRef = FB89ADE7A27E4FBD999BDC1C /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/ImageIO.framework */; };
+		34A9898677AC4DFC9FE9822B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock-all.cc */ = {isa = PBXBuildFile; fileRef = DA1A2D1DA16D41859FD51C9B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock-all.cc */; };
+		43526D3C42A74585AC4FAFAB /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/SceneBuilder.cpp */ = {isa = PBXBuildFile; fileRef = 34D2EEEF322449F89BE746E3 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/SceneBuilder.cpp */; };
+		44F9DE4C541B46F89951A04A /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.mm */ = {isa = PBXBuildFile; fileRef = 765624257D11405494C717DF /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.mm */; };
+		4545F779A28A4F6A8420E287 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccumulationTests.cpp */ = {isa = PBXBuildFile; fileRef = 3C9A63A504FF46469109946F /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccumulationTests.cpp */; };
+		554487643FAA4A4F82BA12C4 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/DemoScenes.cpp */ = {isa = PBXBuildFile; fileRef = 2F37F96410EB4C82B0C0C493 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/DemoScenes.cpp */; };
+		5A314ADF2FC44D87A75C181B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock_main.cc */ = {isa = PBXBuildFile; fileRef = A254091C6F1B4CEC9B81DA55 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock_main.cc */; };
+		5F56376E53FC47A2BC76A22E /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/MathTests.cpp */ = {isa = PBXBuildFile; fileRef = F26B7EEDBD9646918DE31371 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/MathTests.cpp */; };
+		60B1E4E97F444A739A32C35F /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Metal.framework */ = {isa = PBXBuildFile; fileRef = DD2FFBC4AA8646BD98F1533B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Metal.framework */; };
+		62747DA6023C4D80AA97D10C /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccelerationStructureBuilderTests.cpp */ = {isa = PBXBuildFile; fileRef = 1E98498A1BB5445A883E7CC8 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccelerationStructureBuilderTests.cpp */; };
+		687C75B7384F4C46B87E6120 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.mm */ = {isa = PBXBuildFile; fileRef = C091E04D072840EEBC2EA85A /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.mm */; };
+		6900931DA4254CD893336031 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/ScenesTests.cpp */ = {isa = PBXBuildFile; fileRef = 2FB512D43EE14A39B0A80A32 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/ScenesTests.cpp */; };
+		6BF2954FC6CF47D790E20614 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/RendererTests.cpp */ = {isa = PBXBuildFile; fileRef = C3F9AB88915641A380B8970C /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/RendererTests.cpp */; };
+		6DD72A21036A400787A6AE5B /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/LoggerTests.cpp */ = {isa = PBXBuildFile; fileRef = B1FC341164744D4DBE220172 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/LoggerTests.cpp */; };
+		6E32E1F3A9984D41BC236AF2 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest-all.cc */ = {isa = PBXBuildFile; fileRef = 2847CD6324F840CD81328811 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest-all.cc */; };
+		704F16BD974047BEA5AEDE77 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = FDACD40B2BB24AB7B5209152 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */; };
+		880432129DE3476A92010E64 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/mps/MPSSceneConverterTests.cpp */ = {isa = PBXBuildFile; fileRef = 2F467E74BF9643C599000503 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/mps/MPSSceneConverterTests.cpp */; };
+		9099B72632424267851FE43B /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/ConfigLoaderTests.cpp */ = {isa = PBXBuildFile; fileRef = A61ADF49A2B64323977871D2 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/ConfigLoaderTests.cpp */; };
+		930D897BA7A24D17B40C09CA /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/RayTracingPipeline.mm */ = {isa = PBXBuildFile; fileRef = 7CCA8E7E2114454694561C10 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/RayTracingPipeline.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		9525834061404B23AF58093F /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = 318287AA747A4F91B679228D /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */; };
+		9A4ECA3864524D3D8021D767 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/MPS/MPSSceneConverter.cpp */ = {isa = PBXBuildFile; fileRef = 800A23FC8F4E4120AB94E2CC /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/MPS/MPSSceneConverter.cpp */; };
+		9B08EC0D145F4AA29E99BCF0 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */ = {isa = PBXBuildFile; fileRef = E3DA6258894B41ECB61E7274 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */; };
+		9BF4E5442CEF4D50A8925543 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = C4795FF2F24E42899E96FDAB /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */; };
+		9F26C7DF34704312BB12A441 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/BufferAllocatorTests.cpp */ = {isa = PBXBuildFile; fileRef = 39123FF59F754476B04AA9BD /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/BufferAllocatorTests.cpp */; };
+		A46F138A24F54A79BE08697B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Foundation.framework */ = {isa = PBXBuildFile; fileRef = 9DDD1F3EAFA94CDB90DDAB1B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Foundation.framework */; };
+		B4079DAFFBA3465EA8FDC5D0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/GeometryStore.cpp */ = {isa = PBXBuildFile; fileRef = A2694D7FE8F942D38281D981 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/GeometryStore.cpp */; };
+		BF2F1B86FFFF4555A6993B05 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructure.mm */ = {isa = PBXBuildFile; fileRef = 6F0487C44BF243C28F91C3D2 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructure.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		C026979A034E4129ABC62B5E /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/Renderer.mm */ = {isa = PBXBuildFile; fileRef = FD11A86E48BA4A42854664FD /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/Renderer.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		C291A142CBE24A45802FA6AF /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/MetalContext.mm */ = {isa = PBXBuildFile; fileRef = BB6751B9B92C449AB04DE0B0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/MetalContext.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		C680C4CCB4B542A2BE407262 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Scene.cpp */ = {isa = PBXBuildFile; fileRef = FFCBCEE687F7423D8DD72EC2 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Scene.cpp */; };
+		C9A97577F13642C3AACBA6B6 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.h */ = {isa = PBXBuildFile; fileRef = E0FCAD987A3C46C2808D0DB4 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.h */; };
+		CF3533BCB5F3465598DE4019 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = 4576999EED71460F9DFE7318 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */; };
+		CF72B36EDD86409E91E2FC15 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/main.mm */ = {isa = PBXBuildFile; fileRef = FFBF7B724C124637B75BFFD4 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/main.mm */; };
+		DBC94494F041426D92D40200 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneBuilderTests.cpp */ = {isa = PBXBuildFile; fileRef = 83515B89CA594F74A0829C18 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneBuilderTests.cpp */; };
+		DDBCCE292BEA4D49AAE7EF6F /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/main.cpp */ = {isa = PBXBuildFile; fileRef = DEB52790E5BF4F7BBF846BEA /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/main.cpp */; };
+		DE7CAA81C0AA4289AB1ABADD /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist */ = {isa = PBXBuildFile; fileRef = 937B05AE155047E7B9F17EEA /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist */; };
+		E102A2CF41124F688313F2A0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/BufferAllocator.mm */ = {isa = PBXBuildFile; fileRef = 0CC631E8DBC24F7EA1A508A7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/BufferAllocator.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		E920581EE4BD465499AE61C2 /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework */ = {isa = PBXBuildFile; fileRef = F2F90D6EDAC84AA88B3E70AD /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework */; };
+		EDC9E930D4C1471593096A94 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = B50F0D4EB4EA481D81777278 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */; };
+		F4AD564A767849E7B6AE0C15 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ImageLoader.mm */ = {isa = PBXBuildFile; fileRef = 7F865F5C50E54BA98CBB94E9 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ImageLoader.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		F60CE9F288B64E20A1F59197 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.h */ = {isa = PBXBuildFile; fileRef = 8A567D441CB1449185EF19C2 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.h */; };
+		F6F9DCC6DAE64F2683B6FFB2 /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/CoreGraphics.framework */ = {isa = PBXBuildFile; fileRef = 9DB2AC16E188456685770739 /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/CoreGraphics.framework */; };
+		FAEB51A8190D49DEAE11C796 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXBuildFile; fileRef = AB14AA50BA254D82A1EAEEB4 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */; };
+		FAF76EF26B994C2597A0B6F6 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructureBuilder.mm */ = {isa = PBXBuildFile; fileRef = D009AD1634F54AE786EBE1E3 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructureBuilder.mm */; settings = {COMPILER_FLAGS = "-fobjc-arc"; }; };
+		FD841549DE954DE5AF6D98B6 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Math.cpp */ = {isa = PBXBuildFile; fileRef = 3308CDCDFF16467A9DCB5895 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Math.cpp */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXBuildStyle section */
+		19590BDF02A0456D845BD771 /* Release */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Release;
+		};
+		38E0EE311BD348C2A6AB8D9D /* RelWithDebInfo */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = RelWithDebInfo;
+		};
+		ACA6892928DB47D48103E551 /* Debug */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = Debug;
+		};
+		DC4DA8EE2BE44524BDC591BD /* MinSizeRel */ = {
+			isa = PBXBuildStyle;
+			buildSettings = {
+				COPY_PHASE_STRIP = NO;
+			};
+			name = MinSizeRel;
+		};
+/* End PBXBuildStyle section */
+
+/* Begin PBXContainerItemProxy section */
+		02A0659EC2DA475087CA625C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE2E2F19E756FD66DA65BE8A;
+			remoteInfo = gtest;
+		};
+		088F4EDC7CE94CA3828CDC4D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6F4666664AB91A72E9BF43AB;
+			remoteInfo = gmock;
+		};
+		158A32BA19974852B4BD6C65 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6CAE42EF6E4378D66585EFB1;
+			remoteInfo = RTRMetalEngine;
+		};
+		1CF0FDD5BC884854BF3F2E5B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2AB3D7E18FD61D9675579A33;
+			remoteInfo = RTRMetalShaders;
+		};
+		3F52DDAD5A8F4B548C1BD187 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2AB3D7E18FD61D9675579A33;
+			remoteInfo = RTRMetalShaders;
+		};
+		45194197D11D43A5A717DA7E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2AB3D7E18FD61D9675579A33;
+			remoteInfo = RTRMetalShaders;
+		};
+		45D77D199B984C1791E0766B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6F4666664AB91A72E9BF43AB;
+			remoteInfo = gmock;
+		};
+		46756423BB95400E8CB16D78 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE2E2F19E756FD66DA65BE8A;
+			remoteInfo = gtest;
+		};
+		547D1DAAEFDD4FB48DE4FA1E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE2E2F19E756FD66DA65BE8A;
+			remoteInfo = gtest;
+		};
+		577A969DB1E74EDB81EEDBD2 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3A88BF22C283F2C1F692A787;
+			remoteInfo = ZERO_CHECK;
+		};
+		57E15DFAAF964D4A98D88513 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 92B6A9B76EF5CF562A7C88F8;
+			remoteInfo = gtest_main;
+		};
+		690EC0066B1847FBB2B7E816 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE2E2F19E756FD66DA65BE8A;
+			remoteInfo = gtest;
+		};
+		6D291EF15C7E43F8B0087C63 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3A88BF22C283F2C1F692A787;
+			remoteInfo = ZERO_CHECK;
+		};
+		6E6692D80528417CBBCEE672 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FE2E2F19E756FD66DA65BE8A;
+			remoteInfo = gtest;
+		};
+		7F2CA11AD7234DC0B40317CF /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3A88BF22C283F2C1F692A787;
+			remoteInfo = ZERO_CHECK;
+		};
+		884D89E0EA294A18985B7BB4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 31B191FEFEB1E29C6795BF55;
+			remoteInfo = ALL_BUILD;
+		};
+		A4FB3D7C3E7D4BAB8C8E01D4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A43BB3D44699F0596916756D;
+			remoteInfo = RTRMetalSample;
+		};
+		A9598CF924B34DFD98AA69F6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2AB3D7E18FD61D9675579A33;
+			remoteInfo = RTRMetalShaders;
+		};
+		ABBFB2D1CC764E19AED89A8D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6CAE42EF6E4378D66585EFB1;
+			remoteInfo = RTRMetalEngine;
+		};
+		B7FF01A8B5BB456C933D050A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3A88BF22C283F2C1F692A787;
+			remoteInfo = ZERO_CHECK;
+		};
+		BC678652D0DE4A6784F3157D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = FF43E78A1D9738267F000B86;
+			remoteInfo = RTRMetalTests;
+		};
+		D4F056BF190B40A8AF038465 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3A88BF22C283F2C1F692A787;
+			remoteInfo = ZERO_CHECK;
+		};
+		DD22C767C88344C39E5BB819 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8860C13D0FB24D4B7011E870;
+			remoteInfo = gmock_main;
+		};
+		E902CAEEC0754172906723CE /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6CAE42EF6E4378D66585EFB1;
+			remoteInfo = RTRMetalEngine;
+		};
+		F7433ECBF160446FB8A457E3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B63ADF361917A441495E2377;
+			remoteInfo = RTRMetalOnScreenSample;
+		};
+		FB1FC9D893CF499C80815566 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 92B6A9B76EF5CF562A7C88F8;
+			remoteInfo = gtest_main;
+		};
+		FD837C08A6B745FB9EC14CC8 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 6CAE42EF6E4378D66585EFB1;
+			remoteInfo = RTRMetalEngine;
+		};
+		FEB8575AB33646E3A47C133B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2AB3D7E18FD61D9675579A33;
+			remoteInfo = RTRMetalShaders;
+		};
+		FF050FFE30EF40A7AD74BAD6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 9A89B0562C5747A59927405C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 3A88BF22C283F2C1F692A787;
+			remoteInfo = ZERO_CHECK;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		0681BBD1B0F54866A0F8FB80 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/FileSystem.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = FileSystem.cpp; path = engine/src/Core/FileSystem.cpp; sourceTree = SOURCE_ROOT; };
+		0B4F7F9C9D8B4DFBBDF6980E /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = "build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt"; sourceTree = SOURCE_ROOT; };
+		0CC631E8DBC24F7EA1A508A7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/BufferAllocator.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = BufferAllocator.mm; path = engine/src/Rendering/BufferAllocator.mm; sourceTree = SOURCE_ROOT; };
+		1068CD1345CF49158C2011B7 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/EngineConfigTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = EngineConfigTests.cpp; path = tests/src/core/EngineConfigTests.cpp; sourceTree = SOURCE_ROOT; };
+		163DDDB8FC354DB2B816A74F /* RTRMetalSample */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = RTRMetalSample; sourceTree = BUILT_PRODUCTS_DIR; };
+		1E4707AB85ED40AAAD609D52 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SceneTests.cpp; path = tests/src/scene/SceneTests.cpp; sourceTree = SOURCE_ROOT; };
+		1E98498A1BB5445A883E7CC8 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccelerationStructureBuilderTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = AccelerationStructureBuilderTests.cpp; path = tests/src/rendering/AccelerationStructureBuilderTests.cpp; sourceTree = SOURCE_ROOT; };
+		2847CD6324F840CD81328811 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest-all.cc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = "gtest-all.cc"; path = "build-xcode/_deps/googletest-src/googletest/src/gtest-all.cc"; sourceTree = SOURCE_ROOT; };
+		2F37F96410EB4C82B0C0C493 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/DemoScenes.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = DemoScenes.cpp; path = engine/src/Scene/DemoScenes.cpp; sourceTree = SOURCE_ROOT; };
+		2F467E74BF9643C599000503 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/mps/MPSSceneConverterTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = MPSSceneConverterTests.cpp; path = tests/src/mps/MPSSceneConverterTests.cpp; sourceTree = SOURCE_ROOT; };
+		2FB512D43EE14A39B0A80A32 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/ScenesTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = ScenesTests.cpp; path = tests/src/scene/ScenesTests.cpp; sourceTree = SOURCE_ROOT; };
+		318287AA747A4F91B679228D /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		3308CDCDFF16467A9DCB5895 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Math.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = Math.cpp; path = engine/src/Core/Math.cpp; sourceTree = SOURCE_ROOT; };
+		34D2EEEF322449F89BE746E3 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/SceneBuilder.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SceneBuilder.cpp; path = engine/src/Scene/SceneBuilder.cpp; sourceTree = SOURCE_ROOT; };
+		38844AA3DBE044CA9151CED7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Logger.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = Logger.cpp; path = engine/src/Core/Logger.cpp; sourceTree = SOURCE_ROOT; };
+		39123FF59F754476B04AA9BD /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/BufferAllocatorTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = BufferAllocatorTests.cpp; path = tests/src/rendering/BufferAllocatorTests.cpp; sourceTree = SOURCE_ROOT; };
+		3C9A63A504FF46469109946F /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccumulationTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = AccumulationTests.cpp; path = tests/src/rendering/AccumulationTests.cpp; sourceTree = SOURCE_ROOT; };
+		3F60EEA38C534302812209FA /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/CornellBox.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = CornellBox.cpp; path = engine/src/Scene/CornellBox.cpp; sourceTree = SOURCE_ROOT; };
+		4576999EED71460F9DFE7318 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = "build-xcode/_deps/googletest-src/googletest/CMakeLists.txt"; sourceTree = SOURCE_ROOT; };
+		61069B9C489F4FABADBA6014 /* RTRMetalEngine */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libRTRMetalEngine.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		68830B85ED3F4EE8BE694A59 /* gtest */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libgtest.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		6F0487C44BF243C28F91C3D2 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructure.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = AccelerationStructure.mm; path = engine/src/Rendering/AccelerationStructure.mm; sourceTree = SOURCE_ROOT; };
+		765624257D11405494C717DF /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = AppDelegate.mm; path = sample/src/onscreen/AppDelegate.mm; sourceTree = SOURCE_ROOT; };
+		7CCA8E7E2114454694561C10 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/RayTracingPipeline.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = RayTracingPipeline.mm; path = engine/src/Rendering/RayTracingPipeline.mm; sourceTree = SOURCE_ROOT; };
+		7F865F5C50E54BA98CBB94E9 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ImageLoader.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = ImageLoader.mm; path = engine/src/Core/ImageLoader.mm; sourceTree = SOURCE_ROOT; };
+		800A23FC8F4E4120AB94E2CC /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/MPS/MPSSceneConverter.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = MPSSceneConverter.cpp; path = engine/src/MPS/MPSSceneConverter.cpp; sourceTree = SOURCE_ROOT; };
+		823CF84EAEEC4849834CDF8D /* RTRMetalTests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = RTRMetalTests; sourceTree = BUILT_PRODUCTS_DIR; };
+		83515B89CA594F74A0829C18 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneBuilderTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SceneBuilderTests.cpp; path = tests/src/scene/SceneBuilderTests.cpp; sourceTree = SOURCE_ROOT; };
+		89FF64D8249748AB96DCC9F3 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		8A567D441CB1449185EF19C2 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.h; fileEncoding = 4; name = ViewController.h; path = sample/src/onscreen/ViewController.h; sourceTree = SOURCE_ROOT; };
+		8F13D92E76B44615A46E6340 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/GeometryStoreTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = GeometryStoreTests.cpp; path = tests/src/rendering/GeometryStoreTests.cpp; sourceTree = SOURCE_ROOT; };
+		937B05AE155047E7B9F17EEA /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist */ = {isa = PBXFileReference; explicitFileType = sourcecode.text.plist; fileEncoding = 4; name = Info.plist; path = "build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist"; sourceTree = SOURCE_ROOT; };
+		9659B5675A534827A6B1E41F /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest_main.cc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = gtest_main.cc; path = "build-xcode/_deps/googletest-src/googletest/src/gtest_main.cc"; sourceTree = SOURCE_ROOT; };
+		9DB2AC16E188456685770739 /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/CoreGraphics.framework */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = wrapper.framework; name = CoreGraphics.framework; path = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/CoreGraphics.framework; sourceTree = "<absolute>"; };
+		9DDD1F3EAFA94CDB90DDAB1B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Foundation.framework */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = "<absolute>"; };
+		A254091C6F1B4CEC9B81DA55 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock_main.cc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = gmock_main.cc; path = "build-xcode/_deps/googletest-src/googlemock/src/gmock_main.cc"; sourceTree = SOURCE_ROOT; };
+		A2694D7FE8F942D38281D981 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/GeometryStore.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = GeometryStore.cpp; path = engine/src/Rendering/GeometryStore.cpp; sourceTree = SOURCE_ROOT; };
+		A61ADF49A2B64323977871D2 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/ConfigLoaderTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = ConfigLoaderTests.cpp; path = tests/src/core/ConfigLoaderTests.cpp; sourceTree = SOURCE_ROOT; };
+		A9D97E362F254EA2998628F1 /* RTRMetalOnScreenSample */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; path = RTRMetalOnScreenSample; sourceTree = BUILT_PRODUCTS_DIR; };
+		AB14AA50BA254D82A1EAEEB4 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		AF3361536C2E47B1ACBADF28 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Mesh.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = Mesh.cpp; path = engine/src/Scene/Mesh.cpp; sourceTree = SOURCE_ROOT; };
+		B1FC341164744D4DBE220172 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/LoggerTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = LoggerTests.cpp; path = tests/src/core/LoggerTests.cpp; sourceTree = SOURCE_ROOT; };
+		B4A28121CCE6431DA77058CA /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = "build-xcode/_deps/googletest-src/googletest/CMakeLists.txt"; sourceTree = SOURCE_ROOT; };
+		B50F0D4EB4EA481D81777278 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		BB6751B9B92C449AB04DE0B0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/MetalContext.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = MetalContext.mm; path = engine/src/Rendering/MetalContext.mm; sourceTree = SOURCE_ROOT; };
+		C091E04D072840EEBC2EA85A /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = ViewController.mm; path = sample/src/onscreen/ViewController.mm; sourceTree = SOURCE_ROOT; };
+		C3F9AB88915641A380B8970C /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/RendererTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = RendererTests.cpp; path = tests/src/rendering/RendererTests.cpp; sourceTree = SOURCE_ROOT; };
+		C4795FF2F24E42899E96FDAB /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = "build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt"; sourceTree = SOURCE_ROOT; };
+		C6B2C4743B814647AC3545EC /* gmock */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libgmock.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		C8ED740E288940B7867FA8E9 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SampleAppUtils.cpp; path = sample/src/SampleAppUtils.cpp; sourceTree = SOURCE_ROOT; };
+		C946708956E8475788132337 /* gtest_main */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libgtest_main.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		D009AD1634F54AE786EBE1E3 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructureBuilder.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = AccelerationStructureBuilder.mm; path = engine/src/Rendering/AccelerationStructureBuilder.mm; sourceTree = SOURCE_ROOT; };
+		DA1A2D1DA16D41859FD51C9B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock-all.cc */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = "gmock-all.cc"; path = "build-xcode/_deps/googletest-src/googlemock/src/gmock-all.cc"; sourceTree = SOURCE_ROOT; };
+		DD2FFBC4AA8646BD98F1533B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Metal.framework */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = wrapper.framework; name = Metal.framework; path = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Metal.framework; sourceTree = "<absolute>"; };
+		DEB52790E5BF4F7BBF846BEA /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/main.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = main.cpp; path = sample/src/main.cpp; sourceTree = SOURCE_ROOT; };
+		E0FCAD987A3C46C2808D0DB4 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.h */ = {isa = PBXFileReference; explicitFileType = sourcecode.c.h; fileEncoding = 4; name = AppDelegate.h; path = sample/src/onscreen/AppDelegate.h; sourceTree = SOURCE_ROOT; };
+		E378200AA61A448D97C6385D /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/OBJLoader.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = OBJLoader.cpp; path = engine/src/Scene/OBJLoader.cpp; sourceTree = SOURCE_ROOT; };
+		E3DA6258894B41ECB61E7274 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = SampleAppUtils.cpp; path = sample/src/SampleAppUtils.cpp; sourceTree = SOURCE_ROOT; };
+		EB7D30048B754BD6888D8857 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		F26B7EEDBD9646918DE31371 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/MathTests.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = MathTests.cpp; path = tests/src/core/MathTests.cpp; sourceTree = SOURCE_ROOT; };
+		F2F90D6EDAC84AA88B3E70AD /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = "<absolute>"; };
+		FADCFDFBBD9C43F3BF8A9ACB /* gmock_main */ = {isa = PBXFileReference; explicitFileType = archive.ar; path = libgmock_main.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		FB89ADE7A27E4FBD999BDC1C /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/ImageIO.framework */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = wrapper.framework; name = ImageIO.framework; path = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/ImageIO.framework; sourceTree = "<absolute>"; };
+		FD11A86E48BA4A42854664FD /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/Renderer.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = Renderer.mm; path = engine/src/Rendering/Renderer.mm; sourceTree = SOURCE_ROOT; };
+		FDACD40B2BB24AB7B5209152 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */ = {isa = PBXFileReference; explicitFileType = sourcecode.text; fileEncoding = 4; name = CMakeLists.txt; path = CMakeLists.txt; sourceTree = SOURCE_ROOT; };
+		FE3C778DF729400688F9641F /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ConfigLoader.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = ConfigLoader.cpp; path = engine/src/Core/ConfigLoader.cpp; sourceTree = SOURCE_ROOT; };
+		FFBF7B724C124637B75BFFD4 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/main.mm */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.objcpp; fileEncoding = 4; name = main.mm; path = sample/src/onscreen/main.mm; sourceTree = SOURCE_ROOT; };
+		FFCBCEE687F7423D8DD72EC2 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Scene.cpp */ = {isa = PBXFileReference; explicitFileType = sourcecode.cpp.cpp; fileEncoding = 4; name = Scene.cpp; path = engine/src/Scene/Scene.cpp; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		1910D32E810545F5875E96B6 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2B27CEDDBE1D4B0C9D951FD1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		399CC00E6DE74FADAD1C3710 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4684396EF64B4561BCDF7C03 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		922998F11A424B9CAFE14808 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		929E74EB8A024AA9A57DEDC4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B57C84451A6A47A3A1CD19D1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FB449DF02FB84B86AA1AFA73 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		06B49473E75649C48BA0380A /* RTRMetalSample */ = {
+			isa = PBXGroup;
+			children = (
+				E49CA1AD26034798BCED7963 /* Source Files */,
+				AB14AA50BA254D82A1EAEEB4 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */,
+			);
+			name = RTRMetalSample;
+			sourceTree = "<group>";
+		};
+		17B9AE1602984D98AA6E61A4 /* gmock_main */ = {
+			isa = PBXGroup;
+			children = (
+				22A8728DAF8C4660B35C592D /* Source Files */,
+				C4795FF2F24E42899E96FDAB /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */,
+			);
+			name = gmock_main;
+			sourceTree = "<group>";
+		};
+		1996B53030EF401BBD94715B /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		21E78FA313DC47EA81F0C5B0 /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				A61ADF49A2B64323977871D2 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/ConfigLoaderTests.cpp */,
+				1068CD1345CF49158C2011B7 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/EngineConfigTests.cpp */,
+				B1FC341164744D4DBE220172 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/LoggerTests.cpp */,
+				F26B7EEDBD9646918DE31371 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/MathTests.cpp */,
+				2F467E74BF9643C599000503 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/mps/MPSSceneConverterTests.cpp */,
+				1E98498A1BB5445A883E7CC8 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccelerationStructureBuilderTests.cpp */,
+				3C9A63A504FF46469109946F /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccumulationTests.cpp */,
+				39123FF59F754476B04AA9BD /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/BufferAllocatorTests.cpp */,
+				8F13D92E76B44615A46E6340 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/GeometryStoreTests.cpp */,
+				C3F9AB88915641A380B8970C /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/RendererTests.cpp */,
+				83515B89CA594F74A0829C18 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneBuilderTests.cpp */,
+				1E4707AB85ED40AAAD609D52 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneTests.cpp */,
+				2FB512D43EE14A39B0A80A32 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/ScenesTests.cpp */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		22A8728DAF8C4660B35C592D /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				A254091C6F1B4CEC9B81DA55 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock_main.cc */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		24C6ACCA7F2B4C5DAF135713 /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				9659B5675A534827A6B1E41F /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest_main.cc */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		2854727C1B01430597043EFA /* ALL_BUILD */ = {
+			isa = PBXGroup;
+			children = (
+				870D46AB9E684890A2E92624 /* CMake Rules */,
+				89FF64D8249748AB96DCC9F3 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */,
+			);
+			name = ALL_BUILD;
+			sourceTree = "<group>";
+		};
+		2BC33BD8D0834CB9B9B870DA /* RTRMetalTests */ = {
+			isa = PBXGroup;
+			children = (
+				21E78FA313DC47EA81F0C5B0 /* Source Files */,
+				B50F0D4EB4EA481D81777278 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */,
+			);
+			name = RTRMetalTests;
+			sourceTree = "<group>";
+		};
+		4B2BA1F2CD1E414D83E8320D /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				E3DA6258894B41ECB61E7274 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */,
+				765624257D11405494C717DF /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.mm */,
+				C091E04D072840EEBC2EA85A /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.mm */,
+				FFBF7B724C124637B75BFFD4 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/main.mm */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		528F43243F7B4BD48F46BCBA /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				DA1A2D1DA16D41859FD51C9B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock-all.cc */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		6A98CC1868934BAF8D963077 /* RTRMetalEngine */ = {
+			isa = PBXGroup;
+			children = (
+				BFD76C1A8AC6497F98E1EF74 /* Source Files */,
+				FDACD40B2BB24AB7B5209152 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */,
+			);
+			name = RTRMetalEngine;
+			sourceTree = "<group>";
+		};
+		81F91F8C25B849BDA2473ED0 /* Header Files */ = {
+			isa = PBXGroup;
+			children = (
+				E0FCAD987A3C46C2808D0DB4 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.h */,
+				8A567D441CB1449185EF19C2 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.h */,
+			);
+			name = "Header Files";
+			sourceTree = "<group>";
+		};
+		830E0022FA3744A182D705D3 /* CMake Rules */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "CMake Rules";
+			sourceTree = "<group>";
+		};
+		870D46AB9E684890A2E92624 /* CMake Rules */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "CMake Rules";
+			sourceTree = "<group>";
+		};
+		92BDC5CD7DD84C1DBEC9CD27 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				DD2FFBC4AA8646BD98F1533B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Metal.framework */,
+				9DDD1F3EAFA94CDB90DDAB1B /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/Foundation.framework */,
+				F2F90D6EDAC84AA88B3E70AD /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/MetalPerformanceShaders.framework */,
+				9DB2AC16E188456685770739 /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/CoreGraphics.framework */,
+				FB89ADE7A27E4FBD999BDC1C /* /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks/ImageIO.framework */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		9E6D65209E8E4F3F8126AD30 /* gtest_main */ = {
+			isa = PBXGroup;
+			children = (
+				24C6ACCA7F2B4C5DAF135713 /* Source Files */,
+				4576999EED71460F9DFE7318 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */,
+			);
+			name = gtest_main;
+			sourceTree = "<group>";
+		};
+		A2B6C539299D404A979F7D13 /* gmock */ = {
+			isa = PBXGroup;
+			children = (
+				528F43243F7B4BD48F46BCBA /* Source Files */,
+				0B4F7F9C9D8B4DFBBDF6980E /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/CMakeLists.txt */,
+			);
+			name = gmock;
+			sourceTree = "<group>";
+		};
+		A69AEE069BA445EE8B33D68A /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				61069B9C489F4FABADBA6014 /* RTRMetalEngine */,
+				A9D97E362F254EA2998628F1 /* RTRMetalOnScreenSample */,
+				163DDDB8FC354DB2B816A74F /* RTRMetalSample */,
+				823CF84EAEEC4849834CDF8D /* RTRMetalTests */,
+				C6B2C4743B814647AC3545EC /* gmock */,
+				FADCFDFBBD9C43F3BF8A9ACB /* gmock_main */,
+				68830B85ED3F4EE8BE694A59 /* gtest */,
+				C946708956E8475788132337 /* gtest_main */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		BFD76C1A8AC6497F98E1EF74 /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				FE3C778DF729400688F9641F /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ConfigLoader.cpp */,
+				0681BBD1B0F54866A0F8FB80 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/FileSystem.cpp */,
+				7F865F5C50E54BA98CBB94E9 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ImageLoader.mm */,
+				38844AA3DBE044CA9151CED7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Logger.cpp */,
+				3308CDCDFF16467A9DCB5895 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Math.cpp */,
+				800A23FC8F4E4120AB94E2CC /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/MPS/MPSSceneConverter.cpp */,
+				6F0487C44BF243C28F91C3D2 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructure.mm */,
+				D009AD1634F54AE786EBE1E3 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructureBuilder.mm */,
+				0CC631E8DBC24F7EA1A508A7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/BufferAllocator.mm */,
+				A2694D7FE8F942D38281D981 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/GeometryStore.cpp */,
+				BB6751B9B92C449AB04DE0B0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/MetalContext.mm */,
+				7CCA8E7E2114454694561C10 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/RayTracingPipeline.mm */,
+				FD11A86E48BA4A42854664FD /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/Renderer.mm */,
+				3F60EEA38C534302812209FA /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/CornellBox.cpp */,
+				2F37F96410EB4C82B0C0C493 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/DemoScenes.cpp */,
+				AF3361536C2E47B1ACBADF28 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Mesh.cpp */,
+				E378200AA61A448D97C6385D /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/OBJLoader.cpp */,
+				FFCBCEE687F7423D8DD72EC2 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Scene.cpp */,
+				34D2EEEF322449F89BE746E3 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/SceneBuilder.cpp */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		D994D06C7EC443F18D59A8CC /* RTRMetalOnScreenSample */ = {
+			isa = PBXGroup;
+			children = (
+				4B2BA1F2CD1E414D83E8320D /* Source Files */,
+				81F91F8C25B849BDA2473ED0 /* Header Files */,
+				DECB4E4F400140D683B8B561 /* Resources */,
+				318287AA747A4F91B679228D /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */,
+			);
+			name = RTRMetalOnScreenSample;
+			sourceTree = "<group>";
+		};
+		DE8E5E7CA8DF4964B2800A83 /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				2847CD6324F840CD81328811 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest-all.cc */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		DECB4E4F400140D683B8B561 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				937B05AE155047E7B9F17EEA /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist */,
+			);
+			name = Resources;
+			sourceTree = "<group>";
+		};
+		E2B64F7128364694ADE257CE /* gtest */ = {
+			isa = PBXGroup;
+			children = (
+				DE8E5E7CA8DF4964B2800A83 /* Source Files */,
+				B4A28121CCE6431DA77058CA /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/CMakeLists.txt */,
+			);
+			name = gtest;
+			sourceTree = "<group>";
+		};
+		E49CA1AD26034798BCED7963 /* Source Files */ = {
+			isa = PBXGroup;
+			children = (
+				C8ED740E288940B7867FA8E9 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */,
+				DEB52790E5BF4F7BBF846BEA /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/main.cpp */,
+			);
+			name = "Source Files";
+			sourceTree = "<group>";
+		};
+		E63848FEBB0D4AB792933A81 = {
+			isa = PBXGroup;
+			children = (
+				EF3204BA076441B6846CB85C /* RTRMetalShaders */,
+				6A98CC1868934BAF8D963077 /* RTRMetalEngine */,
+				06B49473E75649C48BA0380A /* RTRMetalSample */,
+				D994D06C7EC443F18D59A8CC /* RTRMetalOnScreenSample */,
+				2BC33BD8D0834CB9B9B870DA /* RTRMetalTests */,
+				2854727C1B01430597043EFA /* ALL_BUILD */,
+				A2B6C539299D404A979F7D13 /* gmock */,
+				17B9AE1602984D98AA6E61A4 /* gmock_main */,
+				E2B64F7128364694ADE257CE /* gtest */,
+				9E6D65209E8E4F3F8126AD30 /* gtest_main */,
+				A69AEE069BA445EE8B33D68A /* Products */,
+				92BDC5CD7DD84C1DBEC9CD27 /* Frameworks */,
+				1996B53030EF401BBD94715B /* Resources */,
+			);
+			sourceTree = "<group>";
+		};
+		EF3204BA076441B6846CB85C /* RTRMetalShaders */ = {
+			isa = PBXGroup;
+			children = (
+				830E0022FA3744A182D705D3 /* CMake Rules */,
+				EB7D30048B754BD6888D8857 /* /Users/yanbing.xu/Desktop/RTR_Metal/CMakeLists.txt */,
+			);
+			name = RTRMetalShaders;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		6CAE42EF6E4378D66585EFB1 /* RTRMetalEngine */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8990B5EF8A954A3A89FB0B74 /* Build configuration list for PBXNativeTarget "RTRMetalEngine" */;
+			buildPhases = (
+				A8CB05413F454F859293E64A /* Sources */,
+				2B27CEDDBE1D4B0C9D951FD1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				ED73CC5096D9442F9A329A4A /* PBXTargetDependency */,
+				788E0E65DD4C44DD9024974D /* PBXTargetDependency */,
+			);
+			name = RTRMetalEngine;
+			productName = RTRMetalEngine;
+			productReference = 61069B9C489F4FABADBA6014 /* RTRMetalEngine */;
+			productType = "com.apple.product-type.library.static";
+		};
+		6F4666664AB91A72E9BF43AB /* gmock */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CB37B7A53C2542729A26367E /* Build configuration list for PBXNativeTarget "gmock" */;
+			buildPhases = (
+				5A1E7DBE88814DF59767239C /* Sources */,
+				922998F11A424B9CAFE14808 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				562DC21AFA6248678584D287 /* PBXTargetDependency */,
+			);
+			name = gmock;
+			productName = gmock;
+			productReference = C6B2C4743B814647AC3545EC /* gmock */;
+			productType = "com.apple.product-type.library.static";
+		};
+		8860C13D0FB24D4B7011E870 /* gmock_main */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F83F27069190473F9719CD82 /* Build configuration list for PBXNativeTarget "gmock_main" */;
+			buildPhases = (
+				5E5FD9DBE3B84C4AAC9A0661 /* Sources */,
+				1910D32E810545F5875E96B6 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				2DDDA516B23B427CA5158492 /* PBXTargetDependency */,
+				C8F4A4E70E6B4AAC88BB15DF /* PBXTargetDependency */,
+			);
+			name = gmock_main;
+			productName = gmock_main;
+			productReference = FADCFDFBBD9C43F3BF8A9ACB /* gmock_main */;
+			productType = "com.apple.product-type.library.static";
+		};
+		92B6A9B76EF5CF562A7C88F8 /* gtest_main */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B89FFBBB56E847C896C26258 /* Build configuration list for PBXNativeTarget "gtest_main" */;
+			buildPhases = (
+				077CA3F97BF54C8E8A934BA8 /* Sources */,
+				399CC00E6DE74FADAD1C3710 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				39147A03ACB145628F94F601 /* PBXTargetDependency */,
+			);
+			name = gtest_main;
+			productName = gtest_main;
+			productReference = C946708956E8475788132337 /* gtest_main */;
+			productType = "com.apple.product-type.library.static";
+		};
+		A43BB3D44699F0596916756D /* RTRMetalSample */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E19CCDDB606F4413A2461D97 /* Build configuration list for PBXNativeTarget "RTRMetalSample" */;
+			buildPhases = (
+				6214D52FAA3C40B9A5BAB474 /* Sources */,
+				4684396EF64B4561BCDF7C03 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A802C03F58DE4466988929C1 /* PBXTargetDependency */,
+				FDCCF280CEF5496CA8292CBC /* PBXTargetDependency */,
+				E2E3EA7E081F45389FB24779 /* PBXTargetDependency */,
+			);
+			name = RTRMetalSample;
+			productName = RTRMetalSample;
+			productReference = 163DDDB8FC354DB2B816A74F /* RTRMetalSample */;
+			productType = "com.apple.product-type.tool";
+		};
+		B63ADF361917A441495E2377 /* RTRMetalOnScreenSample */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 933E8DCB9F854B7EB11FA572 /* Build configuration list for PBXNativeTarget "RTRMetalOnScreenSample" */;
+			buildPhases = (
+				2A0ACAE73A9B414CAF1E835C /* Sources */,
+				B57C84451A6A47A3A1CD19D1 /* Frameworks */,
+				7DA56D8A96497BAED90BDD2A /* CMake PostBuild Rules */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				3A4353ED22C2405EA6B30088 /* PBXTargetDependency */,
+				672ACA1D17FA4C2BB51667A3 /* PBXTargetDependency */,
+				785130E1C29147079BB088DF /* PBXTargetDependency */,
+			);
+			name = RTRMetalOnScreenSample;
+			productName = RTRMetalOnScreenSample;
+			productReference = A9D97E362F254EA2998628F1 /* RTRMetalOnScreenSample */;
+			productType = "com.apple.product-type.application";
+		};
+		FE2E2F19E756FD66DA65BE8A /* gtest */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0E8BFC76F1124C5B81325B34 /* Build configuration list for PBXNativeTarget "gtest" */;
+			buildPhases = (
+				A353134C9EB34048BEB2B11C /* Sources */,
+				FB449DF02FB84B86AA1AFA73 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = gtest;
+			productName = gtest;
+			productReference = 68830B85ED3F4EE8BE694A59 /* gtest */;
+			productType = "com.apple.product-type.library.static";
+		};
+		FF43E78A1D9738267F000B86 /* RTRMetalTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D0B5BA2AE5FF48428EEDB2E7 /* Build configuration list for PBXNativeTarget "RTRMetalTests" */;
+			buildPhases = (
+				5BF8508220B5417A8C2EEAB0 /* Sources */,
+				929E74EB8A024AA9A57DEDC4 /* Frameworks */,
+				0424E5B7CCF6E51D0E303F08 /* CMake PostBuild Rules */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F15E6574AAD1400DAAF327EF /* PBXTargetDependency */,
+				D921B936CC10495AB5A979F3 /* PBXTargetDependency */,
+				6C373BCC19154BE6B6EFD5BB /* PBXTargetDependency */,
+				A1ED0E7186484C8984427B3F /* PBXTargetDependency */,
+				CEC662389D5F41638F001E75 /* PBXTargetDependency */,
+			);
+			name = RTRMetalTests;
+			productName = RTRMetalTests;
+			productReference = 823CF84EAEEC4849834CDF8D /* RTRMetalTests */;
+			productType = "com.apple.product-type.tool";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		9A89B0562C5747A59927405C /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1610;
+			};
+			buildConfigurationList = EF9EC36CCF7A42BA8EB443DA /* Build configuration list for PBXProject "RTRMetal" */;
+			buildSettings = {
+			};
+			buildStyles = (
+				ACA6892928DB47D48103E551 /* Debug */,
+				19590BDF02A0456D845BD771 /* Release */,
+				DC4DA8EE2BE44524BDC591BD /* MinSizeRel */,
+				38E0EE311BD348C2A6AB8D9D /* RelWithDebInfo */,
+			);
+			compatibilityVersion = "Xcode 3.2";
+			hasScannedForEncodings = 0;
+			mainGroup = E63848FEBB0D4AB792933A81;
+			projectDirPath = /Users/yanbing.xu/Desktop/RTR_Metal;
+			projectRoot = "";
+			targets = (
+				31B191FEFEB1E29C6795BF55 /* ALL_BUILD */,
+				6CAE42EF6E4378D66585EFB1 /* RTRMetalEngine */,
+				B63ADF361917A441495E2377 /* RTRMetalOnScreenSample */,
+				A43BB3D44699F0596916756D /* RTRMetalSample */,
+				2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */,
+				FF43E78A1D9738267F000B86 /* RTRMetalTests */,
+				94C04A73E6982CC9F9FDD771 /* RUN_TESTS */,
+				3A88BF22C283F2C1F692A787 /* ZERO_CHECK */,
+				6F4666664AB91A72E9BF43AB /* gmock */,
+				8860C13D0FB24D4B7011E870 /* gmock_main */,
+				FE2E2F19E756FD66DA65BE8A /* gtest */,
+				92B6A9B76EF5CF562A7C88F8 /* gtest_main */,
+				C724D558423227C9C1C79A17 /* install */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		003C8D08B0008F35F218E126 /* CMake PostBuild Rules */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "CMake PostBuild Rules";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/ctest --force-new-ctest-process -C $CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/ctest --force-new-ctest-process -C $CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/ctest --force-new-ctest-process -C $CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/ctest --force-new-ctest-process -C $CONFIGURATION$EFFECTIVE_PLATFORM_NAME
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		0424E5B7CCF6E51D0E303F08 /* CMake PostBuild Rules */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "CMake PostBuild Rules";
+			outputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -D TEST_TARGET=RTRMetalTests -D TEST_EXECUTABLE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/RTRMetalTests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=RTRMetalTests_TESTS -D CTEST_FILE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_DISCOVERY_EXTRA_ARGS= -D TEST_XML_OUTPUT_DIR= -P /opt/homebrew/share/cmake/Modules/GoogleTestAddTests.cmake
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -D TEST_TARGET=RTRMetalTests -D TEST_EXECUTABLE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/RTRMetalTests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=RTRMetalTests_TESTS -D CTEST_FILE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_DISCOVERY_EXTRA_ARGS= -D TEST_XML_OUTPUT_DIR= -P /opt/homebrew/share/cmake/Modules/GoogleTestAddTests.cmake
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -D TEST_TARGET=RTRMetalTests -D TEST_EXECUTABLE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/RTRMetalTests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=RTRMetalTests_TESTS -D CTEST_FILE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_DISCOVERY_EXTRA_ARGS= -D TEST_XML_OUTPUT_DIR= -P /opt/homebrew/share/cmake/Modules/GoogleTestAddTests.cmake
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -D TEST_TARGET=RTRMetalTests -D TEST_EXECUTABLE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/RTRMetalTests -D TEST_EXECUTOR= -D TEST_WORKING_DIR=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode -D TEST_EXTRA_ARGS= -D TEST_PROPERTIES= -D TEST_PREFIX= -D TEST_SUFFIX= -D TEST_FILTER= -D NO_PRETTY_TYPES=FALSE -D NO_PRETTY_VALUES=FALSE -D TEST_LIST=RTRMetalTests_TESTS -D CTEST_FILE=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake -D TEST_DISCOVERY_TIMEOUT=5 -D TEST_DISCOVERY_EXTRA_ARGS= -D TEST_XML_OUTPUT_DIR= -P /opt/homebrew/share/cmake/Modules/GoogleTestAddTests.cmake
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		132AA915F0D9AF01648CE013 /* Generate shaders/RTRRayTracing.air */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+/Users/yanbing.xu/Desktop/RTR_Metal/shaders/RTRRayTracing.metal			);
+			name = "Generate shaders/RTRRayTracing.air";
+			outputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/shaders
+  xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/metal_module_cache -I/Users/yanbing.xu/Desktop/RTR_Metal/engine/include -DMTL_ENABLE_RAYTRACING=1 -c /Users/yanbing.xu/Desktop/RTR_Metal/shaders/RTRRayTracing.metal -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/shaders
+  xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/metal_module_cache -I/Users/yanbing.xu/Desktop/RTR_Metal/engine/include -DMTL_ENABLE_RAYTRACING=1 -c /Users/yanbing.xu/Desktop/RTR_Metal/shaders/RTRRayTracing.metal -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/shaders
+  xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/metal_module_cache -I/Users/yanbing.xu/Desktop/RTR_Metal/engine/include -DMTL_ENABLE_RAYTRACING=1 -c /Users/yanbing.xu/Desktop/RTR_Metal/shaders/RTRRayTracing.metal -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/shaders
+  xcrun --sdk macosx metal -std=metal3.0 -fmodules-cache-path=/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/metal_module_cache -I/Users/yanbing.xu/Desktop/RTR_Metal/engine/include -DMTL_ENABLE_RAYTRACING=1 -c /Users/yanbing.xu/Desktop/RTR_Metal/shaders/RTRRayTracing.metal -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		3C0110FC8322DE7E50886E21 = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		772648B301D136BB601746CE /* Generate CMakeFiles/ZERO_CHECK */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CMakeFiles/ZERO_CHECK";
+			outputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/ZERO_CHECK"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  make -f /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  make -f /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  make -f /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeScripts/ReRunCMake.make
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  make -f /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeScripts/ReRunCMake.make
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		7DA56D8A96497BAED90BDD2A /* CMake PostBuild Rules */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "CMake PostBuild Rules";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -E make_directory /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/RTRMetalOnScreenSample.app/Contents/Resources
+  /opt/homebrew/bin/cmake -E copy_if_different /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/RTRMetalOnScreenSample.app/Contents/Resources/RTRShaders.metallib
+  /opt/homebrew/bin/cmake -E copy_directory /Users/yanbing.xu/Desktop/RTR_Metal/assets /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/RTRMetalOnScreenSample.app/Contents/Resources/assets
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -E make_directory /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/RTRMetalOnScreenSample.app/Contents/Resources
+  /opt/homebrew/bin/cmake -E copy_if_different /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/RTRMetalOnScreenSample.app/Contents/Resources/RTRShaders.metallib
+  /opt/homebrew/bin/cmake -E copy_directory /Users/yanbing.xu/Desktop/RTR_Metal/assets /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/RTRMetalOnScreenSample.app/Contents/Resources/assets
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -E make_directory /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/RTRMetalOnScreenSample.app/Contents/Resources
+  /opt/homebrew/bin/cmake -E copy_if_different /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/RTRMetalOnScreenSample.app/Contents/Resources/RTRShaders.metallib
+  /opt/homebrew/bin/cmake -E copy_directory /Users/yanbing.xu/Desktop/RTR_Metal/assets /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/RTRMetalOnScreenSample.app/Contents/Resources/assets
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -E make_directory /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/RTRMetalOnScreenSample.app/Contents/Resources
+  /opt/homebrew/bin/cmake -E copy_if_different /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/RTRMetalOnScreenSample.app/Contents/Resources/RTRShaders.metallib
+  /opt/homebrew/bin/cmake -E copy_directory /Users/yanbing.xu/Desktop/RTR_Metal/assets /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/RTRMetalOnScreenSample.app/Contents/Resources/assets
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		85A034CF65102EC91F5D2EA5 /* Generate CMakeFiles/ALL_BUILD */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Generate CMakeFiles/ALL_BUILD";
+			outputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/ALL_BUILD"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  echo Build\\ all\\ projects
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  echo Build\\ all\\ projects
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		87AF4882E018677E2624B544 = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		910A41151295C5F9742C25BD = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		93426DA6A4AC2C2AC9CE883C /* CMake PostBuild Rules */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			name = "CMake PostBuild Rules";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -DBUILD_TYPE=$CONFIGURATION$EFFECTIVE_PLATFORM_NAME -P cmake_install.cmake
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -DBUILD_TYPE=$CONFIGURATION$EFFECTIVE_PLATFORM_NAME -P cmake_install.cmake
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -DBUILD_TYPE=$CONFIGURATION$EFFECTIVE_PLATFORM_NAME -P cmake_install.cmake
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  /opt/homebrew/bin/cmake -DBUILD_TYPE=$CONFIGURATION$EFFECTIVE_PLATFORM_NAME -P cmake_install.cmake
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		9B50530E35CC49C82C2FACCF = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		C95456A620553F4B08D59E0D = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# shell script goes here
+exit 0";
+			showEnvVarsInLog = 0;
+		};
+		D6264C121AD09A937C556D68 /* Generate CMakeFiles/RTRMetalShaders */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib"			);
+			name = "Generate CMakeFiles/RTRMetalShaders";
+			outputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalShaders"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+		FA19635C153439C71E4AD2FD /* Generate shaders/RTRShaders.metallib */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air"			);
+			name = "Generate shaders/RTRShaders.metallib";
+			outputPaths = (
+"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib"			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e
+if test \"$CONFIGURATION\" = \"Debug\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  xcrun --sdk macosx metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib
+fi
+if test \"$CONFIGURATION\" = \"Release\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  xcrun --sdk macosx metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib
+fi
+if test \"$CONFIGURATION\" = \"MinSizeRel\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  xcrun --sdk macosx metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib
+fi
+if test \"$CONFIGURATION\" = \"RelWithDebInfo\"; then :
+  cd /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode
+  xcrun --sdk macosx metallib /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRRayTracing.air -o /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/shaders/RTRShaders.metallib
+fi
+";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		077CA3F97BF54C8E8A934BA8 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0DCA8A1624454372A7A3F747 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest_main.cc */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2A0ACAE73A9B414CAF1E835C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9B08EC0D145F4AA29E99BCF0 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */,
+				44F9DE4C541B46F89951A04A /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/AppDelegate.mm */,
+				687C75B7384F4C46B87E6120 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/ViewController.mm */,
+				CF72B36EDD86409E91E2FC15 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/onscreen/main.mm */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5A1E7DBE88814DF59767239C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				34A9898677AC4DFC9FE9822B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock-all.cc */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5BF8508220B5417A8C2EEAB0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9099B72632424267851FE43B /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/ConfigLoaderTests.cpp */,
+				31EE3394EA004B429983606A /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/EngineConfigTests.cpp */,
+				6DD72A21036A400787A6AE5B /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/LoggerTests.cpp */,
+				5F56376E53FC47A2BC76A22E /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/core/MathTests.cpp */,
+				880432129DE3476A92010E64 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/mps/MPSSceneConverterTests.cpp */,
+				62747DA6023C4D80AA97D10C /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccelerationStructureBuilderTests.cpp */,
+				4545F779A28A4F6A8420E287 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/AccumulationTests.cpp */,
+				9F26C7DF34704312BB12A441 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/BufferAllocatorTests.cpp */,
+				2658BDE813C74D24ADB171CE /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/GeometryStoreTests.cpp */,
+				6BF2954FC6CF47D790E20614 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/rendering/RendererTests.cpp */,
+				DBC94494F041426D92D40200 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneBuilderTests.cpp */,
+				26C3D21B2FD6427681853E8F /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/SceneTests.cpp */,
+				6900931DA4254CD893336031 /* /Users/yanbing.xu/Desktop/RTR_Metal/tests/src/scene/ScenesTests.cpp */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5E5FD9DBE3B84C4AAC9A0661 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5A314ADF2FC44D87A75C181B /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/src/gmock_main.cc */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		6214D52FAA3C40B9A5BAB474 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				00E943C069E9436682600FD2 /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/SampleAppUtils.cpp */,
+				DDBCCE292BEA4D49AAE7EF6F /* /Users/yanbing.xu/Desktop/RTR_Metal/sample/src/main.cpp */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A353134C9EB34048BEB2B11C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6E32E1F3A9984D41BC236AF2 /* /Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/src/gtest-all.cc */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A8CB05413F454F859293E64A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0AB7FD03187D404882F9E397 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ConfigLoader.cpp */,
+				30CBA877B31342AC8209B6A7 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/FileSystem.cpp */,
+				F4AD564A767849E7B6AE0C15 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/ImageLoader.mm */,
+				04FE621D8517416CACF0E5E6 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Logger.cpp */,
+				FD841549DE954DE5AF6D98B6 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Core/Math.cpp */,
+				9A4ECA3864524D3D8021D767 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/MPS/MPSSceneConverter.cpp */,
+				BF2F1B86FFFF4555A6993B05 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructure.mm */,
+				FAF76EF26B994C2597A0B6F6 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/AccelerationStructureBuilder.mm */,
+				E102A2CF41124F688313F2A0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/BufferAllocator.mm */,
+				B4079DAFFBA3465EA8FDC5D0 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/GeometryStore.cpp */,
+				C291A142CBE24A45802FA6AF /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/MetalContext.mm */,
+				930D897BA7A24D17B40C09CA /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/RayTracingPipeline.mm */,
+				C026979A034E4129ABC62B5E /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Rendering/Renderer.mm */,
+				1B6FC6AFDCE04FF6A254C4EE /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/CornellBox.cpp */,
+				554487643FAA4A4F82BA12C4 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/DemoScenes.cpp */,
+				0918F2917C0645D5AC7FED98 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Mesh.cpp */,
+				0ED873717DF14E94AD2B0CEB /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/OBJLoader.cpp */,
+				C680C4CCB4B542A2BE407262 /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/Scene.cpp */,
+				43526D3C42A74585AC4FAFAB /* /Users/yanbing.xu/Desktop/RTR_Metal/engine/src/Scene/SceneBuilder.cpp */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		0CE28212A7CD4DBDA8B9EED9 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE2E2F19E756FD66DA65BE8A /* gtest */;
+			targetProxy = 690EC0066B1847FBB2B7E816 /* PBXContainerItemProxy */;
+		};
+		13C44CE936914A41BBCEBFD6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 92B6A9B76EF5CF562A7C88F8 /* gtest_main */;
+			targetProxy = FB1FC9D893CF499C80815566 /* PBXContainerItemProxy */;
+		};
+		2DDDA516B23B427CA5158492 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6F4666664AB91A72E9BF43AB /* gmock */;
+			targetProxy = 45D77D199B984C1791E0766B /* PBXContainerItemProxy */;
+		};
+		39147A03ACB145628F94F601 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE2E2F19E756FD66DA65BE8A /* gtest */;
+			targetProxy = 6E6692D80528417CBBCEE672 /* PBXContainerItemProxy */;
+		};
+		3A4353ED22C2405EA6B30088 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3A88BF22C283F2C1F692A787 /* ZERO_CHECK */;
+			targetProxy = FF050FFE30EF40A7AD74BAD6 /* PBXContainerItemProxy */;
+		};
+		3F03BC1B39A5497A8C98CA0B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FF43E78A1D9738267F000B86 /* RTRMetalTests */;
+			targetProxy = BC678652D0DE4A6784F3157D /* PBXContainerItemProxy */;
+		};
+		4467A0C6D18F4B898B60814D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3A88BF22C283F2C1F692A787 /* ZERO_CHECK */;
+			targetProxy = 6D291EF15C7E43F8B0087C63 /* PBXContainerItemProxy */;
+		};
+		45050AA61E244ADBB3149A3E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A43BB3D44699F0596916756D /* RTRMetalSample */;
+			targetProxy = A4FB3D7C3E7D4BAB8C8E01D4 /* PBXContainerItemProxy */;
+		};
+		562DC21AFA6248678584D287 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE2E2F19E756FD66DA65BE8A /* gtest */;
+			targetProxy = 02A0659EC2DA475087CA625C /* PBXContainerItemProxy */;
+		};
+		5D8A4CF5C068459DADD9CA68 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */;
+			targetProxy = 1CF0FDD5BC884854BF3F2E5B /* PBXContainerItemProxy */;
+		};
+		66AAE01167D14E2B984845F5 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6F4666664AB91A72E9BF43AB /* gmock */;
+			targetProxy = 088F4EDC7CE94CA3828CDC4D /* PBXContainerItemProxy */;
+		};
+		672ACA1D17FA4C2BB51667A3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */;
+			targetProxy = FEB8575AB33646E3A47C133B /* PBXContainerItemProxy */;
+		};
+		6C373BCC19154BE6B6EFD5BB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3A88BF22C283F2C1F692A787 /* ZERO_CHECK */;
+			targetProxy = 7F2CA11AD7234DC0B40317CF /* PBXContainerItemProxy */;
+		};
+		785130E1C29147079BB088DF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6CAE42EF6E4378D66585EFB1 /* RTRMetalEngine */;
+			targetProxy = E902CAEEC0754172906723CE /* PBXContainerItemProxy */;
+		};
+		788E0E65DD4C44DD9024974D /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */;
+			targetProxy = 45194197D11D43A5A717DA7E /* PBXContainerItemProxy */;
+		};
+		8137118156AD4671BFB91C6E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 31B191FEFEB1E29C6795BF55 /* ALL_BUILD */;
+			targetProxy = 884D89E0EA294A18985B7BB4 /* PBXContainerItemProxy */;
+		};
+		9D3CFF66996740E59289F19F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B63ADF361917A441495E2377 /* RTRMetalOnScreenSample */;
+			targetProxy = F7433ECBF160446FB8A457E3 /* PBXContainerItemProxy */;
+		};
+		A1ED0E7186484C8984427B3F /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */;
+			targetProxy = A9598CF924B34DFD98AA69F6 /* PBXContainerItemProxy */;
+		};
+		A6B0BCB261AF4999BC64F420 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3A88BF22C283F2C1F692A787 /* ZERO_CHECK */;
+			targetProxy = D4F056BF190B40A8AF038465 /* PBXContainerItemProxy */;
+		};
+		A802C03F58DE4466988929C1 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3A88BF22C283F2C1F692A787 /* ZERO_CHECK */;
+			targetProxy = B7FF01A8B5BB456C933D050A /* PBXContainerItemProxy */;
+		};
+		BDF5DB18E97545FD873EC871 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8860C13D0FB24D4B7011E870 /* gmock_main */;
+			targetProxy = DD22C767C88344C39E5BB819 /* PBXContainerItemProxy */;
+		};
+		C8F4A4E70E6B4AAC88BB15DF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE2E2F19E756FD66DA65BE8A /* gtest */;
+			targetProxy = 547D1DAAEFDD4FB48DE4FA1E /* PBXContainerItemProxy */;
+		};
+		CEC662389D5F41638F001E75 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6CAE42EF6E4378D66585EFB1 /* RTRMetalEngine */;
+			targetProxy = ABBFB2D1CC764E19AED89A8D /* PBXContainerItemProxy */;
+		};
+		D921B936CC10495AB5A979F3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 92B6A9B76EF5CF562A7C88F8 /* gtest_main */;
+			targetProxy = 57E15DFAAF964D4A98D88513 /* PBXContainerItemProxy */;
+		};
+		E2E3EA7E081F45389FB24779 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6CAE42EF6E4378D66585EFB1 /* RTRMetalEngine */;
+			targetProxy = FD837C08A6B745FB9EC14CC8 /* PBXContainerItemProxy */;
+		};
+		ED73CC5096D9442F9A329A4A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 3A88BF22C283F2C1F692A787 /* ZERO_CHECK */;
+			targetProxy = 577A969DB1E74EDB81EEDBD2 /* PBXContainerItemProxy */;
+		};
+		F15E6574AAD1400DAAF327EF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = FE2E2F19E756FD66DA65BE8A /* gtest */;
+			targetProxy = 46756423BB95400E8CB16D78 /* PBXContainerItemProxy */;
+		};
+		F7480A68EBEF4A26B9A30B0B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 6CAE42EF6E4378D66585EFB1 /* RTRMetalEngine */;
+			targetProxy = 158A32BA19974852B4BD6C65 /* PBXContainerItemProxy */;
+		};
+		FDCCF280CEF5496CA8292CBC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 2AB3D7E18FD61D9675579A33 /* RTRMetalShaders */;
+			targetProxy = 3F52DDAD5A8F4B548C1BD187 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		000DBA326B874980BA9A2428 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				FRAMEWORK_SEARCH_PATHS = (/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks,"$(inherited)");
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalEngine;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalEngine.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		0038F399ADBB4B25BBBB52B4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				FRAMEWORK_SEARCH_PATHS = (/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks,"$(inherited)");
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalEngine;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalEngine.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		01AB5AD513D9405390210820 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/MinSizeRel";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		0563D2BFA1224F4694CB8EF4 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/libRTRMetalEngine.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		116F0A705E2D43A69240D67C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/libRTRMetalEngine.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		1398143C8C004B36B27CF6E8 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INFOPLIST_FILE = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist";
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/libRTRMetalEngine.a","-framework Cocoa","-framework MetalKit","-framework QuartzCore","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalOnScreenSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalOnScreenSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		1BD48FFEE2594DB59B707695 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Release";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		20017C7412B84AC5925F3E77 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = install;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		248BFAC8AD8E4C95BE3EFF34 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Release";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		250933E9E1E6407EAB5B2EA7 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RUN_TESTS;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		25305DB840C74432A40B2E93 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/MinSizeRel";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		31B23B8176B44B5B88C468D6 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		3773DB0A67984E9787575E92 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INFOPLIST_FILE = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist";
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/libRTRMetalEngine.a","-framework Cocoa","-framework MetalKit","-framework QuartzCore","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalOnScreenSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalOnScreenSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		3A8264BB21034D3EB1D69016 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RUN_TESTS;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		3CEA83E77E3B4366AFEABD20 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				SDKROOT = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SYMROOT = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build";
+			};
+			name = MinSizeRel;
+		};
+		45CE74DE4B314A7F8CED69C3 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/RelWithDebInfo";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		46806D5E62E847D5A036E13D /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/libRTRMetalEngine.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		5A4BA751A7FF48F6B71D3F28 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = install;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		5BF91FD9A2424EECBB4CDD60 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = install;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		5E182D83600546658B00EAED /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				FRAMEWORK_SEARCH_PATHS = (/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks,"$(inherited)");
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20' ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalEngine;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalEngine.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		5EE2B5D1B6F74A6591962BE2 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Debug";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		60EFD030F5444CF6ADAA3E75 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalShaders;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		69CD08D921184DA7845832BE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Debug";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		6B7437568DED47198B7DDB7A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				SDKROOT = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk;
+				SYMROOT = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build";
+			};
+			name = Debug;
+		};
+		6BD6CC44A8DB4F9C982B3529 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/RelWithDebInfo";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		7263AE7D83524AA3854758AA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		73CF2157F42C4965ABAF36E4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		74F16AF82C2C46E38181159D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		76D9BA5DFEFB4ACFB99D6908 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/libRTRMetalEngine.a","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/RelWithDebInfo/libgtest_main.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/RelWithDebInfo/libgtest.a","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalTests;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalTests.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		7724AB65F73E4A63AD9F163C /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RUN_TESTS;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		78C70AB798554F0991EE0CA6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				FRAMEWORK_SEARCH_PATHS = (/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk/System/Library/Frameworks,"$(inherited)");
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20' ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalEngine;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalEngine.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		88297B64F4A6442E9FB9940F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = install;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		8A106848D3F74AC6865B0667 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/RelWithDebInfo";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		8B27CF2E79E44BD78038373B /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		8C852C976CB64BFAABF96553 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Debug";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		99C3CDFB3F5B4901937998BD /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/libRTRMetalEngine.a","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Debug/libgtest_main.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Debug/libgtest.a","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalTests;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalTests.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		9F4E09AF2CC441C395DDA680 /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/MinSizeRel/libRTRMetalEngine.a","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/MinSizeRel/libgtest_main.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/MinSizeRel/libgtest.a","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalTests;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalTests.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		A12042D1E004435D84EAA91B /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				SDKROOT = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SYMROOT = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build";
+			};
+			name = RelWithDebInfo;
+		};
+		A651A66A0EAD48C9A97A7E1B /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INFOPLIST_FILE = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist";
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RelWithDebInfo/libRTRMetalEngine.a","-framework Cocoa","-framework MetalKit","-framework QuartzCore","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalOnScreenSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalOnScreenSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		B3F8C46890B4438BBC87DBF2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		BBFA7C71CCBF44A096896007 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				SDKROOT = /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.1.sdk;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SYMROOT = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build";
+			};
+			name = Release;
+		};
+		D60AE0066DA04E55AE530C6A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Debug";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		D872AB576DC44866B0642AF3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Release";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		D96860A5E2C14E74A77E70FB /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/MinSizeRel";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		D98DA505926941D09FCCDB15 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/libRTRMetalEngine.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		DB87A169CC5641CEA34A4814 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ALL_BUILD;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		DB98DD258E9C4ED5B2EFF4B3 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/RelWithDebInfo";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 2;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "       -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		DF70600EF0CD41C0B418CC95 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","'RTR_SOURCE_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal\"'","'RTR_BINARY_DIR=\"/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/sample/src,/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INFOPLIST_FILE = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/CMakeFiles/RTRMetalOnScreenSample.dir/Info.plist";
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "   '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Debug/libRTRMetalEngine.a","-framework Cocoa","-framework MetalKit","-framework QuartzCore","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalOnScreenSample;
+				SECTORDER_FLAGS = "";
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalOnScreenSample.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		E2AD483B4A4B4007BA5E8CF0 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalShaders;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		E4BAC9FE14224D2BB00263D2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Release";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gtest_main;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gtest_main.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		E4E3C419DE3F491D909ACC96 /* RelWithDebInfo */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = ZERO_CHECK;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = RelWithDebInfo;
+		};
+		EA791F3A5627460AB9B63ADB /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/MinSizeRel";
+				EXECUTABLE_PREFIX = lib;
+				EXECUTABLE_SUFFIX = .a;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googlemock","$(inherited)");
+				INSTALL_PATH = "";
+				LIBRARY_STYLE = STATIC;
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20'  -DGTEST_HAS_PTHREAD=1   ";
+				OTHER_LIBTOOLFLAGS = ("");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = gmock;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/gmock.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		EB75BAA139064325B7CF1E47 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalShaders;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+		F7A4BF54677C43CFAA6A81AE /* MinSizeRel */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalShaders;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = MinSizeRel;
+		};
+		FBC49D42BC6C4C6ABE9B5437 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				GCC_GENERATE_DEBUGGING_SYMBOLS = YES;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_LDFLAGS = ("","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RUN_TESTS;
+				SECTORDER_FLAGS = "";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Debug;
+		};
+		FEB6C0B6D74649AA8B439837 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ARCHS = arm64;
+				COMBINE_HIDPI_IMAGES = YES;
+				CONFIGURATION_BUILD_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release";
+				EXECUTABLE_PREFIX = "";
+				EXECUTABLE_SUFFIX = "";
+				GCC_GENERATE_DEBUGGING_SYMBOLS = NO;
+				GCC_INLINES_ARE_PRIVATE_EXTERN = NO;
+				GCC_OPTIMIZATION_LEVEL = 3;
+				GCC_PREPROCESSOR_DEFINITIONS = ("'CMAKE_INTDIR=\"$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)\"'","$(inherited)");
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				HEADER_SEARCH_PATHS = (/Users/yanbing.xu/Desktop/RTR_Metal/engine/include,"$(inherited)");
+				INSTALL_PATH = "";
+				ONLY_ACTIVE_ARCH = NO;
+				OTHER_CPLUSPLUSFLAGS = "    -DNDEBUG '-std=c++20' ";
+				OTHER_LDFLAGS = (" -Wl,-search_paths_first -Wl,-headerpad_max_install_names","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/Release/libRTRMetalEngine.a","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Release/libgtest_main.a","-framework Metal","-framework Foundation","-framework MetalPerformanceShaders","-framework CoreGraphics","-framework ImageIO","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/lib/Release/libgtest.a","-lobjc","$(inherited)");
+				OTHER_REZFLAGS = "";
+				PRODUCT_NAME = RTRMetalTests;
+				SECTORDER_FLAGS = "";
+				SYSTEM_HEADER_SEARCH_PATHS = ("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest/include","/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/_deps/googletest-src/googletest","$(inherited)");
+				TARGET_TEMP_DIR = "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/build/RTRMetalTests.build/$(CONFIGURATION)$(EFFECTIVE_PLATFORM_NAME)";
+				USE_HEADERMAP = NO;
+				WARNING_CFLAGS = ("$(inherited)");
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		028E62F56DAE4F2A9C9ED8DC /* Build configuration list for PBXAggregateTarget "ALL_BUILD" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				73CF2157F42C4965ABAF36E4 /* Debug */,
+				7263AE7D83524AA3854758AA /* Release */,
+				8B27CF2E79E44BD78038373B /* MinSizeRel */,
+				DB87A169CC5641CEA34A4814 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		0E8BFC76F1124C5B81325B34 /* Build configuration list for PBXNativeTarget "gtest" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D60AE0066DA04E55AE530C6A /* Debug */,
+				D872AB576DC44866B0642AF3 /* Release */,
+				25305DB840C74432A40B2E93 /* MinSizeRel */,
+				DB98DD258E9C4ED5B2EFF4B3 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		8990B5EF8A954A3A89FB0B74 /* Build configuration list for PBXNativeTarget "RTRMetalEngine" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				78C70AB798554F0991EE0CA6 /* Debug */,
+				0038F399ADBB4B25BBBB52B4 /* Release */,
+				000DBA326B874980BA9A2428 /* MinSizeRel */,
+				5E182D83600546658B00EAED /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		933E8DCB9F854B7EB11FA572 /* Build configuration list for PBXNativeTarget "RTRMetalOnScreenSample" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DF70600EF0CD41C0B418CC95 /* Debug */,
+				3773DB0A67984E9787575E92 /* Release */,
+				1398143C8C004B36B27CF6E8 /* MinSizeRel */,
+				A651A66A0EAD48C9A97A7E1B /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B0C3F42243B8455E90A34B55 /* Build configuration list for PBXAggregateTarget "RTRMetalShaders" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				60EFD030F5444CF6ADAA3E75 /* Debug */,
+				EB75BAA139064325B7CF1E47 /* Release */,
+				F7A4BF54677C43CFAA6A81AE /* MinSizeRel */,
+				E2AD483B4A4B4007BA5E8CF0 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B67B78EF5413401FA14B5A74 /* Build configuration list for PBXAggregateTarget "ZERO_CHECK" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				74F16AF82C2C46E38181159D /* Debug */,
+				B3F8C46890B4438BBC87DBF2 /* Release */,
+				31B23B8176B44B5B88C468D6 /* MinSizeRel */,
+				E4E3C419DE3F491D909ACC96 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B89FFBBB56E847C896C26258 /* Build configuration list for PBXNativeTarget "gtest_main" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8C852C976CB64BFAABF96553 /* Debug */,
+				E4BAC9FE14224D2BB00263D2 /* Release */,
+				D96860A5E2C14E74A77E70FB /* MinSizeRel */,
+				8A106848D3F74AC6865B0667 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		C34E25455F7E40FC94637CC5 /* Build configuration list for PBXAggregateTarget "install" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5A4BA751A7FF48F6B71D3F28 /* Debug */,
+				88297B64F4A6442E9FB9940F /* Release */,
+				20017C7412B84AC5925F3E77 /* MinSizeRel */,
+				5BF91FD9A2424EECBB4CDD60 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CB37B7A53C2542729A26367E /* Build configuration list for PBXNativeTarget "gmock" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				69CD08D921184DA7845832BE /* Debug */,
+				1BD48FFEE2594DB59B707695 /* Release */,
+				EA791F3A5627460AB9B63ADB /* MinSizeRel */,
+				6BD6CC44A8DB4F9C982B3529 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D0B5BA2AE5FF48428EEDB2E7 /* Build configuration list for PBXNativeTarget "RTRMetalTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				99C3CDFB3F5B4901937998BD /* Debug */,
+				FEB6C0B6D74649AA8B439837 /* Release */,
+				9F4E09AF2CC441C395DDA680 /* MinSizeRel */,
+				76D9BA5DFEFB4ACFB99D6908 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DE69FFC25F3741EDB60A4559 /* Build configuration list for PBXAggregateTarget "RUN_TESTS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FBC49D42BC6C4C6ABE9B5437 /* Debug */,
+				3A8264BB21034D3EB1D69016 /* Release */,
+				7724AB65F73E4A63AD9F163C /* MinSizeRel */,
+				250933E9E1E6407EAB5B2EA7 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E19CCDDB606F4413A2461D97 /* Build configuration list for PBXNativeTarget "RTRMetalSample" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				116F0A705E2D43A69240D67C /* Debug */,
+				D98DA505926941D09FCCDB15 /* Release */,
+				0563D2BFA1224F4694CB8EF4 /* MinSizeRel */,
+				46806D5E62E847D5A036E13D /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EF9EC36CCF7A42BA8EB443DA /* Build configuration list for PBXProject "RTRMetal" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6B7437568DED47198B7DDB7A /* Debug */,
+				BBFA7C71CCBF44A096896007 /* Release */,
+				3CEA83E77E3B4366AFEABD20 /* MinSizeRel */,
+				A12042D1E004435D84EAA91B /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F83F27069190473F9719CD82 /* Build configuration list for PBXNativeTarget "gmock_main" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				5EE2B5D1B6F74A6591962BE2 /* Debug */,
+				248BFAC8AD8E4C95BE3EFF34 /* Release */,
+				01AB5AD513D9405390210820 /* MinSizeRel */,
+				45CE74DE4B314A7F8CED69C3 /* RelWithDebInfo */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 9A89B0562C5747A59927405C /* Project object */;
+}

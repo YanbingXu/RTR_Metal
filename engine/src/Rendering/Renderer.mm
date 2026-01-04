@@ -181,9 +181,7 @@ struct RayTracingTarget {
 };
 
 struct RayTracingResources {
-    id<MTLTexture> accumulationHistoryTexture = nil;
     id<MTLTexture> randomTexture = nil;
-    id<MTLTexture> shadeTexture = nil;
     id<MTLBuffer> sceneLimitsBuffer = nil;
     BufferHandle instanceBuffer;
     BufferHandle materialBuffer;
@@ -201,9 +199,7 @@ struct RayTracingResources {
     MPSSceneLimits sceneLimits{};
 
     void reset() {
-        accumulationHistoryTexture = nil;
         randomTexture = nil;
-        shadeTexture = nil;
         sceneLimitsBuffer = nil;
         instanceBuffer = {};
         materialBuffer = {};
@@ -222,8 +218,6 @@ struct RayTracingResources {
     }
 
     void resetForResize() {
-        accumulationHistoryTexture = nil;
-        shadeTexture = nil;
         width = 0;
         height = 0;
     }
@@ -323,9 +317,7 @@ struct Renderer::Impl {
         return wroteImage;
     }
 
-    [[nodiscard]] void* currentColorTextureHandle() const noexcept {
-        return (__bridge void*)target.colorTexture;
-    }
+    [[nodiscard]] void* currentColorTextureHandle() const noexcept { return (__bridge void*)target.colorTexture; }
 
     core::EngineConfig config;
     MetalContext context;
@@ -340,8 +332,6 @@ struct Renderer::Impl {
     std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
     std::size_t uniformBufferCursor = 0;
     uint32_t frameCounter = 0;
-    uint32_t accumulationFrameIndex = 0;
-    bool accumulationInvalidated = false;
     std::vector<RayTracingInstanceResource> instanceResources;
     std::vector<RayTracingMeshResource> meshResources;
     std::vector<RayTracingMaterialResource> materialResources;
@@ -482,8 +472,13 @@ struct Renderer::Impl {
 
         id<MTLBuffer> hitDebug = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
 
-        if (!positions || !indices || !resources.shadeTexture || !resources.sceneLimitsBuffer || hitDebug == nil) {
+        if (!positions || !indices || !resources.sceneLimitsBuffer || hitDebug == nil) {
             core::Logger::warn("Renderer", "Hardware scene buffers unavailable; skipping dispatch");
+            return fail();
+        }
+
+        if (target.colorTexture == nil) {
+            core::Logger::error("Renderer", "Ray tracing target texture unavailable");
             return fail();
         }
 
@@ -509,8 +504,6 @@ struct Renderer::Impl {
 
         id<MTLComputePipelineState> rayPipeline =
             (__bridge id<MTLComputePipelineState>)rayTracingPipeline.rayPipelineState();
-        id<MTLComputePipelineState> accumulatePipeline =
-            (__bridge id<MTLComputePipelineState>)rayTracingPipeline.accumulationPipelineState();
 
         if (!rayPipeline) {
             core::Logger::error("Renderer", "Hardware ray tracing kernel unavailable");
@@ -556,7 +549,7 @@ struct Renderer::Impl {
                 if (resources.randomTexture) {
                     [encoder setTexture:resources.randomTexture atIndex:0];
                 }
-                [encoder setTexture:resources.shadeTexture atIndex:1];
+                [encoder setTexture:target.colorTexture atIndex:1];
                 [encoder setAccelerationStructure:accelerationStructure atBufferIndex:15];
                 if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
                     [encoder useResource:accelerationStructure usage:MTLResourceUsageRead];
@@ -593,58 +586,6 @@ struct Renderer::Impl {
             })) {
             core::Logger::error("Renderer", "Failed to encode hardware ray tracing kernel");
             return fail();
-        }
-
-        const bool doAccumulate = accumulationEnabledThisFrame();
-        bool accumulationDispatched = false;
-        core::Logger::info("Renderer",
-                           "Accumulation state: enabled=%s frameIndex=%u limit=%u history=%s",
-                           doAccumulate ? "true" : "false",
-                           accumulationFrameIndex,
-                           accumulationLimit(),
-                           resources.accumulationHistoryTexture ? "yes" : "no");
-        if (doAccumulate && resources.accumulationHistoryTexture && accumulatePipeline != nil) {
-            if (!dispatch2D(accumulatePipeline, [&](id<MTLComputeCommandEncoder> encoder) {
-                    [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
-                    [encoder setTexture:resources.shadeTexture atIndex:0];
-                    [encoder setTexture:resources.accumulationHistoryTexture atIndex:1];
-                    [encoder setTexture:target.colorTexture atIndex:2];
-                })) {
-                core::Logger::error("Renderer", "Failed to encode accumulate kernel");
-                return fail();
-            }
-
-            accumulationDispatched = true;
-        }
-
-        if (!doAccumulate) {
-            id<MTLBlitCommandEncoder> blitColor = [commandBuffer blitCommandEncoder];
-            if (blitColor) {
-                MTLOrigin origin = MTLOriginMake(0, 0, 0);
-                MTLSize size = MTLSizeMake(target.width, target.height, 1);
-                [blitColor copyFromTexture:resources.shadeTexture
-                                sourceSlice:0
-                                sourceLevel:0
-                               sourceOrigin:origin
-                                 sourceSize:size
-                                  toTexture:target.colorTexture
-                           destinationSlice:0
-                           destinationLevel:0
-                          destinationOrigin:origin];
-                [blitColor endEncoding];
-            }
-        }
-
-        if (accumulationDispatched) {
-            if (accumulationFrameIndex < std::numeric_limits<std::uint32_t>::max()) {
-                accumulationFrameIndex++;
-            }
-            if (resources.accumulationHistoryTexture && accumulationFrameIndex <= 4) {
-                core::Logger::info("Renderer",
-                                    "Accumulation frame advanced to %u (history texture %p)",
-                                    accumulationFrameIndex,
-                                    resources.accumulationHistoryTexture);
-            }
         }
 
         id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
@@ -796,6 +737,8 @@ struct Renderer::Impl {
 
         const bool debugInstanceColors = std::getenv("RTR_DEBUG_INSTANCE_COLORS") != nullptr;
         const bool debugInstanceTrace = std::getenv("RTR_DEBUG_INSTANCE_TRACE") != nullptr;
+        const bool debugPrimitiveTrace = std::getenv("RTR_DEBUG_PRIMITIVE_TRACE") != nullptr;
+        const bool debugCameraTrace = std::getenv("RTR_DEBUG_CAMERA_TRACE") != nullptr;
 
         simd_float3 eye = cameraRig.eye;
         simd_float3 targetPoint = cameraRig.target;
@@ -811,13 +754,10 @@ struct Renderer::Impl {
         uniforms->camera.imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
         uniforms->camera.width = target.width;
         uniforms->camera.height = target.height;
-        uniforms->camera.frameIndex = frameIndexForUniforms();
+        uniforms->camera.frameIndex = frameCounter;
         std::uint32_t flags = 0u;
         if (debugAlbedo) {
             flags |= RTR_RAY_FLAG_DEBUG;
-        }
-        if (accumulationEnabledThisFrame()) {
-            flags |= RTR_RAY_FLAG_ACCUMULATE;
         }
         if (debugInstanceColors) {
             flags |= RTR_RAY_FLAG_INSTANCE_COLOR;
@@ -825,9 +765,26 @@ struct Renderer::Impl {
         if (debugInstanceTrace) {
             flags |= RTR_RAY_FLAG_INSTANCE_TRACE;
         }
+        if (debugPrimitiveTrace) {
+            flags |= RTR_RAY_FLAG_PRIMITIVE_TRACE;
+        }
         uniforms->camera.flags = flags;
         uniforms->camera.samplesPerPixel = 1u;
         uniforms->camera.sampleSeed = frameCounter;
+
+        if (debugCameraTrace) {
+            core::Logger::info("Renderer",
+                               "Camera eye=(%.3f, %.3f, %.3f) target=(%.3f, %.3f, %.3f) forward=(%.3f, %.3f, %.3f)",
+                               eye.x,
+                               eye.y,
+                               eye.z,
+                               targetPoint.x,
+                               targetPoint.y,
+                               targetPoint.z,
+                               forward.x,
+                               forward.y,
+                               forward.z);
+        }
 
         uniforms->lightCount = 1u;
         uniforms->maxBounces = std::max<std::uint32_t>(1u, config.maxHardwareBounces);
@@ -898,32 +855,7 @@ struct Renderer::Impl {
         core::Logger::info("Renderer", "Metal capture saved to %s", metalCaptureOutputPath.c_str());
     }
 
-    void resetAccumulationInternal() {
-        frameCounter = 0;
-        accumulationFrameIndex = 0;
-        accumulationInvalidated = true;
-        resources.accumulationHistoryTexture = nil;
-    }
-
-    [[nodiscard]] std::uint32_t accumulationLimit() const {
-        std::uint32_t limit = std::numeric_limits<std::uint32_t>::max();
-        if (config.accumulationFrames > 0) {
-            limit = std::min(limit, config.accumulationFrames);
-        }
-        return limit;
-    }
-
-    [[nodiscard]] std::uint32_t frameIndexForUniforms() const {
-        return accumulationFrameIndex;
-    }
-
-    bool accumulationEnabledThisFrame() const {
-        if (!config.accumulationEnabled) {
-            return false;
-        }
-        const std::uint32_t limit = accumulationLimit();
-        return accumulationFrameIndex < limit;
-    }
+    void resetAccumulationInternal() { frameCounter = 0; }
 
     [[nodiscard]] bool ensureOutputTarget(std::uint32_t width, std::uint32_t height) {
         if (!context.isValid()) {
@@ -1015,55 +947,6 @@ struct Renderer::Impl {
                                  bytesPerRow:bytesPerRow];
                 resources.randomTexture = randomTexture;
             }
-        }
-
-        auto ensureTexture = [&](id<MTLTexture> __strong* textureSlot,
-                                 MTLPixelFormat format,
-                                 NSString* label,
-                                 bool clearOnCreate = false) {
-            id<MTLTexture> texture = textureSlot ? *textureSlot : nil;
-            if (texture != nil && resources.width == width && resources.height == height) {
-                return true;
-            }
-            MTLTextureDescriptor* desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:format
-                                                                                           width:width
-                                                                                          height:height
-                                                                                       mipmapped:NO];
-            desc.storageMode = clearOnCreate ? MTLStorageModeShared : MTLStorageModePrivate;
-            desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
-            id<MTLTexture> newTexture = [device newTextureWithDescriptor:desc];
-            if (!newTexture) {
-                core::Logger::error("Renderer", "Failed to allocate %s (%ux%u)", label.UTF8String, width, height);
-                return false;
-            }
-            [newTexture setLabel:label];
-            if (textureSlot) {
-                *textureSlot = newTexture;
-            }
-
-            if (clearOnCreate) {
-                std::vector<float> zeros(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4u);
-                MTLRegion region = MTLRegionMake2D(0, 0, width, height);
-                const NSUInteger bytesPerRow = static_cast<NSUInteger>(width) * sizeof(float) * 4u;
-                [newTexture replaceRegion:region mipmapLevel:0 withBytes:zeros.data() bytesPerRow:bytesPerRow];
-            }
-            return true;
-        };
-
-        if (!ensureTexture(&resources.shadeTexture, MTLPixelFormatRGBA32Float, @"rtr.hw.lighting")) {
-            success = false;
-        }
-
-        const bool needsAccumulation = accumulationEnabledThisFrame();
-        if (needsAccumulation) {
-            if (!ensureTexture(&resources.accumulationHistoryTexture,
-                               MTLPixelFormatRGBA32Float,
-                               @"rtr.hw.accum",
-                               true)) {
-                success = false;
-            }
-        } else if (resources.accumulationHistoryTexture != nil && (resources.width != width || resources.height != height)) {
-            resources.accumulationHistoryTexture = nil;
         }
 
         if (resources.sceneLimitsBuffer == nil) {
@@ -1415,6 +1298,7 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                        instanceCount);
 
     const bool debugSceneDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
+    const bool debugTlasTrace = std::getenv("RTR_DEBUG_TLAS_TRACE") != nullptr;
     if (debugSceneDump) {
         core::Logger::info("Renderer", "RTR_DEBUG_SCENE_DUMP enabled; dumping mesh/instance metadata");
     }
@@ -1558,6 +1442,19 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                                translation.z);
         }
 
+        if (debugTlasTrace) {
+            const simd_float4& translation = objectToWorld.columns[3];
+            core::Logger::info("Renderer",
+                               "TLAS input[%zu]: mesh=%u blas=%zu userID=%u translation=(%.3f, %.3f, %.3f)",
+                               instanceIndex,
+                               range.meshIndex,
+                               blasIndex,
+                               static_cast<std::uint32_t>(instanceResources.size()),
+                               translation.x,
+                               translation.y,
+                               translation.z);
+        }
+
         const std::uint32_t tlasInstanceIndex = static_cast<std::uint32_t>(instanceResources.size());
 
         InstanceBuildInput input{};
@@ -1575,6 +1472,13 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         const std::uint32_t safeMaterialIndex = (range.materialIndex < materials.size()) ? range.materialIndex : 0u;
         resource.materialIndex = safeMaterialIndex;
         instanceResources.push_back(resource);
+    }
+
+    if (debugSceneDump) {
+        core::Logger::info("Renderer",
+                           "Instance resources prepared: %zu entries (expected %zu)",
+                           instanceResources.size(),
+                           sceneData.instanceRanges.size());
     }
 
     if (instanceInputs.empty()) {

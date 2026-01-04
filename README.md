@@ -41,7 +41,7 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 
 ## Running
 
-- Sample: `./build/RTRMetalSample [--output=FILE] [--scene=cornell|reflective|glass] [--resolution=WxH] [--frames=N] [--mode=auto|hardware] [--accumulation=on|off] [--accumulation-frames=N] [--max-bounces=N] [--hash] [--debug-albedo]`
+- Sample: `./build/RTRMetalSample [--output=FILE] [--scene=cornell|reflective|glass] [--resolution=WxH] [--frames=N] [--mode=auto|hardware] [--max-bounces=N] [--hash] [--debug-albedo]`
 - `--expect-hash=0xHASH` 会在渲染后比对 FNV-1a 结果，方便在有 RT GPU 的机器上做回归验证。
 - `reflective` 和 `glass` 场景需要在 `assets/` 下提供 `mario.obj`（可从官方 MetalRayTracing 示例拷贝），否则会退回简易几何体。
 - 调试可使用 `--debug-albedo` 直接输出材质反照率，便于验证资源管线。
@@ -69,7 +69,7 @@ Project direction, architecture, and working agreements live in:
 - [`AGENTS.md`](AGENTS.md) – Contributor quick-start covering structure, build/test flow, and review expectations
 - [`docs/Stage3C_OnScreenDemo.md`](docs/Stage3C_OnScreenDemo.md) – Notes covering the interactive sample and current reference hashes
 
-The optional keys `accumulation = on|off`, `accumulationFrames = <n>`, and `maxBounces = <n>` can be added to `config/engine.ini` to provide defaults for the sample apps, and the CLI flags above override those values when present.
+The optional key `maxBounces = <n>` can be added to `config/engine.ini` to provide defaults for the sample apps, and the CLI flags above override those values when present.
 
 ## License
 

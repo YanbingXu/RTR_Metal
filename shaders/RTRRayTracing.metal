@@ -275,7 +275,8 @@ struct HardwareHit {
     uint primitiveIndex;
     float2 bary;
     float distance;
-    uint instanceId;
+    uint instanceIndex;
+    uint instanceUserId;
 };
 
 inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStructure,
@@ -298,7 +299,12 @@ inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStr
         hit.primitiveIndex = result.primitive_id;
         hit.distance = result.distance;
         hit.bary = result.triangle_barycentric_coord;
-        hit.instanceId = result.instance_id;
+        hit.instanceIndex = result.instance_id;
+#if defined(__HAVE_RAYTRACING_USER_INSTANCE_ID__)
+        hit.instanceUserId = result.user_instance_id;
+#else
+        hit.instanceUserId = result.instance_id;
+#endif
     }
     return hit;
 }
@@ -367,6 +373,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     const bool debugAlbedo = (uniforms.camera.flags & RTR_RAY_FLAG_DEBUG) != 0u;
     const bool debugInstanceColors = (uniforms.camera.flags & RTR_RAY_FLAG_INSTANCE_COLOR) != 0u;
     const bool debugInstanceTrace = (uniforms.camera.flags & RTR_RAY_FLAG_INSTANCE_TRACE) != 0u;
+    const bool debugPrimitiveTrace = (uniforms.camera.flags & RTR_RAY_FLAG_PRIMITIVE_TRACE) != 0u;
 
     bool accelerationStructureNull = is_null_instance_acceleration_structure(accelerationStructure);
 
@@ -381,18 +388,22 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     uint hitDebugValue = 0u;
 
     if (hit.hit) {
+        const bool hasInstanceData = (instances != nullptr && limits.instanceCount > 0u);
+        const uint rawInstanceId = hit.instanceUserId;
+        const uint safeInstance = hasInstanceData ? min(rawInstanceId, limits.instanceCount - 1u) : 0u;
+        const bool instanceOutOfRange = (!hasInstanceData) || (rawInstanceId >= limits.instanceCount);
+
         RTRRayTracingInstanceResource instanceInfo;
-        if (instances != nullptr && limits.instanceCount > 0u) {
-            const uint safeInstance = min(hit.instanceId, limits.instanceCount - 1u);
+        if (hasInstanceData) {
             instanceInfo = instances[safeInstance];
         } else {
             instanceInfo.objectToWorld = float4x4(1.0f);
             instanceInfo.worldToObject = float4x4(1.0f);
             instanceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
             instanceInfo.meshIndex = 0u;
+            instanceInfo.primitiveOffset = 0u;
+            instanceInfo.primitiveCount = 0u;
         }
-
-        hitDebugValue = debugInstanceTrace ? (instanceInfo.meshIndex + 1u) : 1u;
 
         RTRRayTracingMeshResource meshResource;
         if (meshes != nullptr && limits.meshCount > 0u) {
@@ -419,6 +430,27 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
             const uint primitiveEnd = instanceInfo.primitiveOffset + instanceInfo.primitiveCount - 1u;
             globalPrimitive = min(globalPrimitive, primitiveEnd);
         }
+
+        if (debugPrimitiveTrace) {
+            hitDebugValue = globalPrimitive + 1u;
+        } else if (debugInstanceTrace) {
+            const uint meshBits = min(instanceInfo.meshIndex, 0xFFFFu);
+            const uint instanceBits = min(rawInstanceId, 0xFFFFu);
+            hitDebugValue = (instanceBits << 16) | meshBits;
+            if (instanceOutOfRange) {
+                hitDebugValue |= 0x80000000u;
+            }
+        } else {
+            hitDebugValue = 1u;
+        }
+
+        if (debugInstanceTrace) {
+            color = instanceOutOfRange ? float3(1.0f, 0.0f, 0.0f) : debugInstanceColor(instanceInfo.meshIndex);
+            writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
+            dstTex.write(float4(color, 1.0f), gid);
+            return;
+        }
+
         const uint base = globalPrimitive * 3u;
         if (indices && base + 2u < limits.indexCount) {
             const uint i0 = indices[base + 0];
@@ -522,7 +554,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                         if (bounce.hit) {
                             RTRRayTracingInstanceResource bounceInfo;
                             if (instances != nullptr && limits.instanceCount > 0u) {
-                                const uint bounceInstance = min(bounce.instanceId, limits.instanceCount - 1u);
+                                const uint bounceInstance = min(bounce.instanceUserId, limits.instanceCount - 1u);
                                 bounceInfo = instances[bounceInstance];
                             } else {
                                 bounceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
@@ -599,28 +631,6 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     dstTex.write(float4(color, 1.0f), gid);
 }
 
-kernel void accumulateKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
-                             texture2d<float, access::read> renderTex [[texture(0)]],
-                             texture2d<float, access::read_write> sumTex [[texture(1)]],
-                             texture2d<float, access::write> accumTex [[texture(2)]],
-                             uint2 gid [[thread_position_in_grid]]) {
-    const uint width = uniforms.camera.width;
-    const uint height = uniforms.camera.height;
-    if (gid.x >= width || gid.y >= height) {
-        return;
-    }
-
-    float3 currentSum = renderTex.read(gid).xyz;
-    if (uniforms.camera.frameIndex > 0u) {
-        currentSum += sumTex.read(gid).xyz;
-    }
-
-    sumTex.write(float4(currentSum, 1.0f), gid);
-    const float frameCount = static_cast<float>(uniforms.camera.frameIndex + 1u);
-    const float3 averaged = currentSum / max(frameCount, 1.0f);
-    accumTex.write(float4(averaged, 1.0f), gid);
-}
-
 #endif // RTR_HAS_RAYTRACING
 
 struct RTRDisplayVertexOutput {
@@ -630,20 +640,32 @@ struct RTRDisplayVertexOutput {
 
 vertex RTRDisplayVertexOutput RTRDisplayVertex(uint vertexID [[vertex_id]]) {
     RTRDisplayVertexOutput out;
-    const float2 positions[3] = {
+    const float2 positions[4] = {
         float2(-1.0f, -1.0f),
-        float2(3.0f, -1.0f),
-        float2(-1.0f, 3.0f),
+        float2(1.0f, -1.0f),
+        float2(-1.0f, 1.0f),
+        float2(1.0f, 1.0f),
     };
-    const float2 clipPosition = positions[vertexID];
-    out.position = float4(clipPosition, 0.0f, 1.0f);
-    // Map clip-space coordinates [-1, 1] directly into texture space [0, 1].
-    out.uv = clipPosition * 0.5f + 0.5f;
+    const float2 uvs[4] = {
+        float2(0.0f, 0.0f),
+        float2(1.0f, 0.0f),
+        float2(0.0f, 1.0f),
+        float2(1.0f, 1.0f),
+    };
+    const uint safeIndex = vertexID & 0x3u;
+    out.position = float4(positions[safeIndex], 0.0f, 1.0f);
+    out.uv = uvs[safeIndex];
     return out;
 }
 
 fragment float4 RTRDisplayFragment(RTRDisplayVertexOutput in [[stage_in]],
-                                   texture2d<float> colorTexture [[texture(0)]]) {
+                                   texture2d<float> colorTexture [[texture(0)]],
+                                   constant float2& invRenderSize [[buffer(0)]]) {
     constexpr sampler displaySampler(address::clamp_to_edge, filter::linear);
-    return colorTexture.sample(displaySampler, in.uv);
+    float2 uv = clamp(in.uv, 0.0f, 1.0f);
+    if (invRenderSize.x > 0.0f && invRenderSize.y > 0.0f) {
+        // Nudge sample into texel centers to avoid sampling issues when renderSize != drawableSize.
+        uv = uv * (float2(1.0f) - invRenderSize) + invRenderSize * 0.5f;
+    }
+    return colorTexture.sample(displaySampler, uv);
 }

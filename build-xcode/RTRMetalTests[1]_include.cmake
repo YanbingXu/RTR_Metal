@@ -1,0 +1,5 @@
+if(EXISTS "/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake")
+  include("/Users/yanbing.xu/Desktop/RTR_Metal/build-xcode/RTRMetalTests[1]_tests.cmake")
+else()
+  add_test(RTRMetalTests_NOT_BUILT RTRMetalTests_NOT_BUILT)
+endif()

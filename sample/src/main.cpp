@@ -46,8 +46,6 @@ struct CommandLineOptions {
     std::optional<std::string> expectedHash;
     bool debugAlbedo = false;
     bool overrideShadingMode = false;
-    std::optional<bool> accumulationEnabled;
-    std::optional<std::uint32_t> accumulationFrames;
     std::optional<std::uint32_t> maxBounces;
 };
 
@@ -60,8 +58,6 @@ void printUsage() {
               << "  --frames=N             渲染帧数，用于累计或调试 (默认 1)\n"
               << "  --mode=auto|hardware          选择硬件模式（默认 auto，与硬件模式一致）\n"
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
-              << "  --accumulation=on|off  开启或关闭累计 (覆盖配置文件)\n"
-              << "  --accumulation-frames=N 限定累计帧数 (0 表示无限制)\n"
               << "  --max-bounces=N        硬件 RT 最大弹射次数 (至少 1)\n"
               << "  --hash                 渲染完输出图像的 FNV-1a hash\n"
               << "  --expect-hash=0xHASH  计算图像 hash 并与给定值比对\n"
@@ -89,20 +85,6 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseResolution(const std
     } catch (const std::exception&) {
         return std::nullopt;
     }
-}
-
-bool parseBoolArgument(std::string value, const char* optionName) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-
-    if (value == "1" || value == "true" || value == "on" || value == "yes") {
-        return true;
-    }
-    if (value == "0" || value == "false" || value == "off" || value == "no") {
-        return false;
-    }
-    throw std::runtime_error(std::string("Invalid value for ") + optionName + ": " + value);
 }
 
 std::uint32_t parseUIntArgument(const std::string& text, const char* optionName) {
@@ -160,14 +142,6 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             options.debugAlbedo = true;
         } else if (arg.rfind("--config=", 0) == 0) {
             options.configPath = fs::path(arg.substr(9));
-        } else if (arg.rfind("--accumulation=", 0) == 0) {
-            options.accumulationEnabled = parseBoolArgument(arg.substr(15), "--accumulation");
-        } else if (arg == "--accumulation") {
-            options.accumulationEnabled = true;
-        } else if (arg == "--no-accumulation") {
-            options.accumulationEnabled = false;
-        } else if (arg.rfind("--accumulation-frames=", 0) == 0) {
-            options.accumulationFrames = parseUIntArgument(arg.substr(22), "--accumulation-frames");
         } else if (arg.rfind("--max-bounces=", 0) == 0) {
             const auto value = parseUIntArgument(arg.substr(14), "--max-bounces");
             if (value == 0) {
@@ -274,12 +248,6 @@ int main(int argc, const char* argv[]) {
         config.shadingMode = options.shadingMode;
     }
 
-    if (options.accumulationEnabled.has_value()) {
-        config.accumulationEnabled = *options.accumulationEnabled;
-    }
-    if (options.accumulationFrames.has_value()) {
-        config.accumulationFrames = *options.accumulationFrames;
-    }
     if (options.maxBounces.has_value()) {
         config.maxHardwareBounces = *options.maxBounces;
     }

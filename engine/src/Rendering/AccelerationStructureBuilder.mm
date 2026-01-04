@@ -12,6 +12,7 @@
 #include "RTRMetalEngine/Core/Logger.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <simd/simd.h>
 #include <vector>
@@ -345,6 +346,8 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
         return std::nullopt;
     }
 
+    const bool debugTlasTrace = std::getenv("RTR_DEBUG_TLAS_TRACE") != nullptr;
+
     const auto sizes = queryTopLevelSizes(instances, label);
     if (!sizes.has_value()) {
         return std::nullopt;
@@ -375,6 +378,24 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
     std::vector<MTLAccelerationStructureUserIDInstanceDescriptor> cpuDescriptors;
     if (!populateInstanceDescriptors(instances, blasArray, cpuDescriptors, label)) {
         return std::nullopt;
+    }
+
+    if (debugTlasTrace) {
+        core::Logger::info("ASBuilder", "TLAS '%s' descriptors=%zu", label.c_str(), cpuDescriptors.size());
+        const std::size_t maxLog = std::min<std::size_t>(cpuDescriptors.size(), 9);
+        for (std::size_t i = 0; i < maxLog; ++i) {
+            const auto& descriptor = cpuDescriptors[i];
+            const MTLPackedFloat3 t3 = descriptor.transformationMatrix.columns[3];
+            core::Logger::info("ASBuilder",
+                               "TLAS desc[%zu]: accelIndex=%u userID=%u mask=0x%02X translate=(%.3f, %.3f, %.3f)",
+                               i,
+                               descriptor.accelerationStructureIndex,
+                               descriptor.userID,
+                               descriptor.mask,
+                               static_cast<double>(t3.x),
+                               static_cast<double>(t3.y),
+                               static_cast<double>(t3.z));
+        }
     }
 
     if (cpuDescriptors.size() * sizeof(MTLAccelerationStructureUserIDInstanceDescriptor) !=
