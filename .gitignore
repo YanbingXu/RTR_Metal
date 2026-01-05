@@ -51,3 +51,4 @@ assets/.DS_Store
 *.gputrace
 sample/.DS_Store
 sample/src/.DS_Store
+build-xcode/
