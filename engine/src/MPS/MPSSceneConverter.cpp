@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
 #include <limits>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
@@ -83,12 +82,11 @@ bool appendMeshGeometry(const scene::Mesh& mesh,
 
 }  // namespace
 
-MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColor) {
+MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColor, bool enableDebugDump) {
     MPSSceneData sceneData{};
     const auto& meshes = scene.meshes();
     const auto& materials = scene.materials();
     const auto& instances = scene.instances();
-    const bool debugDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
 
     sceneData.instanceRanges.reserve(instances.size());
     sceneData.meshRanges.reserve(meshes.size());
@@ -144,7 +142,7 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
             range.materialIndex = meshMaterialIndex;
             meshRangeLookup[meshIndex] = static_cast<std::uint32_t>(sceneData.meshRanges.size());
             sceneData.meshRanges.push_back(range);
-            if (debugDump) {
+            if (enableDebugDump) {
                 core::Logger::info("MPSSceneConverter",
                                     "Mesh[%zu] -> range=%u verts=%u indices=%u material=%u",
                                     meshIndex,
@@ -193,7 +191,7 @@ MPSSceneData buildSceneData(const scene::Scene& scene, vector_float3 defaultColo
         range.transform = instance.transform;
         range.inverseTransform = computeInverse(instance.transform);
         sceneData.instanceRanges.push_back(range);
-        if (debugDump) {
+        if (enableDebugDump) {
             const simd_float4& translation = range.transform.columns[3];
             core::Logger::info("MPSSceneConverter",
                                 "Instance[%zu] meshRange=%u material=%u translation=(%.3f, %.3f, %.3f)",

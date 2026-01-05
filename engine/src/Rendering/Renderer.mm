@@ -254,6 +254,8 @@ struct Renderer::Impl {
                 core::Logger::warn("Renderer", "Ray tracing pipeline initialization failed");
             }
         }
+
+        updateDebugDependencies();
     }
 
     ~Impl() {
@@ -340,7 +342,7 @@ struct Renderer::Impl {
     std::string outputPath = "renderer_output.ppm";
     std::uint32_t targetWidth = kDiagnosticWidth;
     std::uint32_t targetHeight = kDiagnosticHeight;
-    bool debugAlbedo = false;
+    RendererDebugOptions debugOptions;
     RayTracingShadingMode shadingMode = RayTracingShadingMode::Auto;
     bool metalCaptureEnabled = false;
     bool metalCaptureInProgress = false;
@@ -621,7 +623,7 @@ struct Renderer::Impl {
         }
 
         if (!hitDebugLogged && resources.hitDebugBuffer.isValid()) {
-            const bool debugInstanceTrace = std::getenv("RTR_DEBUG_INSTANCE_TRACE") != nullptr;
+            const bool debugInstanceTrace = debugOptions.visualization == DebugVisualization::InstanceTrace;
             id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
             if (hitBuffer) {
                 const std::uint32_t* hits = static_cast<const std::uint32_t*>([hitBuffer contents]);
@@ -735,10 +737,11 @@ struct Renderer::Impl {
         const float halfHeight = tanf(fovY * 0.5f);
         const float halfWidth = halfHeight * aspect;
 
-        const bool debugInstanceColors = std::getenv("RTR_DEBUG_INSTANCE_COLORS") != nullptr;
-        const bool debugInstanceTrace = std::getenv("RTR_DEBUG_INSTANCE_TRACE") != nullptr;
-        const bool debugPrimitiveTrace = std::getenv("RTR_DEBUG_PRIMITIVE_TRACE") != nullptr;
-        const bool debugCameraTrace = std::getenv("RTR_DEBUG_CAMERA_TRACE") != nullptr;
+        const bool debugInstanceColors = debugOptions.visualization == DebugVisualization::InstanceColors;
+        const bool debugInstanceTrace = debugOptions.visualization == DebugVisualization::InstanceTrace;
+        const bool debugPrimitiveTrace = debugOptions.visualization == DebugVisualization::PrimitiveTrace;
+        const bool debugAlbedo = debugOptions.visualization == DebugVisualization::Albedo;
+        const bool debugCameraTrace = debugOptions.cameraTrace;
 
         simd_float3 eye = cameraRig.eye;
         simd_float3 targetPoint = cameraRig.target;
@@ -1038,13 +1041,28 @@ struct Renderer::Impl {
     void writeRayTracingOutput() const;
     void setOutputPathInternal(std::string path);
     void setRenderSizeInternal(std::uint32_t width, std::uint32_t height);
-    void setDebugModeInternal(bool enabled) {
-        if (debugAlbedo == enabled) {
+    void updateDebugDependencies() {
+        geometryStore.setDebugGeometryTrace(debugOptions.geometryTrace);
+        asBuilder.setDebugTlasTrace(debugOptions.tlasTrace);
+    }
+
+    void setDebugVisualizationInternal(DebugVisualization visualization) {
+        if (debugOptions.visualization == visualization) {
             return;
         }
-        debugAlbedo = enabled;
+        debugOptions.visualization = visualization;
+        hitDebugLogged = false;
         resetAccumulationInternal();
     }
+
+    void setDebugOptionsInternal(const RendererDebugOptions& options) {
+        debugOptions = options;
+        updateDebugDependencies();
+        hitDebugLogged = false;
+        resetAccumulationInternal();
+    }
+
+    [[nodiscard]] RendererDebugOptions debugOptionsSnapshot() const noexcept { return debugOptions; }
 
     void setShadingModeInternal(const std::string& value) {
         const RayTracingShadingMode newMode = parseShadingMode(value);
@@ -1068,8 +1086,8 @@ struct Renderer::Impl {
 };
 
 bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
-    const bool debugSceneDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
-    const bool debugGeometryTrace = std::getenv("RTR_DEBUG_GEOMETRY_TRACE") != nullptr;
+    const bool debugSceneDump = debugOptions.sceneDump;
+    const bool debugGeometryTrace = debugOptions.geometryTrace;
 
     std::vector<float> stagedPositions;
     std::vector<float> stagedNormals;
@@ -1297,10 +1315,10 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                        materialCount,
                        instanceCount);
 
-    const bool debugSceneDump = std::getenv("RTR_DEBUG_SCENE_DUMP") != nullptr;
-    const bool debugTlasTrace = std::getenv("RTR_DEBUG_TLAS_TRACE") != nullptr;
+    const bool debugSceneDump = debugOptions.sceneDump;
+    const bool debugTlasTrace = debugOptions.tlasTrace;
     if (debugSceneDump) {
-        core::Logger::info("Renderer", "RTR_DEBUG_SCENE_DUMP enabled; dumping mesh/instance metadata");
+        core::Logger::info("Renderer", "Scene dump debug logging enabled; dumping mesh/instance metadata");
     }
 
     sceneBounds = scene.computeSceneBounds();
@@ -1314,7 +1332,8 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                        sceneBounds.max.z);
     updateCameraRigFromBounds();
 
-    const MPSSceneData sceneData = buildSceneData(scene);
+    const vector_float3 defaultSceneColor{0.9f, 0.9f, 0.9f};
+    const MPSSceneData sceneData = buildSceneData(scene, defaultSceneColor, debugSceneDump);
     if (sceneData.positions.empty() || sceneData.indices.empty() || sceneData.meshRanges.empty() ||
         sceneData.instanceRanges.empty()) {
         core::Logger::warn("Renderer", "Flattened scene data empty; scene load aborted");
@@ -1701,7 +1720,17 @@ void Renderer::setRenderSize(std::uint32_t width, std::uint32_t height) {
 
 bool Renderer::loadScene(const scene::Scene& scene) { return impl_->loadSceneInternal(scene); }
 
-void Renderer::setDebugMode(bool enabled) { impl_->setDebugModeInternal(enabled); }
+void Renderer::setDebugMode(bool enabled) {
+    impl_->setDebugVisualizationInternal(enabled ? DebugVisualization::Albedo : DebugVisualization::None);
+}
+
+void Renderer::setDebugVisualization(DebugVisualization visualization) {
+    impl_->setDebugVisualizationInternal(visualization);
+}
+
+void Renderer::setDebugOptions(const RendererDebugOptions& options) { impl_->setDebugOptionsInternal(options); }
+
+RendererDebugOptions Renderer::debugOptions() const { return impl_->debugOptionsSnapshot(); }
 
 void Renderer::setShadingMode(const std::string& mode) { impl_->setShadingModeInternal(mode); }
 

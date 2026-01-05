@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -43,6 +42,11 @@ struct ResolutionOption {
     std::uint32_t height;
 };
 
+struct DebugVisualizationOption {
+    const char* title;
+    rtr::rendering::DebugVisualization mode;
+};
+
 constexpr ModeOption kModeOptions[] = {
     {"Auto", "auto"},
     {"Hardware", "hardware"},
@@ -53,6 +57,14 @@ constexpr ResolutionOption kResolutionOptions[] = {
     {"1024 x 768", 1024u, 768u},
     {"1280 x 720", 1280u, 720u},
     {"1920 x 1080", 1920u, 1080u},
+};
+
+constexpr DebugVisualizationOption kDebugVisualizationOptions[] = {
+    {"No Debug", rtr::rendering::DebugVisualization::None},
+    {"Albedo", rtr::rendering::DebugVisualization::Albedo},
+    {"Instance Colors", rtr::rendering::DebugVisualization::InstanceColors},
+    {"Instance Trace", rtr::rendering::DebugVisualization::InstanceTrace},
+    {"Primitive Trace", rtr::rendering::DebugVisualization::PrimitiveTrace},
 };
 
 struct RuntimeResources {
@@ -179,6 +191,7 @@ bool isDynamicResolution(NSDictionary* info) {
 - (void)updateRenderSizeWithWidth:(std::uint32_t)width height:(std::uint32_t)height;
 - (void)updateDynamicResolutionMenuItem;
 - (void)handleDrawableSizeChange:(CGSize)size updateRenderer:(BOOL)updateRenderer;
+- (void)debugVisualizationChanged:(id)sender;
 @end
 
 @implementation RTRViewController {
@@ -189,9 +202,9 @@ bool isDynamicResolution(NSDictionary* info) {
     bool _sceneLoaded;
     NSPopUpButton* _modePopup;
     NSPopUpButton* _resolutionPopup;
+    NSPopUpButton* _debugModePopup;
     NSMenuItem* _dynamicResolutionItem;
     NSButton* _screenshotButton;
-    NSButton* _debugToggle;
     std::uint32_t _currentWidth;
     std::uint32_t _currentHeight;
     std::uint32_t _renderWidth;
@@ -242,8 +255,6 @@ bool isDynamicResolution(NSDictionary* info) {
                                 "Forced asset root %s missing; continuing with resolved path",
                                 forcedAssetRoot.string().c_str());
     }
-
-    setenv("RTR_ENABLE_MARIO", "1", 1);
 
     _assetRootPath = runtime.assetRoot;
     rtr::core::Logger::info("OnScreenSample",
@@ -326,17 +337,22 @@ bool isDynamicResolution(NSDictionary* info) {
                                            action:@selector(captureScreenshot:)];
     _screenshotButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    _debugToggle = [NSButton checkboxWithTitle:@"Debug Albedo"
-                                        target:self
-                                        action:@selector(debugModeChanged:)];
-    _debugToggle.translatesAutoresizingMaskIntoConstraints = NO;
-    _debugToggle.state = NSControlStateValueOff;
+    _debugModePopup = [[NSPopUpButton alloc] init];
+    _debugModePopup.translatesAutoresizingMaskIntoConstraints = NO;
+    for (const DebugVisualizationOption& option : kDebugVisualizationOptions) {
+        NSString* title = [NSString stringWithUTF8String:option.title];
+        [_debugModePopup addItemWithTitle:title];
+        NSMenuItem* item = [_debugModePopup lastItem];
+        item.representedObject = @(static_cast<NSInteger>(option.mode));
+    }
+    _debugModePopup.target = self;
+    _debugModePopup.action = @selector(debugVisualizationChanged:);
 
     NSStackView* stack = [NSStackView stackViewWithViews:@[
         _modePopup,
         _resolutionPopup,
         _screenshotButton,
-        _debugToggle,
+        _debugModePopup,
     ]];
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.spacing = 8.0;
@@ -543,12 +559,17 @@ bool isDynamicResolution(NSDictionary* info) {
     rtr::core::Logger::info("OnScreenSample", "Screenshot requested -> %s", _pendingScreenshotPath.c_str());
 }
 
-- (void)debugModeChanged:(id)sender {
+- (void)debugVisualizationChanged:(id)sender {
     if (!_renderer) {
         return;
     }
-    const bool enabled = (_debugToggle.state == NSControlStateValueOn);
-    _renderer->setDebugMode(enabled);
+    NSMenuItem* item = [_debugModePopup selectedItem];
+    NSNumber* value = (NSNumber*)item.representedObject;
+    rtr::rendering::DebugVisualization visualization = rtr::rendering::DebugVisualization::None;
+    if (value) {
+        visualization = static_cast<rtr::rendering::DebugVisualization>(value.integerValue);
+    }
+    _renderer->setDebugVisualization(visualization);
     _renderer->resetAccumulation();
 }
 

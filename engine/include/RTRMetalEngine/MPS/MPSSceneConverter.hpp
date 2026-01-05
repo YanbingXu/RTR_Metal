@@ -48,6 +48,7 @@ struct MPSSceneData {
 };
 
 MPSSceneData buildSceneData(const scene::Scene& scene,
-                           vector_float3 defaultColor = {0.9f, 0.9f, 0.9f});
+                           vector_float3 defaultColor = {0.9f, 0.9f, 0.9f},
+                           bool enableDebugDump = false);
 
 }  // namespace rtr::rendering

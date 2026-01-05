@@ -12,7 +12,6 @@
 #include "RTRMetalEngine/Core/Logger.hpp"
 
 #include <algorithm>
-#include <cstdlib>
 #include <cstring>
 #include <simd/simd.h>
 #include <vector>
@@ -346,7 +345,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
         return std::nullopt;
     }
 
-    const bool debugTlasTrace = std::getenv("RTR_DEBUG_TLAS_TRACE") != nullptr;
+    const bool debugTlasTrace = debugTlasTrace_;
 
     const auto sizes = queryTopLevelSizes(instances, label);
     if (!sizes.has_value()) {
@@ -417,40 +416,42 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
                            NSMakeRange(0, cpuDescriptors.size() * sizeof(MTLAccelerationStructureUserIDInstanceDescriptor))];
     }
 
-    for (std::size_t i = 0; i < cpuDescriptors.size() && i < 8; ++i) {
-        const auto& descriptor = cpuDescriptors[i];
-        const MTLPackedFloat3 t0 = descriptor.transformationMatrix.columns[0];
-        const MTLPackedFloat3 t1 = descriptor.transformationMatrix.columns[1];
-        const MTLPackedFloat3 t2 = descriptor.transformationMatrix.columns[2];
-        const MTLPackedFloat3 t3 = descriptor.transformationMatrix.columns[3];
-        core::Logger::info("ASBuilder",
-                           "Instance[%zu]: mask=0x%02X accelIndex=%u options=0x%X",
-                           i,
-                           descriptor.mask,
-                           descriptor.accelerationStructureIndex,
-                           descriptor.options);
-        core::Logger::info("ASBuilder",
-                           "TLAS instance[%zu]: mask=0x%02X options=0x%X translate=(%.3f, %.3f, %.3f)",
-                           i,
-                           descriptor.mask,
-                           descriptor.options,
-                           static_cast<double>(t3.x),
-                           static_cast<double>(t3.y),
-                           static_cast<double>(t3.z));
-        core::Logger::info("ASBuilder",
-                           "Transform rows: [%.3f %.3f %.3f] [%.3f %.3f %.3f] [%.3f %.3f %.3f] [%.3f %.3f %.3f]",
-                           static_cast<double>(t0.x),
-                           static_cast<double>(t0.y),
-                           static_cast<double>(t0.z),
-                           static_cast<double>(t1.x),
-                           static_cast<double>(t1.y),
-                           static_cast<double>(t1.z),
-                           static_cast<double>(t2.x),
-                           static_cast<double>(t2.y),
-                           static_cast<double>(t2.z),
-                           static_cast<double>(t3.x),
-                           static_cast<double>(t3.y),
-                           static_cast<double>(t3.z));
+    if (debugTlasTrace) {
+        for (std::size_t i = 0; i < cpuDescriptors.size() && i < 8; ++i) {
+            const auto& descriptor = cpuDescriptors[i];
+            const MTLPackedFloat3 t0 = descriptor.transformationMatrix.columns[0];
+            const MTLPackedFloat3 t1 = descriptor.transformationMatrix.columns[1];
+            const MTLPackedFloat3 t2 = descriptor.transformationMatrix.columns[2];
+            const MTLPackedFloat3 t3 = descriptor.transformationMatrix.columns[3];
+            core::Logger::info("ASBuilder",
+                               "Instance[%zu]: mask=0x%02X accelIndex=%u options=0x%X",
+                               i,
+                               descriptor.mask,
+                               descriptor.accelerationStructureIndex,
+                               descriptor.options);
+            core::Logger::info("ASBuilder",
+                               "TLAS instance[%zu]: mask=0x%02X options=0x%X translate=(%.3f, %.3f, %.3f)",
+                               i,
+                               descriptor.mask,
+                               descriptor.options,
+                               static_cast<double>(t3.x),
+                               static_cast<double>(t3.y),
+                               static_cast<double>(t3.z));
+            core::Logger::info("ASBuilder",
+                               "Transform rows: [%.3f %.3f %.3f] [%.3f %.3f %.3f] [%.3f %.3f %.3f] [%.3f %.3f %.3f]",
+                               static_cast<double>(t0.x),
+                               static_cast<double>(t0.y),
+                               static_cast<double>(t0.z),
+                               static_cast<double>(t1.x),
+                               static_cast<double>(t1.y),
+                               static_cast<double>(t1.z),
+                               static_cast<double>(t2.x),
+                               static_cast<double>(t2.y),
+                               static_cast<double>(t2.z),
+                               static_cast<double>(t3.x),
+                               static_cast<double>(t3.y),
+                               static_cast<double>(t3.z));
+        }
     }
 
     MTLInstanceAccelerationStructureDescriptor* descriptor =

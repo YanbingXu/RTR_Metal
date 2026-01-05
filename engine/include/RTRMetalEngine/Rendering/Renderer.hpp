@@ -9,6 +9,22 @@
 
 namespace rtr::rendering {
 
+enum class DebugVisualization {
+    None,
+    Albedo,
+    InstanceColors,
+    InstanceTrace,
+    PrimitiveTrace,
+};
+
+struct RendererDebugOptions {
+    DebugVisualization visualization = DebugVisualization::None;
+    bool sceneDump = false;
+    bool geometryTrace = false;
+    bool tlasTrace = false;
+    bool cameraTrace = false;
+};
+
 class Renderer {
 public:
     explicit Renderer(core::EngineConfig config);
@@ -27,6 +43,9 @@ public:
     void setRenderSize(std::uint32_t width, std::uint32_t height);
     bool loadScene(const scene::Scene& scene);
     void setDebugMode(bool enabled);
+    void setDebugVisualization(DebugVisualization visualization);
+    void setDebugOptions(const RendererDebugOptions& options);
+    [[nodiscard]] RendererDebugOptions debugOptions() const;
     void setShadingMode(const std::string& mode);
     void resetAccumulation();
 

@@ -371,16 +371,12 @@ void addMario(SceneBuilder& builder,
 }
 
 bool marioFeatureEnabled(const std::filesystem::path& assetRoot) {
-    if (const char* flag = std::getenv("RTR_ENABLE_MARIO")) {
-        return std::strcmp(flag, "0") != 0;
-    }
-
     const std::filesystem::path marioMesh = assetRoot / "mario.obj";
     std::error_code ec;
     const bool assetExists = std::filesystem::exists(marioMesh, ec);
     if (!assetExists) {
         rtr::core::Logger::warn("CornellBox",
-                                "Mario asset missing at %s; set RTR_ENABLE_MARIO=1 to force the feature",
+                                "Mario asset missing at %s (required for cornell extras)",
                                 marioMesh.string().c_str());
     }
     return assetExists;
@@ -425,7 +421,7 @@ void addFeatureGeometry(SceneBuilder& builder,
                  simd_make_float3(0.3275f, 0.6f, -0.1f),
                  0.01f);
     } else {
-        rtr::core::Logger::info("CornellBox", "Mario feature disabled (enable by setting RTR_ENABLE_MARIO or providing assets)");
+        rtr::core::Logger::info("CornellBox", "Mario feature disabled (provide mario.obj/png assets to enable)");
     }
 }
 

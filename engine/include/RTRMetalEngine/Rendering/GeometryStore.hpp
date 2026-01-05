@@ -33,12 +33,14 @@ public:
 
     std::optional<std::size_t> uploadMesh(const scene::Mesh& mesh, const std::string& label);
     void clear();
+    void setDebugGeometryTrace(bool enabled) noexcept { debugGeometryTrace_ = enabled; }
 
     [[nodiscard]] const std::vector<MeshBuffers>& uploadedMeshes() const noexcept { return meshes_; }
 
 private:
     BufferAllocator& allocator_;
     std::vector<MeshBuffers> meshes_;
+    bool debugGeometryTrace_ = false;
 };
 
 }  // namespace rtr::rendering

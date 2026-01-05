@@ -41,12 +41,12 @@ This flow compiles the engine library, sample executable, unit test binary, and 
 
 ## Running
 
-- Sample: `./build/RTRMetalSample [--output=FILE] [--scene=cornell|reflective|glass] [--resolution=WxH] [--frames=N] [--mode=auto|hardware] [--max-bounces=N] [--hash] [--debug-albedo]`
+- Sample: `./build/RTRMetalSample [--output=FILE] [--scene=cornell|reflective|glass] [--resolution=WxH] [--frames=N] [--mode=auto|hardware] [--max-bounces=N] [--hash] [--debug-visualization=MODE] [--debug-log=FLAGS]`
 - `--expect-hash=0xHASH` 会在渲染后比对 FNV-1a 结果，方便在有 RT GPU 的机器上做回归验证。
-- `reflective` 和 `glass` 场景需要在 `assets/` 下提供 `mario.obj`（可从官方 MetalRayTracing 示例拷贝），否则会退回简易几何体。
-- 调试可使用 `--debug-albedo` 直接输出材质反照率，便于验证资源管线。
+- `reflective` 和 `glass` 场景需要在 `assets/` 下提供 `mario.obj`/`mario.png`（可从官方 MetalRayTracing 示例拷贝），否则相关几何会被禁用并在日志中提示。
+- 调试可使用 `--debug-visualization=albedo`（旧的 `--debug-albedo` 仍然可用）或 `instance-colors|instance-trace|primitive-trace` 直接观察绑定数据，`--debug-log=` 允许开启 `scene|geometry|tlas|camera` 级别的额外日志。
 - `--mode=hardware` 会强制尝试硬件 RT；默认 `auto` 与硬件模式一致，保留未来引入备用管线的选择。
-- On-Screen Sample: build with `cmake --build build --target RTRMetalOnScreenSample` (or `cmake-build-debug` when using CLion) and run `open build/RTRMetalOnScreenSample.app`. The overlay toolbar provides mode selection (`auto|hardware`), resolution presets (plus a dynamic entry when resizing the window), and a screenshot button that writes `~/Pictures/RTR_<timestamp>.ppm`. Reference hash for the Cornell default is `0x72FDA1309C1E4FB1` (1024×768 single-sample).
+- On-Screen Sample: build with `cmake --build build --target RTRMetalOnScreenSample` (or `cmake-build-debug` when using CLion) and run `open build/RTRMetalOnScreenSample.app`. The overlay toolbar provides mode selection (`auto|hardware`), resolution presets (plus a dynamic entry when resizing the window), a debug visualization popup, and a screenshot button that writes `~/Pictures/RTR_<timestamp>.ppm`. Reference hash for the Cornell default is `0x72FDA1309C1E4FB1` (1024×768 single-sample).
 - Tests: `cd build && ctest --output-on-failure`
 
 Only the hardware ray tracing backend is active. Former software/MPS paths have been removed until the hardware feature set is complete.
