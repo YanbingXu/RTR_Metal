@@ -82,9 +82,9 @@ Mario 临时占位几何策略。
 ```
 
 当前基线：
-- `frames=1`：`0x4707C26E88759C9D`
-- `frames=4`：`0x8E53D49E6CDCB3CB`
-- `frames=16`：`0xB543187723A93D47`
+- `frames=1`：`0x9A6AD96130FF3506`
+- `frames=4`：`0x0E0D4150478BDFEE`
+- `frames=16`：`0xEA655D1AB536C88C`
 
 ## 当前已知事实
 - 当前仅启用硬件 RT 路径；`auto` 与 `hardware` 行为一致。

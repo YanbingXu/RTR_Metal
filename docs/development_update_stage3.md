@@ -19,3 +19,10 @@
   - Cornell 扩展几何中两球（镜面/折射）已稳定可见，可用于 Stage 3D 主线验证。
   - Mario 当前采用占位几何（保留材质与纹理链路），避免阻塞 Stage 3D 目标推进。
   - Mario OBJ 网格的 BLAS 可交性问题作为专项后续处理，详见 `docs/mario_obj_blas_issue.md`。
+
+## Cornell 基线同步（2026-02-09）
+- 运行条件：`--scene=cornell --resolution=1024x768 --mode=hardware --asset-root=assets --config=config/engine.ini`
+- 结果 hash（FNV-1a）：
+  - `frames=1`：`0x9A6AD96130FF3506`
+  - `frames=4`：`0x0E0D4150478BDFEE`
+  - `frames=16`：`0xEA655D1AB536C88C`
