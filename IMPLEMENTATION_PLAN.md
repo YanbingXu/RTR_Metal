@@ -1,67 +1,63 @@
-> Status checkpoint (2025-11-06): Stage 1–3C complete; Stage 3D (hardware shading polish) active; Stage 4 (software/fallback return) queued.
-> Refer to [AGENTS.md](AGENTS.md) for contributor workflow guidance and entry points into the codebase.
+> 状态检查点（2026-02-06）：Stage 1~3C 完成；Stage 3D 进行中；Stage 4 未开始。  
+> 本文件是项目阶段状态的唯一口径。
 
-## Stage 1: Project Shell & Tooling
-**Goal**: Replace Swift package with CMake-based C++ project scaffold, shared engine/static library target, sample app target, and shader build integration stubs.
-**Success Criteria**: CMake config generates build files; `metal` shader compilation hooks exist; placeholder engine library builds and links into sample.
-**Tests**: Configure and build via `cmake --build` on macOS; run placeholder unit test binary.
-**Status**: Complete
+## Stage 1：工程骨架与工具链
+**目标**：完成 CMake 化、静态库目标、示例目标、shader 构建链路。  
+**验收标准**：可配置、可编译、可链接、可运行占位示例。  
+**测试**：`cmake --build` 与基础测试二进制可执行。  
+**状态**：已完成。
 
-## Stage 2: Core Engine Infrastructure
-**Goal**: Implement Metal device/context wrapper, memory/resource managers, logging, configuration loading, and math utilities needed by renderer.
-**Success Criteria**: Engine initializes Metal device & command queues; can load mesh data and upload buffers; unit tests cover math/config modules.
-**Tests**: New C++ unit tests for math/utilities; run sample in headless init mode validating context creation.
-**Status**: Complete
+## Stage 2：核心引擎基础设施
+**目标**：完成 Metal 上下文、缓冲分配、配置加载、日志、数学工具、场景基础上传。  
+**验收标准**：可初始化设备，可上传几何数据，核心模块有单元测试。  
+**测试**：core/rendering/scene 相关单元测试。  
+**状态**：已完成。
 
-## Stage 3: Ray Tracing Pipelines
-**Goal**: Track the Apple reference implementation step by step—Stage 3 is now hardware-only. Hardware parity against Apple's reference scenes must be achieved before we bring back any software/MPS fallback (punted to Stage 4).
+## Stage 3：硬件 RT 主线
+> Stage 3 明确为“硬件优先”，软件/MPS 回退延后到 Stage 4。
 
-### Stage 3A: Hardware-Accelerated Compute Path (Metal Ray Tracing)
-**Goal**: Build BLAS/TLAS constructors and dispatch a compute-based ray tracing kernel that leverages hardware traversal to render diagnostic frames.
-**Success Criteria**:
-- Diagnostic Cornell Box renders through the compute ray tracing pipeline on RT-capable devices, producing non-black frames with basic lighting.
-- TLAS/BLAS build + instance management validated via logs/tests; resource buffer layout and intersection/visible function usage documented.
-- Hardware renderer reports clear errors on non-RT devices (no more silent fallback).
-**Tests**: Capability-gated integration tests for TLAS creation and compute dispatch, hash comparison on RT hardware.
-**Status**: Complete
+### Stage 3A：硬件 RT 计算路径打通
+**目标**：完成 BLAS/TLAS 构建与 compute kernel 调度。  
+**验收标准**：可输出非黑屏诊断图；能力检测与错误提示明确。  
+**测试**：加速结构构建与调度的能力门控测试。  
+**状态**：已完成。
 
-### Stage 3B: Hardware Rendering Polish
-**Goal**: Rebuild the hardware kernel to mirror the Apple sample (Cornell lighting, reflections, refraction) so we ship a complete hardware RT frame before considering any future fallback work.
-**Success Criteria**:
-- Ray-gen kernel produces the Cornell reference image from `~/Desktop/metal_RTR_official_example`.
-- Material/enclosure data in `RTRRayTracing.metal` stays aligned with the reference shading code.
-- Renderer writes frame dumps via `writeRayTracingOutput`.
-- Docs outline hardware-only requirements and troubleshooting steps.
-**Tests**: Basic integration run on hardware RT devices (smoke) and unit coverage for resource packing.
-**Status**: Complete — Cornell shading path committed; hashes/docs scheduled with on-screen demo work
+### Stage 3B：硬件着色基础对齐
+**目标**：对齐 Apple 参考路径，完成 Cornell 基础光照与材质流程。  
+**验收标准**：Cornell 可稳定渲染；材质与资源布局可用。  
+**测试**：硬件冒烟 + 资源打包测试。  
+**状态**：已完成。
 
-### Stage 3C: On-Screen Examples & Scene Assets
-**Goal**: Prioritize an on-screen sample that exercises the engine from a simple app shell, matching Apple’s UI patterns. Hardware-only toggles remain.
-**Success Criteria**:
-- Engine exposes the minimal swapchain/display loop so the sample app remains thin (UI logic in app, rendering control in engine).
-- MetalKit/SwiftUI sample renders the Cornell frame interactively with backend toggles, resolution controls, and screenshot capture.
-- Documentation updated with run instructions and troubleshooting (shader paths, device requirements) plus frame/hash expectations.
-**Tests**: Manual checklist for on-screen demo, smoke run capturing output hash, optional unit hooks for window lifecycle.
-**Status**: Complete — MetalKit UI with mode/resolution/screenshot controls shipped; docs + 1024×768 hash recorded
+### Stage 3C：On-Screen 示例
+**目标**：提供窗口化示例，验证交互式运行链路。  
+**验收标准**：模式切换、分辨率、截图可用。  
+**测试**：人工 checklist + CLI hash 对照。  
+**状态**：已完成。
 
-### Stage 3D: Extended Shading & Effects
-**Goal**: Build on the hardware kernel to introduce polished effects (reflections, refraction, soft shadows, motion blur, etc.). The fallback/software renderer is paused until Stage 4, so this milestone is hardware-only.
-**Current Status**:
-The Stage 3D shader port is partially in place: primary shading, BRDF sampling, and TLAS setup now mirror the Apple reference, and the hardware ray kernel consumes true per-instance TLAS data (instance IDs map back to packed scene buffers so Mario/Cornell transforms and per-triangle materials survive the upload). However, the render graph still copies `shadeTexture` to the drawable before the shadow/accumulate passes run, so queued lighting never reaches the screen. Secondary bounces also fall back to the CPU `traceScene` helper instead of issuing real hardware rays, which keeps reflection/refraction black. The next iteration must address both shortcomings (render graph ordering + hardware-driven secondary rays) before we can claim Stage 3D parity.
-**Success Criteria**:
-- Material system supports reflective/refractive parameters with documented presets.
-- Shadowing, indirect bounce approximations, and motion blur toggles wired through CLI/on-screen samples.
-- Regression assets include updated frame hashes per effect.
-**Tests**: Expanded image-diff suite, stress tests for parameter toggles, targeted unit tests for material packing.
-**Status**: In Progress — TLAS build now flattens the scene into a single hardware mesh, but the on-screen frame still diverges from Apple's reference (Mario scale/placement and per-triangle materials/UVs). Upcoming work:
+### Stage 3D：扩展着色与性能完善
+**目标**：补齐反射/折射/运动模糊等效果，并修正交互路径性能瓶颈。  
+**当前事实（代码已体现）**：
+- 已有：BRDF 基础着色、软阴影采样、一次反射、材质/纹理上传。
+- 已有：`indexOfRefraction` + `materialFlags` 已接入 shader，支持基础折射与全反射回退。
+- 已有：交互路径默认不再强制 GPU->CPU 读回与阻塞等待。
+- 已有：Cornell 扩展几何中的两球（镜面/折射）稳定可见；用于验证反射/折射主线。
+- 已有：Mario 暂采用占位几何（保留材质与纹理链路），避免阻塞 Stage 3D 主线验收。
+- 未完成：真正的多帧累积收敛机制仍不完整（当前仍缺历史帧融合目标与策略）。
+- 未完成：缺少最新回归 hash 与自动验收闭环。
+- 未完成：Mario OBJ 网格的 BLAS 可交性专项修复（见 `docs/mario_obj_blas_issue.md`）。
 
-- Mirror the CPU reference scene (`~/Desktop/MetalRayTracing`) triangle-for-triangle so our Cornell builder uses the exact same transforms/materials.
-- Rebuild the hardware acceleration structures the way the Metal RT sample does (`~/Desktop/metal_RTR_official_example`): BLAS per mesh plus TLAS instances with correct masks/material bindings.
-- Prepare the same material/texture buffers as the reference and rewrite `RTRRayTracing.metal` so all ray queries (primary/shadow/reflection) use the hardware intersection path, matching Apple's shading code.
-- Validate frame dumps + hashes for each shading tweak; the next fallback work remains blocked until this is green.
+**验收标准**：
+- 折射路径可用，`indexOfRefraction` 与材质标记生效。
+- 交互模式默认无 CPU 读回阻塞，支持多帧累积。
+- 新的 hash/截图基线进入文档与测试流程。
 
-## Stage 4: Software RT & Fallback Return
-**Goal**: Reintroduce the software/MPS fallback once the hardware renderer reaches parity. Mirror the resource layouts from Stage 3 so both backends share scene packing and produce deterministic outputs for regression tests.
-**Success Criteria**: Software path renders the Cornell reference image, hashes recorded for both backends, CLI/UI toggles expose hardware vs fallback, docs outline hardware requirements plus fallback caveats.
-**Tests**: Expanded hash/image diff suite running both backends, profiling scripts, documentation linting.
-**Status**: Not Started — blocked on Stage 3D completion.
+**测试**：
+- 扩展图像回归（hash 或 image diff）。
+- 参数开关（折射、累积、调试模式）组合测试。
+
+**状态**：进行中。
+
+## Stage 4：软件/MPS 回退恢复
+**目标**：在硬件路径稳定后恢复软件/MPS 回退，并与硬件路径共享场景/材质布局。  
+**前置条件**：Stage 3D 完成并产出稳定基线。  
+**状态**：未开始。

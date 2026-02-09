@@ -1,35 +1,19 @@
-# Development Plan
+# 开发计划（简版）
 
-## Milestone 1 – Project Bootstrap (✅)
-1. Establish CMake build with `RTRMetalEngine` library, sample targets, and shader compilation.
-2. Implement logging, math helpers, Metal context, buffer allocator, and configuration loader.
-3. Draft architecture/development guidelines.
+## 文档状态
+- 当前有效（中文摘要）
 
-## Milestone 2 – Core Engine (✅)
-1. Define CPU-side scene graph (`Mesh`, `Material`, `Scene`, builders).
-2. Integrate `GeometryStore`, `BufferAllocator`, and acceleration-structure scaffolding.
-3. Assemble renderer façade and diagnostic BLAS build.
+## 当前主线
+- Stage 3D：扩展着色与性能完善（硬件 RT）。
 
-## Milestone 3 – Hardware Ray Tracing (🚧)
+## 近期任务
+1. 折射与材质标记路径打通（shader + 参数开关）。
+2. 交互渲染去 CPU 读回阻塞，建立真正多帧累积。
+3. 固化 hash 基线并接入自动验证。
 
-| Focus | Deliverables | Acceptance |
-| --- | --- | --- |
-| **3A – Hardware-Accelerated Compute Pipeline** | • TLAS/BLAS construction via `MTLAccelerationStructureDescriptor`<br>• `raytracingKernel` compute pipeline（含 linked/visible functions）<br>• 统一的资源缓冲：per-frame uniform、geometry/material 指针、累积/random 纹理<br>• Renderer dispatch 绑定 TLAS（`setAccelerationStructure:`）写入渲染目标 | • RT 设备上渲染诊断 Cornell 场景得到非黑输出<br>• 日志/测试确认 TLAS、资源缓冲、dispatch 顺序正确 |
-| **3B – Hardware Shading Polish** | • 完整材质/反射/折射/阴影实现<br>• 渲染输出与 Apple 样例对齐<br>• 素材/纹理缓冲与参考工程一致 | • Cornell/场景截图与官方样例误差在可控范围<br>• 记录 hash + 帧转储便于回归 |
-| **3C – Examples & Tooling** | • Off-screen CLI 生成 PPM/PNG + hash<br>• MetalKit/SwiftUI Demo：后端/采样/场景切换、累积 HUD、截图导出（仅硬件模式）<br>• README/Docs 更新运行说明与硬件要求<br>• `ctest` 脚本覆盖 TLAS 构建、资源缓冲、图像 hash | • CLI & GUI 在支持 RT 的设备上运行并输出结果<br>• 自动化测试验证核心路径（TLAS、资源、图像 hash） |
+## 中期任务
+1. 补齐调试可视化与回归诊断工具。
+2. 完善 on-screen/CLI 一致的渲染参数行为。
 
-### Immediate Sprint Backlog
-1. 实现 compute 光追管线：`raytracingKernel` + TLAS 绑定，替换 `dispatchRayTracingPass()` stub。
-2. 引入 per-frame uniform ring buffer、资源指针缓冲、累积/随机纹理，并在 Renderer 中串联调度逻辑。
-3. ~~让 MPS GPU 着色路径使用相同资源布局，同时保留 CPU 着色作为确定性回退。~~ (Deferred to Milestone 4，与 MPS 回退一起恢复)。
-4. 搭建 CLI 图像导出与 hash 校验流程，更新 README/Docs 的硬件要求与运行步骤。
-
-## Milestone 4 – Software RT & Parity (🔒)
-1. 恢复 MPS/软件回退管线，使其与 Stage 3 的资源布局保持一致。
-2. 扩展材质系统（纹理、多次弹射、Tone Mapping），保持 backends 一致。
-3. 增加 Profiling/QA 工具（hash 基线、性能脚本、捕获指南）。
-4. 完善文档：开发者入门、硬件要求、回归流程、常见问题，并记录硬件/回退切换策略。
-
-## Reference
-- `IMPLEMENTATION_PLAN.md` contains the stage statuses and acceptance tests.
-- `/Users/yanbing.xu/Desktop/MetalRayTracing` remains the reference sample for the (deferred) MPS compute pipeline.
+## 远期任务
+1. Stage 4 恢复软件/MPS 回退并与硬件共享资源布局。
