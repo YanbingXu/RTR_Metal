@@ -23,7 +23,6 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
         return std::nullopt;
     }
 
-    const std::size_t vertexLength = vertices.size() * sizeof(scene::Vertex);
     constexpr std::size_t kPackedPositionStride = sizeof(float) * 3;
     std::vector<float> packedPositions;
     packedPositions.reserve(vertices.size() * 3);
@@ -35,31 +34,35 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
     const std::size_t packedLength = packedPositions.size() * sizeof(float);
     const std::size_t indexLength = indices.size() * sizeof(std::uint32_t);
 
-    const std::string vertexLabel = label + ".vb";
-    const std::string indexLabel = label + ".ib";
     const std::string gpuVertexLabel = label + ".vb.gpu";
     const std::string gpuIndexLabel = label + ".ib.gpu";
-
-    BufferHandle cpuVertexBuffer = allocator_.createBuffer(vertexLength, vertices.data(), vertexLabel.c_str());
-    BufferHandle cpuIndexBuffer = allocator_.createBuffer(indexLength, indices.data(), indexLabel.c_str());
 
     BufferHandle gpuVertexBuffer = allocator_.createBuffer(packedLength,
                                                           packedPositions.empty() ? nullptr : packedPositions.data(),
                                                           gpuVertexLabel.c_str());
     BufferHandle gpuIndexBuffer = allocator_.createBuffer(indexLength, indices.data(), gpuIndexLabel.c_str());
 
-    if (!cpuVertexBuffer.isValid() || !cpuIndexBuffer.isValid() || !gpuVertexBuffer.isValid() || !gpuIndexBuffer.isValid()) {
+    if (!gpuVertexBuffer.isValid() || !gpuIndexBuffer.isValid()) {
         core::Logger::error("GeometryStore", "Failed to upload mesh '%s'", label.c_str());
         return std::nullopt;
     }
 
+    if (debugGeometryTrace_) {
+        core::Logger::info("GeometryStore",
+                           "Upload '%s': vertices=%zu (%zu bytes) indices=%zu (%zu bytes) gpuVB=%zu gpuIB=%zu",
+                           label.c_str(),
+                           vertices.size(),
+                           packedLength,
+                           indices.size(),
+                           indexLength,
+                           gpuVertexBuffer.length(),
+                           gpuIndexBuffer.length());
+    }
+
     meshes_.emplace_back(std::move(gpuVertexBuffer),
                          std::move(gpuIndexBuffer),
-                         std::move(cpuVertexBuffer),
-                         std::move(cpuIndexBuffer),
                          vertices.size(),
-                         indices.size(),
-                         kPackedPositionStride);
+                         indices.size());
     return meshes_.size() - 1;
 }
 

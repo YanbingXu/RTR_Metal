@@ -11,7 +11,7 @@ struct Material {
     simd_float3 emission{0.0F, 0.0F, 0.0F};
     float metallic = 0.0F;
     float reflectivity = 0.0F;
-    float indexOfRefraction = 1.5F;
+    float indexOfRefraction = 1.0F;
     float padding[1] = {0.0F};
     std::string albedoTexturePath;
 };

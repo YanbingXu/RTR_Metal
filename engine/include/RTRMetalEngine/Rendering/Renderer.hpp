@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "RTRMetalEngine/Scene/Scene.hpp"
@@ -8,6 +10,24 @@
 #include "RTRMetalEngine/Core/EngineConfig.hpp"
 
 namespace rtr::rendering {
+
+enum class DebugVisualization {
+    None,
+    Albedo,
+    InstanceColors,
+    InstanceTrace,
+    PrimitiveTrace,
+};
+
+struct RendererDebugOptions {
+    DebugVisualization visualization = DebugVisualization::None;
+    bool sceneDump = false;
+    bool geometryTrace = false;
+    bool tlasTrace = false;
+    bool cameraTrace = false;
+    bool isolateCornellExtras = false;
+    std::optional<std::uint32_t> isolateCornellMeshIndex;
+};
 
 class Renderer {
 public:
@@ -27,6 +47,9 @@ public:
     void setRenderSize(std::uint32_t width, std::uint32_t height);
     bool loadScene(const scene::Scene& scene);
     void setDebugMode(bool enabled);
+    void setDebugVisualization(DebugVisualization visualization);
+    void setDebugOptions(const RendererDebugOptions& options);
+    [[nodiscard]] RendererDebugOptions debugOptions() const;
     void setShadingMode(const std::string& mode);
     void resetAccumulation();
 

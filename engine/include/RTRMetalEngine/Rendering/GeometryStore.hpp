@@ -14,26 +14,17 @@ struct MeshBuffers {
     MeshBuffers() = default;
     MeshBuffers(BufferHandle&& gpuVb,
                 BufferHandle&& gpuIb,
-                BufferHandle&& cpuVb,
-                BufferHandle&& cpuIb,
                 std::size_t vtxCount,
-                std::size_t idxCount,
-                std::size_t stride)
+                std::size_t idxCount)
         : gpuVertexBuffer(std::move(gpuVb)),
           gpuIndexBuffer(std::move(gpuIb)),
-          cpuVertexBuffer(std::move(cpuVb)),
-          cpuIndexBuffer(std::move(cpuIb)),
           vertexCount(vtxCount),
-          indexCount(idxCount),
-          vertexStride(stride) {}
+          indexCount(idxCount) {}
 
     BufferHandle gpuVertexBuffer;
     BufferHandle gpuIndexBuffer;
-    BufferHandle cpuVertexBuffer;
-    BufferHandle cpuIndexBuffer;
     std::size_t vertexCount = 0;
     std::size_t indexCount = 0;
-    std::size_t vertexStride = 0;
 };
 
 class GeometryStore {
@@ -42,12 +33,14 @@ public:
 
     std::optional<std::size_t> uploadMesh(const scene::Mesh& mesh, const std::string& label);
     void clear();
+    void setDebugGeometryTrace(bool enabled) noexcept { debugGeometryTrace_ = enabled; }
 
     [[nodiscard]] const std::vector<MeshBuffers>& uploadedMeshes() const noexcept { return meshes_; }
 
 private:
     BufferAllocator& allocator_;
     std::vector<MeshBuffers> meshes_;
+    bool debugGeometryTrace_ = false;
 };
 
 }  // namespace rtr::rendering

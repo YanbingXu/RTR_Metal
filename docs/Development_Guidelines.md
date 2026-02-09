@@ -1,153 +1,31 @@
-# Development Guidelines
+# 开发规范
 
-## Philosophy
+## 文档状态
+- 当前有效（中文主文档）
 
-### Core Beliefs
+## 核心原则
+- 小步迭代：每次改动可编译、可验证。
+- 先对齐再创新：先复用项目既有模式与官方样例。
+- 明确优先级：先稳定主路径，再扩展效果。
+- 文档与代码同步：阶段与接口变更必须更新文档。
 
-- **Incremental progress over big bangs** - Small changes that compile and pass tests
-- **Learning from existing code** - Study and plan before implementing
-- **Pragmatic over dogmatic** - Adapt to project reality
-- **Clear intent over clever code** - Be boring and obvious
+## 分阶段流程
+1. 在 `IMPLEMENTATION_PLAN.md` 定义目标、验收标准、测试与状态。
+2. 实现最小可用改动。
+3. 补测试与验证脚本。
+4. 更新文档中的“当前状态”和“下一步”。
 
-### Simplicity Means
+## 失败处理（最多 3 次）
+- 记录尝试方案、错误信息、失败原因。
+- 明确是能力边界、实现缺陷，还是测试环境问题。
+- 选择更小问题切分后继续推进。
 
-- Single responsibility per function/class
-- Avoid premature abstractions
-- No clever tricks - choose the boring solution
-- If you need to explain it, it's too complex
+## 代码质量底线
+- 每个提交应保证可编译。
+- 有新增行为就应有测试或明确说明为何暂无法测试。
+- 不允许通过注释掉测试来“临时通过”。
 
-## Process
-
-### 1. Planning & Staging
-
-Break complex work into 3-5 stages. Document in `IMPLEMENTATION_PLAN.md`:
-
-\`\`\`markdown
-## Stage N: [Name]
-**Goal**: [Specific deliverable]
-**Success Criteria**: [Testable outcomes]
-**Tests**: [Specific test cases]
-**Status**: [Not Started|In Progress|Complete]
-\`\`\`
-- Update status as you progress
-- Remove file when all stages are done
-
-### 2. Implementation Flow
-
-1. **Understand** - Study existing patterns in codebase
-2. **Test** - Write test first (red)
-3. **Implement** - Minimal code to pass (green)
-4. **Refactor** - Clean up with tests passing
-5. **Commit** - With clear message linking to plan
-
-### 3. When Stuck (After 3 Attempts)
-
-**CRITICAL**: Maximum 3 attempts per issue, then STOP.
-
-1. **Document what failed**:
-   - What you tried
-   - Specific error messages
-   - Why you think it failed
-
-2. **Research alternatives**:
-   - Find 2-3 similar implementations
-   - Note different approaches used
-
-3. **Question fundamentals**:
-   - Is this the right abstraction level?
-   - Can this be split into smaller problems?
-   - Is there a simpler approach entirely?
-
-4. **Try different angle**:
-   - Different library/framework feature?
-   - Different architectural pattern?
-   - Remove abstraction instead of adding?
-
-## Technical Standards
-
-### Architecture Principles
-
-- **Composition over inheritance** - Use dependency injection
-- **Interfaces over singletons** - Enable testing and flexibility
-- **Explicit over implicit** - Clear data flow and dependencies
-- **Test-driven when possible** - Never disable tests, fix them
-
-### Code Quality
-
-- **Every commit must**:
-  - Compile successfully
-  - Pass all existing tests
-  - Include tests for new functionality
-  - Follow project formatting/linting
-
-- **Before committing**:
-  - Run formatters/linters
-  - Self-review changes
-  - Ensure commit message explains "why"
-
-### Error Handling
-
-- Fail fast with descriptive messages
-- Include context for debugging
-- Handle errors at appropriate level
-- Never silently swallow exceptions
-
-## Decision Framework
-
-When multiple valid approaches exist, choose based on:
-
-1. **Testability** - Can I easily test this?
-2. **Readability** - Will someone understand this in 6 months?
-3. **Consistency** - Does this match project patterns?
-4. **Simplicity** - Is this the simplest solution that works?
-5. **Reversibility** - How hard to change later?
-
-## Project Integration
-
-### Learning the Codebase
-
-- Start with [`AGENTS.md`](../AGENTS.md) for a current snapshot of modules, build flow, and contributor expectations.
-- Find 3 similar features/components
-- Identify common patterns and conventions
-- Use same libraries/utilities when possible
-- Follow existing test patterns
-
-### Tooling
-
-- Use project's existing build system
-- Use project's test framework
-- Use project's formatter/linter settings
-- Don't introduce new tools without strong justification
-
-## Quality Gates
-
-### Definition of Done
-
-- [ ] Tests written and passing
-- [ ] Code follows project conventions
-- [ ] No linter/formatter warnings
-- [ ] Commit messages are clear
-- [ ] Implementation matches plan
-- [ ] No TODOs without issue numbers
-
-### Test Guidelines
-
-- Test behavior, not implementation
-- One assertion per test when possible
-- Clear test names describing scenario
-- Use existing test utilities/helpers
-- Tests should be deterministic
-
-## Important Reminders
-
-**NEVER**:
-- Use `--no-verify` to bypass commit hooks
-- Disable tests instead of fixing them
-- Commit code that doesn't compile
-- Make assumptions - verify with existing code
-
-**ALWAYS**:
-- Commit working code incrementally
-- Update plan documentation as you go
-- Learn from existing implementations
-- Stop after 3 failed attempts and reassess
+## 文档一致性规则
+- 阶段状态只以 `IMPLEMENTATION_PLAN.md` 为准。
+- 历史文档必须显式标注“历史归档”，并指向当前有效文档。
+- 中英文混写以中文为主，命令与标识符保留英文。

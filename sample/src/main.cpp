@@ -10,6 +10,7 @@
 #include <iostream>
 #include <initializer_list>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -42,13 +43,16 @@ struct CommandLineOptions {
     std::uint32_t height = 512;
     std::uint32_t frames = 1;
     bool printHash = false;
-    bool debugAlbedo = false;
+    std::optional<std::string> expectedHash;
     bool overrideShadingMode = false;
-    std::optional<bool> accumulationEnabled;
-    std::optional<std::uint32_t> accumulationFrames;
-    std::optional<std::uint32_t> samplesPerPixel;
-    std::optional<std::uint32_t> sampleSeed;
     std::optional<std::uint32_t> maxBounces;
+    std::optional<std::string> debugVisualization;
+    bool debugSceneDump = false;
+    bool debugGeometryTrace = false;
+    bool debugTlasTrace = false;
+    bool debugCameraTrace = false;
+    bool debugIsolateCornellExtras = false;
+    std::optional<std::uint32_t> debugIsolateCornellMeshIndex;
 };
 
 void printUsage() {
@@ -60,13 +64,16 @@ void printUsage() {
               << "  --frames=N             渲染帧数，用于累计或调试 (默认 1)\n"
               << "  --mode=auto|hardware          选择硬件模式（默认 auto，与硬件模式一致）\n"
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
-              << "  --accumulation=on|off  开启或关闭累计 (覆盖配置文件)\n"
-              << "  --accumulation-frames=N 限定累计帧数 (0 表示无限制)\n"
-              << "  --samples-per-pixel=N  每像素采样次数，0 表示无限制 (默认 1)\n"
-              << "  --sample-seed=N        采样随机种子\n"
               << "  --max-bounces=N        硬件 RT 最大弹射次数 (至少 1)\n"
               << "  --hash                 渲染完输出图像的 FNV-1a hash\n"
-              << "  --debug-albedo         调试模式：直接输出材质反照率\n"
+              << "  --expect-hash=0xHASH  计算图像 hash 并与给定值比对\n"
+              << "  --debug-albedo         调试模式：直接输出材质反照率 (等价于 --debug-visualization=albedo)\n"
+              << "  --debug-visualization=none|albedo|instance-colors|instance-trace|primitive-trace\n"
+              << "                         选择交互式可视化模式\n"
+              << "  --debug-log=scene|geometry|tlas|camera[,..]\n"
+              << "                         启用附加日志/追踪 (可重复)\n"
+              << "  --debug-isolate-extras 仅保留 Cornell 的扩展几何（mesh 6/7/8）参与 TLAS\n"
+              << "  --debug-isolate-mesh=N      仅保留指定 Cornell mesh（需配合 --debug-isolate-extras）\n"
               << "  --help                 打印帮助\n";
 }
 
@@ -92,20 +99,6 @@ std::optional<std::pair<std::uint32_t, std::uint32_t>> parseResolution(const std
     }
 }
 
-bool parseBoolArgument(std::string value, const char* optionName) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
-        return static_cast<char>(std::tolower(c));
-    });
-
-    if (value == "1" || value == "true" || value == "on" || value == "yes") {
-        return true;
-    }
-    if (value == "0" || value == "false" || value == "off" || value == "no") {
-        return false;
-    }
-    throw std::runtime_error(std::string("Invalid value for ") + optionName + ": " + value);
-}
-
 std::uint32_t parseUIntArgument(const std::string& text, const char* optionName) {
     try {
         const unsigned long parsed = std::stoul(text);
@@ -116,6 +109,66 @@ std::uint32_t parseUIntArgument(const std::string& text, const char* optionName)
     } catch (const std::exception&) {
         throw std::runtime_error("Invalid numeric value for " + std::string(optionName) + ": " + text);
     }
+}
+
+std::string normalizeFlag(std::string value) {
+    std::string normalized;
+    normalized.reserve(value.size());
+    for (char ch : value) {
+        if (ch == '-' || ch == '_' || ch == ' ') {
+            continue;
+        }
+        normalized.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    return normalized;
+}
+
+void applyDebugLogFlag(CommandLineOptions& options, const std::string& value) {
+    const std::string flag = normalizeFlag(value);
+    if (flag == "scene" || flag == "scenedump") {
+        options.debugSceneDump = true;
+    } else if (flag == "geometry" || flag == "geometrytrace") {
+        options.debugGeometryTrace = true;
+    } else if (flag == "tlas" || flag == "tlastrace") {
+        options.debugTlasTrace = true;
+    } else if (flag == "camera" || flag == "cameratrace") {
+        options.debugCameraTrace = true;
+    } else {
+        throw std::runtime_error("Unknown --debug-log flag: " + value);
+    }
+}
+
+void applyDebugLogList(CommandLineOptions& options, const std::string& list) {
+    if (list.empty()) {
+        throw std::runtime_error("--debug-log requires at least one flag");
+    }
+    std::stringstream stream(list);
+    std::string item;
+    while (std::getline(stream, item, ',')) {
+        if (!item.empty()) {
+            applyDebugLogFlag(options, item);
+        }
+    }
+}
+
+rtr::rendering::DebugVisualization parseDebugVisualization(std::string value) {
+    const std::string key = normalizeFlag(value);
+    if (key.empty() || key == "none") {
+        return rtr::rendering::DebugVisualization::None;
+    }
+    if (key == "albedo" || key == "debugalbedo") {
+        return rtr::rendering::DebugVisualization::Albedo;
+    }
+    if (key == "instancecolors" || key == "meshcolors") {
+        return rtr::rendering::DebugVisualization::InstanceColors;
+    }
+    if (key == "instancetrace") {
+        return rtr::rendering::DebugVisualization::InstanceTrace;
+    }
+    if (key == "primitivetrace") {
+        return rtr::rendering::DebugVisualization::PrimitiveTrace;
+    }
+    throw std::runtime_error("Unknown debug visualization: " + value);
 }
 
 CommandLineOptions parseOptions(int argc, const char* const* argv) {
@@ -154,28 +207,29 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             }
         } else if (arg == "--hash") {
             options.printHash = true;
+        } else if (arg.rfind("--expect-hash=", 0) == 0) {
+            options.printHash = true;
+            options.expectedHash = arg.substr(14);
         } else if (arg == "--debug-albedo") {
-            options.debugAlbedo = true;
+            options.debugVisualization = "albedo";
         } else if (arg.rfind("--config=", 0) == 0) {
             options.configPath = fs::path(arg.substr(9));
-        } else if (arg.rfind("--accumulation=", 0) == 0) {
-            options.accumulationEnabled = parseBoolArgument(arg.substr(15), "--accumulation");
-        } else if (arg == "--accumulation") {
-            options.accumulationEnabled = true;
-        } else if (arg == "--no-accumulation") {
-            options.accumulationEnabled = false;
-        } else if (arg.rfind("--accumulation-frames=", 0) == 0) {
-            options.accumulationFrames = parseUIntArgument(arg.substr(22), "--accumulation-frames");
-        } else if (arg.rfind("--samples-per-pixel=", 0) == 0) {
-            options.samplesPerPixel = parseUIntArgument(arg.substr(22), "--samples-per-pixel");
-        } else if (arg.rfind("--sample-seed=", 0) == 0) {
-            options.sampleSeed = parseUIntArgument(arg.substr(14), "--sample-seed");
         } else if (arg.rfind("--max-bounces=", 0) == 0) {
             const auto value = parseUIntArgument(arg.substr(14), "--max-bounces");
             if (value == 0) {
                 throw std::runtime_error("--max-bounces must be >= 1");
             }
             options.maxBounces = value;
+        } else if (arg.rfind("--debug-visualization=", 0) == 0) {
+            options.debugVisualization = arg.substr(22);
+        } else if (arg.rfind("--debug-log=", 0) == 0) {
+            applyDebugLogList(options, arg.substr(12));
+        } else if (arg == "--debug-isolate-extras") {
+            options.debugIsolateCornellExtras = true;
+        } else if (arg.rfind("--debug-isolate-mesh=", 0) == 0) {
+            const std::uint32_t meshIndex = parseUIntArgument(arg.substr(21), "--debug-isolate-mesh");
+            options.debugIsolateCornellMeshIndex = meshIndex;
+            options.debugIsolateCornellExtras = true;
         } else {
             throw std::runtime_error("Unknown option: " + arg);
         }
@@ -276,18 +330,6 @@ int main(int argc, const char* argv[]) {
         config.shadingMode = options.shadingMode;
     }
 
-    if (options.accumulationEnabled.has_value()) {
-        config.accumulationEnabled = *options.accumulationEnabled;
-    }
-    if (options.accumulationFrames.has_value()) {
-        config.accumulationFrames = *options.accumulationFrames;
-    }
-    if (options.samplesPerPixel.has_value()) {
-        config.samplesPerPixel = *options.samplesPerPixel;
-    }
-    if (options.sampleSeed.has_value()) {
-        config.sampleSeed = *options.sampleSeed;
-    }
     if (options.maxBounces.has_value()) {
         config.maxHardwareBounces = *options.maxBounces;
     }
@@ -298,7 +340,37 @@ int main(int argc, const char* argv[]) {
     rtr::rendering::Renderer renderer{config};
     renderer.setOutputPath(options.outputPath.string());
     renderer.setRenderSize(options.width, options.height);
-    renderer.setDebugMode(options.debugAlbedo);
+
+    rtr::rendering::RendererDebugOptions debugOptionsState = renderer.debugOptions();
+    bool applyDebugOptions = false;
+    if (options.debugVisualization.has_value()) {
+        debugOptionsState.visualization = parseDebugVisualization(*options.debugVisualization);
+        applyDebugOptions = true;
+    }
+    if (options.debugSceneDump) {
+        debugOptionsState.sceneDump = true;
+        applyDebugOptions = true;
+    }
+    if (options.debugGeometryTrace) {
+        debugOptionsState.geometryTrace = true;
+        applyDebugOptions = true;
+    }
+    if (options.debugTlasTrace) {
+        debugOptionsState.tlasTrace = true;
+        applyDebugOptions = true;
+    }
+    if (options.debugCameraTrace) {
+        debugOptionsState.cameraTrace = true;
+        applyDebugOptions = true;
+    }
+    if (options.debugIsolateCornellExtras) {
+        debugOptionsState.isolateCornellExtras = true;
+        debugOptionsState.isolateCornellMeshIndex = options.debugIsolateCornellMeshIndex;
+        applyDebugOptions = true;
+    }
+    if (applyDebugOptions) {
+        renderer.setDebugOptions(debugOptionsState);
+    }
 
     rtr::scene::Scene scene = rtr::sample::buildScene(options.sceneName, options.assetRoot);
     if (!renderer.loadScene(scene)) {
@@ -322,12 +394,38 @@ int main(int argc, const char* argv[]) {
 
     std::cout << "Rendered " << options.frames << " frame(s) to " << options.outputPath << std::endl;
 
-    if (options.printHash) {
+    auto normalizeHash = [](std::string value) {
+        if (value.rfind("0x", 0) == 0 || value.rfind("0X", 0) == 0) {
+            value = value.substr(2);
+        }
+        std::transform(value.begin(), value.end(), value.begin(), [](unsigned char c) {
+            return static_cast<char>(std::toupper(c));
+        });
+        return value;
+    };
+
+    if (options.printHash || options.expectedHash.has_value()) {
         try {
             const auto hash = computeFNVHash(options.outputPath);
             std::cout << "FNV-1a hash: 0x" << std::hex << std::uppercase << hash << std::dec << std::nouppercase << std::endl;
+            if (options.expectedHash.has_value()) {
+                const std::string expected = normalizeHash(*options.expectedHash);
+                std::ostringstream stream;
+                stream << std::hex << std::uppercase << hash;
+                const std::string actual = stream.str();
+                if (actual != expected) {
+                    rtr::core::Logger::error("Sample",
+                                              "Hash mismatch: expected 0x%s, got 0x%s",
+                                              expected.c_str(),
+                                              actual.c_str());
+                    return 1;
+                }
+            }
         } catch (const std::exception& ex) {
             rtr::core::Logger::warn("Sample", "Hash computation failed: %s", ex.what());
+            if (options.expectedHash.has_value()) {
+                return 1;
+            }
         }
     }
 

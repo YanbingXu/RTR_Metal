@@ -42,6 +42,11 @@ struct ResolutionOption {
     std::uint32_t height;
 };
 
+struct DebugVisualizationOption {
+    const char* title;
+    rtr::rendering::DebugVisualization mode;
+};
+
 constexpr ModeOption kModeOptions[] = {
     {"Auto", "auto"},
     {"Hardware", "hardware"},
@@ -52,6 +57,14 @@ constexpr ResolutionOption kResolutionOptions[] = {
     {"1024 x 768", 1024u, 768u},
     {"1280 x 720", 1280u, 720u},
     {"1920 x 1080", 1920u, 1080u},
+};
+
+constexpr DebugVisualizationOption kDebugVisualizationOptions[] = {
+    {"No Debug", rtr::rendering::DebugVisualization::None},
+    {"Albedo", rtr::rendering::DebugVisualization::Albedo},
+    {"Instance Colors", rtr::rendering::DebugVisualization::InstanceColors},
+    {"Instance Trace", rtr::rendering::DebugVisualization::InstanceTrace},
+    {"Primitive Trace", rtr::rendering::DebugVisualization::PrimitiveTrace},
 };
 
 struct RuntimeResources {
@@ -134,11 +147,6 @@ RuntimeResources makeRuntimeResources() {
     }
 
     resources.config.shadingMode = "hardware";
-    resources.config.accumulationEnabled = true;
-    resources.config.accumulationFrames = 0;
-    resources.config.samplesPerPixel = 0;
-    resources.config.sampleSeed = 0;
-
     return resources;
 }
 
@@ -183,6 +191,7 @@ bool isDynamicResolution(NSDictionary* info) {
 - (void)updateRenderSizeWithWidth:(std::uint32_t)width height:(std::uint32_t)height;
 - (void)updateDynamicResolutionMenuItem;
 - (void)handleDrawableSizeChange:(CGSize)size updateRenderer:(BOOL)updateRenderer;
+- (void)debugVisualizationChanged:(id)sender;
 @end
 
 @implementation RTRViewController {
@@ -193,9 +202,9 @@ bool isDynamicResolution(NSDictionary* info) {
     bool _sceneLoaded;
     NSPopUpButton* _modePopup;
     NSPopUpButton* _resolutionPopup;
+    NSPopUpButton* _debugModePopup;
     NSMenuItem* _dynamicResolutionItem;
     NSButton* _screenshotButton;
-    NSButton* _debugToggle;
     std::uint32_t _currentWidth;
     std::uint32_t _currentHeight;
     std::uint32_t _renderWidth;
@@ -234,6 +243,19 @@ bool isDynamicResolution(NSDictionary* info) {
 - (void)initializeRenderer {
     rtr::core::Logger::setMinimumLevel(rtr::core::LogLevel::Info);
     RuntimeResources runtime = makeRuntimeResources();
+
+    const fs::path forcedAssetRoot = fs::path(RTR_SOURCE_DIR) / "assets";
+    if (!forcedAssetRoot.empty() && fs::exists(forcedAssetRoot)) {
+        runtime.assetRoot = forcedAssetRoot;
+        rtr::core::Logger::info("OnScreenSample",
+                                "Forcing asset root to %s for feature verification",
+                                forcedAssetRoot.string().c_str());
+    } else {
+        rtr::core::Logger::warn("OnScreenSample",
+                                "Forced asset root %s missing; continuing with resolved path",
+                                forcedAssetRoot.string().c_str());
+    }
+
     _assetRootPath = runtime.assetRoot;
     rtr::core::Logger::info("OnScreenSample",
                             "Using shader library: %s",
@@ -315,17 +337,22 @@ bool isDynamicResolution(NSDictionary* info) {
                                            action:@selector(captureScreenshot:)];
     _screenshotButton.translatesAutoresizingMaskIntoConstraints = NO;
 
-    _debugToggle = [NSButton checkboxWithTitle:@"Debug Albedo"
-                                        target:self
-                                        action:@selector(debugModeChanged:)];
-    _debugToggle.translatesAutoresizingMaskIntoConstraints = NO;
-    _debugToggle.state = NSControlStateValueOff;
+    _debugModePopup = [[NSPopUpButton alloc] init];
+    _debugModePopup.translatesAutoresizingMaskIntoConstraints = NO;
+    for (const DebugVisualizationOption& option : kDebugVisualizationOptions) {
+        NSString* title = [NSString stringWithUTF8String:option.title];
+        [_debugModePopup addItemWithTitle:title];
+        NSMenuItem* item = [_debugModePopup lastItem];
+        item.representedObject = @(static_cast<NSInteger>(option.mode));
+    }
+    _debugModePopup.target = self;
+    _debugModePopup.action = @selector(debugVisualizationChanged:);
 
     NSStackView* stack = [NSStackView stackViewWithViews:@[
         _modePopup,
         _resolutionPopup,
         _screenshotButton,
-        _debugToggle,
+        _debugModePopup,
     ]];
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.spacing = 8.0;
@@ -438,9 +465,31 @@ bool isDynamicResolution(NSDictionary* info) {
     }
 
     id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:passDescriptor];
+    id<MTLTexture> drawableTexture = passDescriptor.colorAttachments[0].texture;
+    const double viewportWidth = drawableTexture ? drawableTexture.width : view.drawableSize.width;
+    const double viewportHeight = drawableTexture ? drawableTexture.height : view.drawableSize.height;
+    rtr::core::Logger::info("OnScreenSample",
+                            "Display pass viewport %.0fx%.0f drawableSize=%.0fx%.0f renderSize=%ux%u",
+                            viewportWidth,
+                            viewportHeight,
+                            view.drawableSize.width,
+                            view.drawableSize.height,
+                            _renderWidth,
+                            _renderHeight);
+    MTLViewport viewport = {0.0, 0.0, viewportWidth, viewportHeight, 0.0, 1.0};
+    [encoder setViewport:viewport];
+    MTLScissorRect scissor = {0, 0, static_cast<NSUInteger>(viewportWidth), static_cast<NSUInteger>(viewportHeight)};
+    [encoder setScissorRect:scissor];
     [encoder setRenderPipelineState:_displayPipeline];
     [encoder setFragmentTexture:sourceTexture atIndex:0];
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    const auto renderWidth = sourceTexture.width;
+    const auto renderHeight = sourceTexture.height;
+    const simd_float2 invRenderSize = simd_make_float2(renderWidth > 0 ? 1.0f / static_cast<float>(renderWidth)
+                                                                      : 0.0f,
+                                                       renderHeight > 0 ? 1.0f / static_cast<float>(renderHeight)
+                                                                       : 0.0f);
+    [encoder setFragmentBytes:&invRenderSize length:sizeof(invRenderSize) atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangleStrip vertexStart:0 vertexCount:4];
     [encoder endEncoding];
 
     [commandBuffer presentDrawable:drawable];
@@ -510,12 +559,17 @@ bool isDynamicResolution(NSDictionary* info) {
     rtr::core::Logger::info("OnScreenSample", "Screenshot requested -> %s", _pendingScreenshotPath.c_str());
 }
 
-- (void)debugModeChanged:(id)sender {
+- (void)debugVisualizationChanged:(id)sender {
     if (!_renderer) {
         return;
     }
-    const bool enabled = (_debugToggle.state == NSControlStateValueOn);
-    _renderer->setDebugMode(enabled);
+    NSMenuItem* item = [_debugModePopup selectedItem];
+    NSNumber* value = (NSNumber*)item.representedObject;
+    rtr::rendering::DebugVisualization visualization = rtr::rendering::DebugVisualization::None;
+    if (value) {
+        visualization = static_cast<rtr::rendering::DebugVisualization>(value.integerValue);
+    }
+    _renderer->setDebugVisualization(visualization);
     _renderer->resetAccumulation();
 }
 

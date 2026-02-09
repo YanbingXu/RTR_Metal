@@ -7,7 +7,9 @@
 #endif
 
 #define RTR_RAY_FLAG_DEBUG 0x1u
-#define RTR_RAY_FLAG_ACCUMULATE 0x2u
+#define RTR_RAY_FLAG_INSTANCE_COLOR 0x2u
+#define RTR_RAY_FLAG_INSTANCE_TRACE 0x4u
+#define RTR_RAY_FLAG_PRIMITIVE_TRACE 0x8u
 
 #define RTR_RAY_MASK_PRIMARY 0x3u
 #define RTR_RAY_MASK_SHADOW 0x1u
@@ -18,6 +20,8 @@
 
 #define RTR_MAX_AREA_LIGHTS 4u
 #define RTR_INVALID_MATERIAL_INDEX 0xFFFFFFFFu
+#define RTR_MATERIAL_FLAG_REFLECTIVE 0x1u
+#define RTR_MATERIAL_FLAG_REFRACTIVE 0x2u
 
 #ifdef __METAL_VERSION__
 
@@ -47,14 +51,14 @@ typedef struct RTRRayTracingResourceHeader {
 } RTRRayTracingResourceHeader;
 
 typedef struct RTRRayTracingMeshResource {
-    ulong vertexBufferAddress;
-    ulong indexBufferAddress;
+    uint positionOffset;
+    uint normalOffset;
+    uint texcoordOffset;
+    uint colorOffset;
+    uint indexOffset;
     uint vertexCount;
     uint indexCount;
-    uint vertexStride;
     uint materialIndex;
-    uint padding0;
-    uint padding1;
 } RTRRayTracingMeshResource;
 
 typedef struct RTRRayTracingInstanceResource {
@@ -62,8 +66,8 @@ typedef struct RTRRayTracingInstanceResource {
     float4x4 worldToObject;
     uint meshIndex;
     uint materialIndex;
-    uint padding0;
-    uint padding1;
+    uint primitiveOffset;
+    uint primitiveCount;
 } RTRRayTracingInstanceResource;
 
 #define RTR_INVALID_TEXTURE_INDEX 0xFFFFFFFFu
@@ -144,14 +148,14 @@ struct alignas(16) RayTracingResourceHeader {
 };
 
 struct alignas(16) RayTracingMeshResource {
-    std::uint64_t vertexBufferAddress = 0ULL;
-    std::uint64_t indexBufferAddress = 0ULL;
+    std::uint32_t positionOffset = 0;
+    std::uint32_t normalOffset = 0;
+    std::uint32_t texcoordOffset = 0;
+    std::uint32_t colorOffset = 0;
+    std::uint32_t indexOffset = 0;
     std::uint32_t vertexCount = 0;
     std::uint32_t indexCount = 0;
-    std::uint32_t vertexStride = 0;
-    std::uint32_t materialIndex = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
+    std::uint32_t materialIndex = std::numeric_limits<std::uint32_t>::max();
 };
 
 struct alignas(16) RayTracingInstanceResource {
@@ -159,8 +163,8 @@ struct alignas(16) RayTracingInstanceResource {
     simd_float4x4 worldToObject = matrix_identity_float4x4;
     std::uint32_t meshIndex = 0;
     std::uint32_t materialIndex = 0;
-    std::uint32_t padding0 = 0;
-    std::uint32_t padding1 = 0;
+    std::uint32_t primitiveOffset = 0;
+    std::uint32_t primitiveCount = 0;
 };
 
 struct alignas(16) RayTracingTextureResource {

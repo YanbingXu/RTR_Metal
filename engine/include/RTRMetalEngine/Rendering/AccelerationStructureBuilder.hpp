@@ -54,8 +54,11 @@ public:
                                                        const std::string& label,
                                                        void* commandQueueHandle) const;
 
+    void setDebugTlasTrace(bool enabled) noexcept { debugTlasTrace_ = enabled; }
+
 private:
     MetalContext& context_;
+    bool debugTlasTrace_ = false;
 };
 
 }  // namespace rtr::rendering

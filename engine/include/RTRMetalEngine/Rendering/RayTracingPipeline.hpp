@@ -20,7 +20,6 @@ public:
     bool initialize(MetalContext& context, const std::string& shaderLibraryPath);
     bool isValid() const noexcept;
     void* rayPipelineState() const noexcept;
-    void* accumulationPipelineState() const noexcept;
 
 private:
     class Impl;

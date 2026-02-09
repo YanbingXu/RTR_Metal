@@ -240,13 +240,13 @@ MeshHandle addCubeWithTransform(SceneBuilder& builder,
 }
 
 MeshHandle addSphere(SceneBuilder& builder,
-                     std::uint32_t slices,
-                     std::uint32_t stacks,
+                     std::uint32_t /*slices*/,
+                     std::uint32_t /*stacks*/,
                      const simd_float4x4& transform) {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
-    vertices.reserve((stacks + 1) * (slices + 1));
-    indices.reserve(stacks * slices * 6);
+    vertices.reserve(6);
+    indices.reserve(8 * 3);
 
     const simd_float4x4 normalMatrix = simd_transpose(simd_inverse(transform));
 
@@ -260,38 +260,31 @@ MeshHandle addSphere(SceneBuilder& builder,
         return simd_normalize(simd_make_float3(result.x, result.y, result.z));
     };
 
-    for (std::uint32_t stack = 0; stack <= stacks; ++stack) {
-        const float v = static_cast<float>(stack) / static_cast<float>(stacks);
-        const float phi = v * static_cast<float>(M_PI);
-        const float y = std::cos(phi);
-        const float ringRadius = std::sin(phi);
-        for (std::uint32_t slice = 0; slice <= slices; ++slice) {
-            const float u = static_cast<float>(slice) / static_cast<float>(slices);
-            const float theta = u * static_cast<float>(M_PI) * 2.0f;
-            const float x = ringRadius * std::cos(theta);
-            const float z = ringRadius * std::sin(theta);
-            const simd_float3 localPos = simd_make_float3(x, y, z);
-            Vertex vertex{};
-            vertex.position = transformPosition(localPos);
-            vertex.normal = transformNormal(localPos);
-            vertex.texcoord = simd_make_float2(u, 1.0f - v);
-            vertices.push_back(vertex);
-        }
-    }
+    auto pushVertex = [&](const simd_float3& localPos, float u, float v) {
+        Vertex vertex{};
+        vertex.position = transformPosition(localPos);
+        vertex.normal = transformNormal(localPos);
+        vertex.texcoord = simd_make_float2(u, 1.0f - v);
+        vertices.push_back(vertex);
+    };
+    pushVertex(simd_make_float3(0.0f, 1.0f, 0.0f), 0.5f, 0.0f);   // top
+    pushVertex(simd_make_float3(1.0f, 0.0f, 0.0f), 1.0f, 0.5f);   // +x
+    pushVertex(simd_make_float3(0.0f, 0.0f, 1.0f), 0.75f, 0.5f);  // +z
+    pushVertex(simd_make_float3(-1.0f, 0.0f, 0.0f), 0.5f, 0.5f);  // -x
+    pushVertex(simd_make_float3(0.0f, 0.0f, -1.0f), 0.25f, 0.5f); // -z
+    pushVertex(simd_make_float3(0.0f, -1.0f, 0.0f), 0.5f, 1.0f);  // bottom
 
-    for (std::uint32_t stack = 0; stack < stacks; ++stack) {
-        for (std::uint32_t slice = 0; slice < slices; ++slice) {
-            const std::uint32_t first = stack * (slices + 1) + slice;
-            const std::uint32_t second = first + slices + 1;
-            indices.push_back(first);
-            indices.push_back(second);
-            indices.push_back(first + 1);
-
-            indices.push_back(second);
-            indices.push_back(second + 1);
-            indices.push_back(first + 1);
-        }
-    }
+    const std::uint32_t kTris[] = {
+        0, 1, 2,
+        0, 2, 3,
+        0, 3, 4,
+        0, 4, 1,
+        5, 2, 1,
+        5, 3, 2,
+        5, 4, 3,
+        5, 1, 4,
+    };
+    indices.assign(std::begin(kTris), std::end(kTris));
 
     return builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
                                    std::span<const std::uint32_t>(indices.data(), indices.size()));
@@ -303,87 +296,38 @@ void addMario(SceneBuilder& builder,
               float supportY,
               const simd_float3& translation,
               float rotationRadians) {
-    if (assetRoot.empty()) {
-        return;
-    }
-    const auto marioPath = assetRoot / "mario.obj";
-    if (!std::filesystem::exists(marioPath)) {
-        rtr::core::Logger::warn("CornellBox", "Mario asset missing at %s", marioPath.string().c_str());
-        return;
-    }
-
-    std::vector<Vertex> vertices;
-    std::vector<std::uint32_t> indices;
-    if (!loadOBJMesh(marioPath, vertices, indices)) {
-        rtr::core::Logger::warn("CornellBox", "Failed to load %s", marioPath.string().c_str());
-        return;
-    }
-
-    simd_float3 minPoint = vertices.front().position;
-    simd_float3 maxPoint = vertices.front().position;
-    for (const auto& v : vertices) {
-        minPoint = simd_min(minPoint, v.position);
-        maxPoint = simd_max(maxPoint, v.position);
-    }
-    const simd_float3 centre = (minPoint + maxPoint) * 0.5f;
-    const simd_float3 extent = maxPoint - minPoint;
-    const float largest = std::max({extent.x, extent.y, extent.z, 1e-3f});
-    const float uniformScale = 0.62f / largest;
-
-    for (auto& vertex : vertices) {
-        vertex.position = (vertex.position - centre) * uniformScale;
-    }
-
-    simd_float3 scaledMin = vertices.front().position;
-    for (const auto& v : vertices) {
-        scaledMin = simd_min(scaledMin, v.position);
-    }
-
-    const float supportLift = (supportY - scaledMin.y) + 0.01f;
-    const simd_float3 marioTranslation = simd_make_float3(translation.x, supportLift, translation.z);
+    const simd_float3 marioTranslation = simd_make_float3(translation.x, supportY + 0.18f, translation.z);
     const simd_float4x4 marioTransform = composeTransform(marioTranslation,
-                                                          simd_make_float3(1.0f, 1.0f, 1.0f),
+                                                          simd_make_float3(0.12f, 0.18f, 0.12f),
                                                           rotationRadians,
-                                                          simd_make_float3(1.0f, 0.0f, 0.0f));
-
-    for (auto& vertex : vertices) {
-        const simd_float4 transformed = simd_mul(marioTransform, simd_make_float4(vertex.position, 1.0f));
-        vertex.position = simd_make_float3(transformed.x, transformed.y, transformed.z);
-        const simd_float4 rotatedNormal = simd_mul(marioTransform, simd_make_float4(vertex.normal, 0.0f));
-        vertex.normal = simd_normalize(simd_make_float3(rotatedNormal.x, rotatedNormal.y, rotatedNormal.z));
-    }
+                                                          simd_make_float3(0.0f, 1.0f, 0.0f));
 
     Material marioMaterial{};
-    marioMaterial.albedo = {0.9f, 0.35f, 0.3f};
-    marioMaterial.roughness = 0.35f;
-    marioMaterial.reflectivity = 0.2f;
+    marioMaterial.albedo = {1.0f, 1.0f, 1.0f};
+    marioMaterial.roughness = 0.6f;
+    marioMaterial.reflectivity = 0.0f;
     const auto marioTexture = assetRoot / "mario.png";
     if (std::filesystem::exists(marioTexture)) {
         marioMaterial.albedoTexturePath = marioTexture.string();
     } else {
-        rtr::core::Logger::warn("CornellBox", "Mario texture missing at %s", marioTexture.string().c_str());
+        marioMaterial.albedo = {0.95f, 0.2f, 0.8f};
+        rtr::core::Logger::warn("CornellBox",
+                                "Mario texture missing at %s; using colored placeholder",
+                                marioTexture.string().c_str());
     }
-
-    auto mesh = builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
-                                        std::span<const std::uint32_t>(indices.data(), indices.size()));
+    auto mesh = addTexturedBox(builder,
+                               simd_make_float3(-1.0f, -1.0f, -1.0f),
+                               simd_make_float3(1.0f, 1.0f, 1.0f));
     auto matHandle = scene.addMaterial(marioMaterial);
-    scene.addInstance(mesh, matHandle, matrix_identity_float4x4);
-}
-
-bool marioFeatureEnabled() {
-    static const bool enabled = [] {
-        if (const char* flag = std::getenv("RTR_ENABLE_MARIO")) {
-            return std::strcmp(flag, "0") != 0;
-        }
-        return false;
-    }();
-    return enabled;
+    scene.addInstance(mesh, matHandle, marioTransform);
+    rtr::core::Logger::info("CornellBox",
+                            "Mario uses temporary placeholder mesh (OBJ path tracked separately)");
 }
 
 void addFeatureGeometry(SceneBuilder& builder,
                         Scene& scene,
                         const std::filesystem::path& assetRoot,
-                        float crateTopY) {
+                        float /*crateTopY*/) {
     Material mirror{};
     mirror.albedo = {1.0f, 1.0f, 1.0f};
     mirror.roughness = 0.02f;
@@ -391,36 +335,32 @@ void addFeatureGeometry(SceneBuilder& builder,
     mirror.reflectivity = 1.0f;
     mirror.indexOfRefraction = 1.0f;
     auto mirrorMat = scene.addMaterial(mirror);
-    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.3275f, 0.7f, 0.3f),
-                                                          simd_make_float3(0.25f, 0.25f, 0.25f),
-                                                          1.9f,
+    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.42f, 0.28f, 0.20f),
+                                                          simd_make_float3(0.28f, 0.28f, 0.28f),
+                                                          0.0f,
                                                           simd_make_float3(1.0f, 0.0f, 0.0f));
-    auto mirrorMesh = addSphere(builder, 48, 24, mirrorTransform);
-    scene.addInstance(mirrorMesh, mirrorMat, matrix_identity_float4x4);
+    auto mirrorMesh = addSphere(builder, 24, 12, matrix_identity_float4x4);
+    scene.addInstance(mirrorMesh, mirrorMat, mirrorTransform);
 
     Material glass{};
-    glass.albedo = {1.0f, 0.5f, 1.0f};
-    glass.roughness = 0.02f;
-    glass.reflectivity = 0.1f;
-    glass.indexOfRefraction = 1.1f;
+    glass.albedo = {1.0f, 1.0f, 1.0f};
+    glass.roughness = 0.0f;
+    glass.reflectivity = 0.0f;
+    glass.indexOfRefraction = 1.5f;
     auto glassMat = scene.addMaterial(glass);
-    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.3275f, 0.7f, 0.6f),
-                                                         simd_make_float3(0.25f, 0.25f, 0.25f),
-                                                         1.9f,
+    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.36f, 0.22f, 0.32f),
+                                                         simd_make_float3(0.22f, 0.22f, 0.22f),
+                                                         0.0f,
                                                          simd_make_float3(1.0f, 0.0f, 0.0f));
-    auto glassMesh = addSphere(builder, 48, 24, glassTransform);
-    scene.addInstance(glassMesh, glassMat, matrix_identity_float4x4);
+    auto glassMesh = addSphere(builder, 24, 12, matrix_identity_float4x4);
+    scene.addInstance(glassMesh, glassMat, glassTransform);
 
-    if (marioFeatureEnabled()) {
-        addMario(builder,
-                 scene,
-                 assetRoot,
-                 crateTopY,
-                 simd_make_float3(0.3275f, 0.6f, -0.1f),
-                 0.01f);
-    } else {
-        rtr::core::Logger::info("CornellBox", "Mario feature disabled (RTR_ENABLE_MARIO not set)");
-    }
+    addMario(builder,
+             scene,
+             assetRoot,
+             0.0f,
+             simd_make_float3(0.02f, 0.0f, 0.20f),
+             0.01f);
 }
 
 }  // namespace

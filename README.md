@@ -1,75 +1,104 @@
 # RTR Metal
 
-RTR Metal is being rebuilt as a C++20 + Metal hardware ray tracing engine that targets Apple Silicon Macs. The repository now exposes a reusable static library (`RTRMetalEngine`), a small command-line sample (`RTRMetalSample`), buildable Metal shaders, and an executable smoke test to validate the toolchain.
+## 文档状态
+- 当前有效（中文主文档）
+- 最后更新：2026-02-06
 
-## Stage Status
+## 项目简介
+`RTR Metal` 正在重构为面向 Apple Silicon 的 C++20 + Metal 硬件光线追踪引擎。
+当前仓库提供：
+- 可复用静态库 `RTRMetalEngine`
+- 命令行示例 `RTRMetalSample`
+- 桌面窗口示例 `RTRMetalOnScreenSample`
+- 与构建流程集成的 Metal shader 编译
 
-- ✅ **Stage 1** – CMake scaffold, shader build integration, sample + test binaries
-- ✅ **Stage 2** – Core math/utilities, configuration & logging, Metal context, buffer allocator, scene + geometry upload
-- 🚧 **Stage 3** – Stage&nbsp;3D hardware shading polish in progress; software RT/fallback work is paused until Stage 4
+## 阶段状态（唯一口径）
+- `Stage 1`：完成（工程骨架与工具链）
+- `Stage 2`：完成（核心模块、资源上传、场景基础）
+- `Stage 3A`：完成（硬件 RT 计算路径打通）
+- `Stage 3B`：完成（Cornell 基础着色）
+- `Stage 3C`：完成（On-Screen 示例与截图流程）
+- `Stage 3D`：进行中（反射/折射/累积/性能完善）
+- `Stage 4`：未开始（软件/MPS 回退恢复，受 Stage 3D 阻塞）
 
-Remaining stages focus exclusively on the hardware ray tracing pipeline per [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md). Software RT milestones were pushed to Stage 4.
+详细阶段定义见：[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
 
-## Project Layout
+## 目录结构
+- `engine/`：引擎代码（`Core` / `Rendering` / `Scene`）
+- `sample/`：CLI 与 On-Screen 示例
+- `shaders/`：Metal shader 源码
+- `tests/`：GoogleTest + CTest
+- `config/`：配置文件
+- `assets/`：运行资源
+- `docs/`：设计、计划、归档文档
 
-- `CMakeLists.txt` – Root build definition (library, sample, shaders, tests).
-- `engine/` – Engine headers (`include/RTRMetalEngine/...`) and sources (`src/...`) split into `Core`, `Rendering`, and `Scene` bundles.
-- `config/engine.ini` – Sample configuration loaded by the CLI demo via `ConfigLoader`.
-- `sample/` – Console and on-screen samples that exercise the renderer facade.
-- `tests/` – Executables registered with CTest for deterministic regression coverage.
-- `shaders/` – Metal shader sources compiled into `RTRShaders.metallib` at build time.
-- `docs/` – Architecture notes and development guidelines.
+## 依赖环境
+- macOS 14+
+- Xcode 15+（含 `xcrun`、`metal`、`metallib`）
+- 支持 Metal Ray Tracing 的 Apple Silicon GPU
+- CMake 3.21+
 
-## Requirements
-
-- macOS 14 (Sonoma) or newer
-- Xcode 15+ command line tools (for `xcrun`, `metal`, `metallib`)
-- Apple Silicon GPU with Metal ray tracing capability
-- CMake ≥ 3.21
-- Initial CMake configure must reach GitHub once to fetch GoogleTest (cached afterward)
-
-## Building
-
-Configure and build from the repository root:
-
+## 构建与运行
 ```bash
 cmake -S . -B build
 cmake --build build
 ```
 
-This flow compiles the engine library, sample executable, unit test binary, and generates `build/shaders/RTRShaders.metallib` automatically.
+CLI 示例：
+```bash
+./build/RTRMetalSample --scene=cornell --frames=1 --mode=hardware --hash
+```
 
-## Running
+On-Screen 示例：
+```bash
+cmake --build build --target RTRMetalOnScreenSample
+open build/RTRMetalOnScreenSample.app
+```
 
-- Sample: `./build/RTRMetalSample [--output=FILE] [--scene=cornell|reflective|glass] [--resolution=WxH] [--frames=N] [--mode=auto|hardware] [--accumulation=on|off] [--accumulation-frames=N] [--samples-per-pixel=N] [--sample-seed=N] [--max-bounces=N] [--hash] [--debug-albedo]`
-- `reflective` 和 `glass` 场景需要在 `assets/` 下提供 `mario.obj`（可从官方 MetalRayTracing 示例拷贝），否则会退回简易几何体。
-- 调试可使用 `--debug-albedo` 直接输出材质反照率，便于验证资源管线。
-- `--mode=hardware` 会强制尝试硬件 RT；默认 `auto` 与硬件模式一致，保留未来引入备用管线的选择。
-- On-Screen Sample: build with `cmake --build build --target RTRMetalOnScreenSample` (or `cmake-build-debug` when using CLion) and run `open build/RTRMetalOnScreenSample.app`. The overlay toolbar provides mode selection (`auto|hardware`), resolution presets (plus a dynamic entry when resizing the window), and a screenshot button that writes `~/Pictures/RTR_<timestamp>.ppm`. Reference hash for the Cornell default is `0x72FDA1309C1E4FB1` (1024×768 single-sample).
-- Tests: `cd build && ctest --output-on-failure`
+## 测试
+默认 `build` 目录可能关闭测试（`RTR_BUILD_TESTS=OFF`）。建议使用独立目录显式开启：
 
-Only the hardware ray tracing backend is active. Former software/MPS paths have been removed until the hardware feature set is complete.
+```bash
+cmake -S . -B build-tests -DRTR_BUILD_TESTS=ON
+cmake --build build-tests
+cd build-tests && ctest --output-on-failure
+```
 
-Scenes available via `--scene=` include `prism`, `cornell`, `reflective`, and `glass`. The reflective/glass demos expect OBJ assets under `assets/` (for example the bundled `assets/mario.obj` sourced from the reference project).
+## Cornell 图像回归基线（2026-02-09）
+以下 hash 基于当前主线：`--scene=cornell` + `--resolution=1024x768` + `--mode=hardware` +
+Mario 临时占位几何策略。
 
-> Tip: Adjust `config/engine.ini` to point at custom shader libraries or change the reported application name when embedding the engine elsewhere.
+命令模板：
+```bash
+./cmake-build-debug/RTRMetalSample \
+  --scene=cornell \
+  --resolution=1024x768 \
+  --frames=<N> \
+  --mode=hardware \
+  --asset-root=assets \
+  --config=config/engine.ini \
+  --output=/tmp/cornell_baseline_f<N>.ppm \
+  --hash
+```
 
-### Software RT Status
+当前基线：
+- `frames=1`：`0x9A6AD96130FF3506`
+- `frames=4`：`0x0E0D4150478BDFEE`
+- `frames=16`：`0xEA655D1AB536C88C`
 
-The previous software/MPS fallback renderer, CLI sample, and docs remain in `docs/mps_*.md` for historical context but are not part of the active build.
+## 当前已知事实
+- 当前仅启用硬件 RT 路径；`auto` 与 `hardware` 行为一致。
+- 旧软件/MPS 路径已归档，计划在 `Stage 4` 恢复。
+- Cornell 场景中的 Mario 当前使用临时占位几何（保留材质/纹理链路），OBJ 网格专项见 [`docs/mario_obj_blas_issue.md`](docs/mario_obj_blas_issue.md)。
+- 部分历史文档仍保留用于追溯，但均已标注“历史归档”。
 
-## Documentation
-
-Project direction, architecture, and working agreements live in:
-
-- [`docs/Development_Guidelines.md`](docs/Development_Guidelines.md)
-- [`docs/architecture.md`](docs/architecture.md)
+## 关键文档
 - [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md)
-- [`AGENTS.md`](AGENTS.md) – Contributor quick-start covering structure, build/test flow, and review expectations
-- [`docs/Stage3C_OnScreenDemo.md`](docs/Stage3C_OnScreenDemo.md) – Notes covering the interactive sample and current reference hashes
+- [`AGENTS.md`](AGENTS.md)
+- [`docs/Documentation_Index.md`](docs/Documentation_Index.md)
+- [`docs/project_overview.md`](docs/project_overview.md)
+- [`docs/architecture.md`](docs/architecture.md)
+- [`docs/Development_Guidelines.md`](docs/Development_Guidelines.md)
 
-The optional keys `accumulation = on|off`, `accumulationFrames = <n>`, `samplesPerPixel = <n>`, `sampleSeed = <n>`, and `maxBounces = <n>` can be added to `config/engine.ini` to provide defaults for the sample apps, and the CLI flags above override those values when present.
-
-## License
-
-This project remains licensed under the MIT License. See [LICENSE](LICENSE) for details.
+## 许可证
+MIT，见 [`LICENSE`](LICENSE)。

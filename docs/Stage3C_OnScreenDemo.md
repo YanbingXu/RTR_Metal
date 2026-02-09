@@ -1,42 +1,28 @@
-# Stage 3C – On-Screen Sample Field Notes
+# Stage 3C On-Screen 示例记录
 
-The `RTRMetalOnScreenSample` bundle mirrors Apple’s Metal ray tracing viewer while staying on top of the shared renderer. This note captures the current behaviour so Stage 3C has a reproducible baseline.
+## 文档状态
+- 当前有效（基线记录）
 
-## Launching
+## 目标
+记录 `RTRMetalOnScreenSample` 的可复现实验基线，便于回归对照。
 
+## 启动方式
 ```bash
-cmake --build cmake-build-debug --target RTRMetalOnScreenSample
-open cmake-build-debug/RTRMetalOnScreenSample.app
+cmake --build build --target RTRMetalOnScreenSample
+open build/RTRMetalOnScreenSample.app
 ```
 
-The app sets the activation policy to `NSApplicationActivationPolicyRegular` and brings the window forward when it launches. If macOS still leaves the window in the dock, click the icon once—no additional parameters are required.
+## 当前可用控制项
+- 模式：`Auto`、`Hardware`（当前两者都走硬件路径）
+- 分辨率：预设 + 窗口动态分辨率
+- 截图：输出到 `~/Pictures/RTR_<timestamp>.ppm`
+- 调试可视化：`none/albedo/instance-colors/instance-trace/primitive-trace`
 
-## Runtime Controls
-
-The overlay in the top-left corner exposes three immediate controls:
-
-- **Mode** – `Auto`, `Hardware`. The gradient/software option has been removed; this still calls `Renderer::setShadingMode` so the UI and CLI share the same switch.
-- **Resolution** – 512×512, 1024×768, 1280×720, 1920×1080 plus a dynamic entry that tracks manual window resizing. Selecting a preset updates `MTKView::drawableSize` and `Renderer::setRenderSize`.
-- **Screenshot** – saves the current frame to `~/Pictures/RTR_<timestamp>.ppm`. The handler pipes the request back through `Renderer::renderFrame()` so we reuse the existing PPM writer.
-
-## Reference Output
-
-Running the CLI sample with the on-screen defaults produces the current hardware baseline:
-
+## 参考输出（CLI 对照）
 ```bash
-cd cmake-build-debug
-./RTRMetalSample --scene=cornell --frames=1 --mode=hardware \
-    --asset-root=.. --config=../config/engine.ini \
-    --resolution=1024x768 --output=onscreen_reference.ppm --hash
+./build/RTRMetalSample --scene=cornell --frames=1 --mode=hardware \
+  --resolution=1024x768 --output=onscreen_reference.ppm --hash
 ```
 
-- Output path: `cmake-build-debug/onscreen_reference.ppm`
-- Dimensions: 1024×768 (single-sample Cornell box)
-- FNV-1a hash: `0x72FDA1309C1E4FB1`
-
-Use this hash for manual verification until we wire the on-screen path into automated checks.
-
-## Follow-Up
-
-- Hook the same hash check into docs/tests once Stage 3C closes.
-- Add UI affordances for accumulation reset and backend toggling once we mirror Apple’s full toolbar.
+- 参考 hash（历史记录）：`0x72FDA1309C1E4FB1`
+- 说明：在 shader 或采样策略变更后，需更新此基线并同步到文档与测试。
