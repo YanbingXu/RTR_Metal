@@ -18,17 +18,10 @@
 
 namespace {
 
-constexpr std::size_t kMaxTrianglesPerGeometry = 4096;
+constexpr std::size_t kMaxTrianglesPerGeometry = 16384;
 
 MTLPackedFloat3 makePackedColumn(const simd_float4& column) {
     return MTLPackedFloat3Make(column.x, column.y, column.z);
-}
-
-MTLPackedFloat4x3 makePackedTransform(const simd_float4x4& transform) {
-    return MTLPackedFloat4x3(makePackedColumn(transform.columns[0]),
-                             makePackedColumn(transform.columns[1]),
-                             makePackedColumn(transform.columns[2]),
-                             makePackedColumn(transform.columns[3]));
 }
 
 NSMutableArray<MTLAccelerationStructureTriangleGeometryDescriptor*>*
@@ -101,7 +94,9 @@ bool populateInstanceDescriptors(std::span<const rtr::rendering::InstanceBuildIn
         [blasArray addObject:blas];
 
         auto& descriptor = descriptors[i];
-        descriptor.transformationMatrix = makePackedTransform(instance.transform);
+        for (int column = 0; column < 4; ++column) {
+            descriptor.transformationMatrix.columns[column] = makePackedColumn(instance.transform.columns[column]);
+        }
         descriptor.options = MTLAccelerationStructureInstanceOptionDisableTriangleCulling;
         descriptor.mask = instance.mask;
         descriptor.intersectionFunctionTableOffset = instance.intersectionFunctionTableOffset;
@@ -381,6 +376,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
 
     if (debugTlasTrace) {
         core::Logger::info("ASBuilder", "TLAS '%s' descriptors=%zu", label.c_str(), cpuDescriptors.size());
+        core::Logger::info("ASBuilder", "TLAS '%s' BLAS array count=%lu", label.c_str(), static_cast<unsigned long>(blasArray.count));
         const std::size_t maxLog = std::min<std::size_t>(cpuDescriptors.size(), 9);
         for (std::size_t i = 0; i < maxLog; ++i) {
             const auto& descriptor = cpuDescriptors[i];

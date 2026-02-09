@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "RTRMetalEngine/Scene/Scene.hpp"
@@ -23,6 +25,8 @@ struct RendererDebugOptions {
     bool geometryTrace = false;
     bool tlasTrace = false;
     bool cameraTrace = false;
+    bool isolateCornellExtras = false;
+    std::optional<std::uint32_t> isolateCornellMeshIndex;
 };
 
 class Renderer {

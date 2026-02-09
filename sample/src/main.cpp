@@ -51,6 +51,8 @@ struct CommandLineOptions {
     bool debugGeometryTrace = false;
     bool debugTlasTrace = false;
     bool debugCameraTrace = false;
+    bool debugIsolateCornellExtras = false;
+    std::optional<std::uint32_t> debugIsolateCornellMeshIndex;
 };
 
 void printUsage() {
@@ -70,6 +72,8 @@ void printUsage() {
               << "                         选择交互式可视化模式\n"
               << "  --debug-log=scene|geometry|tlas|camera[,..]\n"
               << "                         启用附加日志/追踪 (可重复)\n"
+              << "  --debug-isolate-extras 仅保留 Cornell 的扩展几何（mesh 6/7/8）参与 TLAS\n"
+              << "  --debug-isolate-mesh=N      仅保留指定 Cornell mesh（需配合 --debug-isolate-extras）\n"
               << "  --help                 打印帮助\n";
 }
 
@@ -220,6 +224,12 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
             options.debugVisualization = arg.substr(22);
         } else if (arg.rfind("--debug-log=", 0) == 0) {
             applyDebugLogList(options, arg.substr(12));
+        } else if (arg == "--debug-isolate-extras") {
+            options.debugIsolateCornellExtras = true;
+        } else if (arg.rfind("--debug-isolate-mesh=", 0) == 0) {
+            const std::uint32_t meshIndex = parseUIntArgument(arg.substr(21), "--debug-isolate-mesh");
+            options.debugIsolateCornellMeshIndex = meshIndex;
+            options.debugIsolateCornellExtras = true;
         } else {
             throw std::runtime_error("Unknown option: " + arg);
         }
@@ -351,6 +361,11 @@ int main(int argc, const char* argv[]) {
     }
     if (options.debugCameraTrace) {
         debugOptionsState.cameraTrace = true;
+        applyDebugOptions = true;
+    }
+    if (options.debugIsolateCornellExtras) {
+        debugOptionsState.isolateCornellExtras = true;
+        debugOptionsState.isolateCornellMeshIndex = options.debugIsolateCornellMeshIndex;
         applyDebugOptions = true;
     }
     if (applyDebugOptions) {
