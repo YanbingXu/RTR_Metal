@@ -1,11 +1,27 @@
 #include "RTRMetalEngine/Rendering/GeometryStore.hpp"
 
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 
 namespace rtr::rendering {
+namespace {
+
+std::uint64_t fnv1a64(const void* data, std::size_t byteCount) {
+    constexpr std::uint64_t kOffset = 1469598103934665603ull;
+    constexpr std::uint64_t kPrime = 1099511628211ull;
+    const auto* bytes = static_cast<const std::uint8_t*>(data);
+    std::uint64_t hash = kOffset;
+    for (std::size_t i = 0; i < byteCount; ++i) {
+        hash ^= static_cast<std::uint64_t>(bytes[i]);
+        hash *= kPrime;
+    }
+    return hash;
+}
+
+}  // namespace
 
 GeometryStore::GeometryStore(BufferAllocator& allocator)
     : allocator_(allocator) {}
@@ -23,22 +39,21 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
         return std::nullopt;
     }
 
-    constexpr std::size_t kPackedPositionStride = sizeof(float) * 3;
-    std::vector<float> packedPositions;
-    packedPositions.reserve(vertices.size() * 3);
+    std::vector<float> positions;
+    positions.reserve(vertices.size() * 3);
     for (const auto& vertex : vertices) {
-        packedPositions.push_back(vertex.position.x);
-        packedPositions.push_back(vertex.position.y);
-        packedPositions.push_back(vertex.position.z);
+        positions.push_back(vertex.position.x);
+        positions.push_back(vertex.position.y);
+        positions.push_back(vertex.position.z);
     }
-    const std::size_t packedLength = packedPositions.size() * sizeof(float);
+    const std::size_t vertexLength = positions.size() * sizeof(float);
     const std::size_t indexLength = indices.size() * sizeof(std::uint32_t);
 
     const std::string gpuVertexLabel = label + ".vb.gpu";
     const std::string gpuIndexLabel = label + ".ib.gpu";
 
-    BufferHandle gpuVertexBuffer = allocator_.createBuffer(packedLength,
-                                                          packedPositions.empty() ? nullptr : packedPositions.data(),
+    BufferHandle gpuVertexBuffer = allocator_.createBuffer(vertexLength,
+                                                          positions.empty() ? nullptr : positions.data(),
                                                           gpuVertexLabel.c_str());
     BufferHandle gpuIndexBuffer = allocator_.createBuffer(indexLength, indices.data(), gpuIndexLabel.c_str());
 
@@ -48,15 +63,19 @@ std::optional<std::size_t> GeometryStore::uploadMesh(const scene::Mesh& mesh, co
     }
 
     if (debugGeometryTrace_) {
+        const std::uint64_t vertexHash = fnv1a64(positions.data(), vertexLength);
+        const std::uint64_t indexHash = fnv1a64(indices.data(), indexLength);
         core::Logger::info("GeometryStore",
-                           "Upload '%s': vertices=%zu (%zu bytes) indices=%zu (%zu bytes) gpuVB=%zu gpuIB=%zu",
+                           "Upload '%s': vertices=%zu (%zu bytes) indices=%zu (%zu bytes) gpuVB=%zu gpuIB=%zu vh=0x%016llX ih=0x%016llX",
                            label.c_str(),
                            vertices.size(),
-                           packedLength,
+                           vertexLength,
                            indices.size(),
                            indexLength,
                            gpuVertexBuffer.length(),
-                           gpuIndexBuffer.length());
+                           gpuIndexBuffer.length(),
+                           static_cast<unsigned long long>(vertexHash),
+                           static_cast<unsigned long long>(indexHash));
     }
 
     meshes_.emplace_back(std::move(gpuVertexBuffer),
