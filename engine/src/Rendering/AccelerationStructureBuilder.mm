@@ -18,7 +18,7 @@
 
 namespace {
 
-constexpr std::size_t kMaxTrianglesPerGeometry = 16384;
+constexpr std::size_t kMaxTrianglesPerGeometry = 4096;
 
 MTLPackedFloat3 makePackedColumn(const simd_float4& column) {
     return MTLPackedFloat3Make(column.x, column.y, column.z);
@@ -72,7 +72,7 @@ makeTriangleDescriptors(const rtr::rendering::MeshBuffers& meshBuffers,
 
 bool populateInstanceDescriptors(std::span<const rtr::rendering::InstanceBuildInput> instances,
                                  NSMutableArray<id<MTLAccelerationStructure>>* blasArray,
-                                 std::vector<MTLAccelerationStructureUserIDInstanceDescriptor>& descriptors,
+                                 std::vector<MTLAccelerationStructureInstanceDescriptor>& descriptors,
                                  const std::string& label) {
     descriptors.resize(instances.size());
     for (std::size_t i = 0; i < instances.size(); ++i) {
@@ -101,7 +101,6 @@ bool populateInstanceDescriptors(std::span<const rtr::rendering::InstanceBuildIn
         descriptor.mask = instance.mask;
         descriptor.intersectionFunctionTableOffset = instance.intersectionFunctionTableOffset;
         descriptor.accelerationStructureIndex = static_cast<uint32_t>(i);
-        descriptor.userID = instance.userID;
     }
     return true;
 }
@@ -296,7 +295,7 @@ std::optional<TopLevelBuildInfo> AccelerationStructureBuilder::queryTopLevelSize
         return std::nullopt;
     }
 
-    const std::size_t descriptorStride = sizeof(MTLAccelerationStructureUserIDInstanceDescriptor);
+    const std::size_t descriptorStride = sizeof(MTLAccelerationStructureInstanceDescriptor);
     const std::size_t descriptorBufferSize = descriptorStride * instances.size();
     if (descriptorBufferSize == 0) {
         core::Logger::warn("ASBuilder", "Descriptor stride invalid while sizing TLAS '%s'", label.c_str());
@@ -305,7 +304,7 @@ std::optional<TopLevelBuildInfo> AccelerationStructureBuilder::queryTopLevelSize
 
     NSMutableArray<id<MTLAccelerationStructure>>* blasArray =
         [NSMutableArray arrayWithCapacity:instances.size()];
-    std::vector<MTLAccelerationStructureUserIDInstanceDescriptor> cpuDescriptors;
+    std::vector<MTLAccelerationStructureInstanceDescriptor> cpuDescriptors;
     if (!populateInstanceDescriptors(instances, blasArray, cpuDescriptors, label)) {
         return std::nullopt;
     }
@@ -317,7 +316,7 @@ std::optional<TopLevelBuildInfo> AccelerationStructureBuilder::queryTopLevelSize
     descriptor.instanceDescriptorBuffer = nil;
     descriptor.instanceDescriptorBufferOffset = 0;
     descriptor.instanceDescriptorStride = descriptorStride;
-    descriptor.instanceDescriptorType = MTLAccelerationStructureInstanceDescriptorTypeUserID;
+    descriptor.instanceDescriptorType = MTLAccelerationStructureInstanceDescriptorTypeDefault;
 
     MTLAccelerationStructureSizes sizes = [device accelerationStructureSizesWithDescriptor:descriptor];
 
@@ -369,7 +368,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
 
     NSMutableArray<id<MTLAccelerationStructure>>* blasArray =
         [NSMutableArray arrayWithCapacity:instances.size()];
-    std::vector<MTLAccelerationStructureUserIDInstanceDescriptor> cpuDescriptors;
+    std::vector<MTLAccelerationStructureInstanceDescriptor> cpuDescriptors;
     if (!populateInstanceDescriptors(instances, blasArray, cpuDescriptors, label)) {
         return std::nullopt;
     }
@@ -385,7 +384,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
                                "TLAS desc[%zu]: accelIndex=%u userID=%u mask=0x%02X translate=(%.3f, %.3f, %.3f)",
                                i,
                                descriptor.accelerationStructureIndex,
-                               descriptor.userID,
+                               static_cast<unsigned int>(i),
                                descriptor.mask,
                                static_cast<double>(t3.x),
                                static_cast<double>(t3.y),
@@ -393,7 +392,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
         }
     }
 
-    if (cpuDescriptors.size() * sizeof(MTLAccelerationStructureUserIDInstanceDescriptor) !=
+    if (cpuDescriptors.size() * sizeof(MTLAccelerationStructureInstanceDescriptor) !=
         sizes->instanceDescriptorBufferSize) {
         core::Logger::warn("ASBuilder",
                            "Descriptor size mismatch while building TLAS '%s'", label.c_str());
@@ -401,7 +400,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
 
     id<MTLBuffer> instanceBuffer =
         [device newBufferWithBytes:cpuDescriptors.data()
-                             length:cpuDescriptors.size() * sizeof(MTLAccelerationStructureUserIDInstanceDescriptor)
+                             length:cpuDescriptors.size() * sizeof(MTLAccelerationStructureInstanceDescriptor)
                             options:MTLResourceStorageModeShared];
     if (!instanceBuffer) {
         core::Logger::error("ASBuilder", "Failed to upload TLAS descriptors for '%s'", label.c_str());
@@ -409,7 +408,7 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
     }
     if ([instanceBuffer storageMode] == MTLStorageModeManaged) {
         [instanceBuffer didModifyRange:
-                           NSMakeRange(0, cpuDescriptors.size() * sizeof(MTLAccelerationStructureUserIDInstanceDescriptor))];
+                           NSMakeRange(0, cpuDescriptors.size() * sizeof(MTLAccelerationStructureInstanceDescriptor))];
     }
 
     if (debugTlasTrace) {
@@ -456,8 +455,8 @@ std::optional<AccelerationStructure> AccelerationStructureBuilder::buildTopLevel
     descriptor.instancedAccelerationStructures = blasArray;
     descriptor.instanceDescriptorBuffer = instanceBuffer;
     descriptor.instanceDescriptorBufferOffset = 0;
-    descriptor.instanceDescriptorStride = sizeof(MTLAccelerationStructureUserIDInstanceDescriptor);
-    descriptor.instanceDescriptorType = MTLAccelerationStructureInstanceDescriptorTypeUserID;
+    descriptor.instanceDescriptorStride = sizeof(MTLAccelerationStructureInstanceDescriptor);
+    descriptor.instanceDescriptorType = MTLAccelerationStructureInstanceDescriptorTypeDefault;
 
     id<MTLCommandBuffer> commandBuffer = [commandQueue commandBuffer];
     if (!commandBuffer) {

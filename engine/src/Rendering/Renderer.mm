@@ -667,12 +667,11 @@ struct Renderer::Impl {
                             if (value == 0u) {
                                 continue;
                             }
-                            std::size_t meshIndex = 0u;
-                            if (value & 0x80000000u) {
-                                meshIndex = static_cast<std::size_t>(value & 0xFFFFu);
-                            } else {
-                                meshIndex = static_cast<std::size_t>(value & 0xFFFFu);
+                            const std::uint32_t packedMesh = (value & 0xFFFFu);
+                            if (packedMesh == 0u) {
+                                continue;
                             }
+                            const std::size_t meshIndex = static_cast<std::size_t>(packedMesh - 1u);
                             if (meshIndex < hitCounts.size()) {
                                 hitCounts[meshIndex]++;
                             }
@@ -1253,7 +1252,7 @@ bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
         meshResource.vertexCount = vertexCount;
         meshResource.indexCount = indexCount;
 
-        if (debugGeometryTrace && meshIndex >= 6) {
+        if (debugGeometryTrace) {
             const std::uint32_t sampleVertices = std::min<std::uint32_t>(vertexCount, 4u);
             for (std::uint32_t i = 0; i < sampleVertices; ++i) {
                 const std::uint32_t base = meshResource.positionOffset + i;
@@ -1418,30 +1417,6 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                        sceneBounds.max.y,
                        sceneBounds.max.z);
     updateCameraRigFromBounds();
-    if (debugOptions.isolateCornellExtras && meshCount >= 9 && instanceCount >= 9) {
-        cameraRig.target = simd_make_float3(0.0f, 0.95f, 0.25f);
-        cameraRig.eye = simd_make_float3(0.0f, 1.15f, 2.6f);
-        core::Logger::info("Renderer",
-                           "Applied Cornell extras camera override eye=(%.3f, %.3f, %.3f) target=(%.3f, %.3f, %.3f)",
-                           cameraRig.eye.x,
-                           cameraRig.eye.y,
-                           cameraRig.eye.z,
-                           cameraRig.target.x,
-                           cameraRig.target.y,
-                           cameraRig.target.z);
-    }
-    if (debugOptions.isolateCornellExtras && meshCount >= 9 && instanceCount >= 9) {
-        cameraRig.target = simd_make_float3(0.0f, 0.55f, 0.32f);
-        cameraRig.eye = simd_make_float3(0.0f, 0.65f, 1.05f);
-        core::Logger::info("Renderer",
-                           "Applied isolate camera override eye=(%.3f, %.3f, %.3f) target=(%.3f, %.3f, %.3f)",
-                           cameraRig.eye.x,
-                           cameraRig.eye.y,
-                           cameraRig.eye.z,
-                           cameraRig.target.x,
-                           cameraRig.target.y,
-                           cameraRig.target.z);
-    }
     if (debugOptions.isolateCornellExtras) {
         if (debugOptions.isolateCornellMeshIndex.has_value()) {
             core::Logger::info("Renderer",
@@ -1527,14 +1502,11 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         }
         const MPSMeshRange& meshRange = sceneData.meshRanges[meshIndex];
         scene::Mesh mesh = makeMeshFromRange(sceneData, meshRange);
-        if (debugOptions.isolateCornellExtras && meshIndex < scene.meshes().size()) {
-            mesh = scene.meshes()[meshIndex];
-        }
         if (mesh.vertices().empty() || mesh.indices().empty()) {
             core::Logger::warn("Renderer", "Skipping mesh range %zu due to empty geometry", meshIndex);
             continue;
         }
-        if (debugOptions.geometryTrace && meshIndex >= 6) {
+        if (debugOptions.geometryTrace) {
             const auto& vertices = mesh.vertices();
             const auto& indices = mesh.indices();
             simd_float3 minP = vertices.front().position;
@@ -1566,8 +1538,13 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
                 }
             }
             // CPU probe ray for quick sanity: if this misses while geometry exists, local mesh data is suspect.
-            const simd_float3 rayOrigin = simd_make_float3(0.0f, 0.08f, 1.10f);
-            const simd_float3 rayDir = simd_normalize(simd_make_float3(0.0f, 0.0f, 0.0f) - rayOrigin);
+            simd_float3 rayOrigin = simd_make_float3(0.0f, 0.08f, 1.10f);
+            simd_float3 rayTarget = simd_make_float3(0.0f, 0.0f, 0.0f);
+            if (meshIndex == 8u) {
+                rayOrigin = simd_make_float3(0.0f, 0.32f, 1.13f);
+                rayTarget = simd_make_float3(0.0f, 0.20f, 0.18f);
+            }
+            const simd_float3 rayDir = simd_normalize(rayTarget - rayOrigin);
             bool cpuProbeHit = false;
             float cpuProbeT = std::numeric_limits<float>::max();
             for (std::size_t tri = 0; tri + 2 < indices.size(); tri += 3) {
@@ -1659,6 +1636,13 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
 
         const std::size_t blasIndex = bottomLevelStructures.size();
         bottomLevelStructures.push_back(std::move(*blas));
+        if (debugOptions.tlasTrace || debugOptions.geometryTrace) {
+            core::Logger::info("Renderer",
+                               "BLAS[%zu] for mesh %zu size=%zu bytes",
+                               blasIndex,
+                               meshIndex,
+                               bottomLevelStructures.back().sizeInBytes());
+        }
         meshBlasLookup[meshIndex] = blasIndex;
     }
 

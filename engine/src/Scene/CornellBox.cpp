@@ -6,6 +6,7 @@
 #include "RTRMetalEngine/Scene/SceneBuilder.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
@@ -296,17 +297,15 @@ void addMario(SceneBuilder& builder,
               float supportY,
               const simd_float3& translation,
               float rotationRadians) {
-    const simd_float3 marioTranslation = simd_make_float3(translation.x, supportY + 0.18f, translation.z);
-    const simd_float4x4 marioTransform = composeTransform(marioTranslation,
-                                                          simd_make_float3(0.12f, 0.18f, 0.12f),
-                                                          rotationRadians,
-                                                          simd_make_float3(0.0f, 1.0f, 0.0f));
-
     Material marioMaterial{};
     marioMaterial.albedo = {1.0f, 1.0f, 1.0f};
     marioMaterial.roughness = 0.6f;
     marioMaterial.reflectivity = 0.0f;
     const auto marioTexture = assetRoot / "mario.png";
+    rtr::core::Logger::info("CornellBox",
+                            "Mario texture probe: %s exists=%s",
+                            marioTexture.string().c_str(),
+                            std::filesystem::exists(marioTexture) ? "yes" : "no");
     if (std::filesystem::exists(marioTexture)) {
         marioMaterial.albedoTexturePath = marioTexture.string();
     } else {
@@ -315,13 +314,63 @@ void addMario(SceneBuilder& builder,
                                 "Mario texture missing at %s; using colored placeholder",
                                 marioTexture.string().c_str());
     }
-    auto mesh = addTexturedBox(builder,
-                               simd_make_float3(-1.0f, -1.0f, -1.0f),
-                               simd_make_float3(1.0f, 1.0f, 1.0f));
+
+    const auto marioPath = assetRoot / "mario.obj";
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+    if (std::filesystem::exists(marioPath) && loadOBJMesh(marioPath, vertices, indices) &&
+        !vertices.empty() && !indices.empty()) {
+        simd_float3 minPoint = vertices.front().position;
+        simd_float3 maxPoint = vertices.front().position;
+        for (const auto& vertex : vertices) {
+            minPoint = simd_min(minPoint, vertex.position);
+            maxPoint = simd_max(maxPoint, vertex.position);
+        }
+
+        const simd_float3 center = (minPoint + maxPoint) * 0.5f;
+        const simd_float3 extent = maxPoint - minPoint;
+        const float largest = std::max({extent.x, extent.y, extent.z, 1e-4f});
+        const float unitScale = 1.0f / largest;
+        for (auto& vertex : vertices) {
+            vertex.position = (vertex.position - center) * unitScale;
+        }
+
+        const float targetHeight = 1.0f;
+        for (auto& vertex : vertices) {
+            vertex.position *= targetHeight;
+        }
+
+        const simd_float3 marioScale = simd_make_float3(1.0f, 1.0f, 1.0f);
+        const simd_float3 marioTranslation = simd_make_float3(translation.x, supportY + translation.y, translation.z);
+        const simd_float4x4 marioTransform = composeTransform(marioTranslation,
+                                                              marioScale,
+                                                              rotationRadians,
+                                                              simd_make_float3(0.0f, 1.0f, 0.0f));
+
+        auto mesh = builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
+                                            std::span<const std::uint32_t>(indices.data(), indices.size()));
+        auto matHandle = scene.addMaterial(marioMaterial);
+        scene.addInstance(mesh, matHandle, marioTransform);
+        rtr::core::Logger::info("CornellBox",
+                                "Mario OBJ loaded: %zu vertices, %zu indices",
+                                vertices.size(),
+                                indices.size());
+        return;
+    }
+
+    const simd_float3 marioTranslation = simd_make_float3(translation.x, supportY + 0.18f, translation.z);
+    const simd_float4x4 marioTransform = composeTransform(marioTranslation,
+                                                          simd_make_float3(0.12f, 0.18f, 0.12f),
+                                                          rotationRadians,
+                                                          simd_make_float3(0.0f, 1.0f, 0.0f));
+    auto fallbackMesh = addTexturedBox(builder,
+                                       simd_make_float3(-1.0f, -1.0f, -1.0f),
+                                       simd_make_float3(1.0f, 1.0f, 1.0f));
     auto matHandle = scene.addMaterial(marioMaterial);
-    scene.addInstance(mesh, matHandle, marioTransform);
-    rtr::core::Logger::info("CornellBox",
-                            "Mario uses temporary placeholder mesh (OBJ path tracked separately)");
+    scene.addInstance(fallbackMesh, matHandle, marioTransform);
+    rtr::core::Logger::warn("CornellBox",
+                            "Mario OBJ missing or invalid at %s; using placeholder mesh",
+                            marioPath.string().c_str());
 }
 
 void addFeatureGeometry(SceneBuilder& builder,
@@ -359,8 +408,8 @@ void addFeatureGeometry(SceneBuilder& builder,
              scene,
              assetRoot,
              0.0f,
-             simd_make_float3(0.02f, 0.0f, 0.20f),
-             0.01f);
+             simd_make_float3(0.00f, 0.20f, 0.00f),
+             0.0f);
 }
 
 }  // namespace
@@ -368,6 +417,22 @@ void addFeatureGeometry(SceneBuilder& builder,
 Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Scene scene;
     SceneBuilder builder(scene);
+
+    const char* marioOnly = std::getenv("RTR_CORNELL_MARIO_ONLY");
+    rtr::core::Logger::info("CornellBox",
+                            "RTR_CORNELL_MARIO_ONLY=%s",
+                            marioOnly != nullptr ? marioOnly : "<unset>");
+    if (marioOnly != nullptr) {
+        if (marioOnly[0] != '\0' && std::strcmp(marioOnly, "0") != 0) {
+            addMario(builder,
+                     scene,
+                     assetRoot,
+                     0.0f,
+                     simd_make_float3(0.00f, 0.20f, 0.00f),
+                     0.0f);
+            return scene;
+        }
+    }
 
     const simd_float4x4 enclosureTransform = composeTransform(simd_make_float3(0.0f, 1.0f, 0.0f),
                                                               simd_make_float3(2.0f, 2.0f, 2.0f),

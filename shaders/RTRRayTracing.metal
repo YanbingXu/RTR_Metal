@@ -432,10 +432,19 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
 
         if (debugPrimitiveTrace) {
             hitDebugValue = globalPrimitive + 1u;
+            const uint p = globalPrimitive + 1u;
+            color = float3(
+                static_cast<float>((p * 13u) & 0xFFu) / 255.0f,
+                static_cast<float>((p * 29u) & 0xFFu) / 255.0f,
+                static_cast<float>((p * 53u) & 0xFFu) / 255.0f);
+            writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
+            dstTex.write(float4(color, 1.0f), gid);
+            return;
         } else if (debugInstanceTrace) {
             const uint meshBits = min(instanceInfo.meshIndex, 0xFFFFu);
             const uint instanceBits = min(rawInstanceId, 0xFFFFu);
-            hitDebugValue = (instanceBits << 16) | meshBits;
+            // Encode as 1-based so 0 remains "miss" in CPU-side debug decoding.
+            hitDebugValue = ((instanceBits + 1u) << 16) | (meshBits + 1u);
             if (instanceOutOfRange) {
                 hitDebugValue |= 0x80000000u;
             }
