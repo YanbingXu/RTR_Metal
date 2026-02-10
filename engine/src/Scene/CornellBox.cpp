@@ -8,8 +8,6 @@
 #include <array>
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
-#include <cstring>
 #include <filesystem>
 #include <simd/simd.h>
 #include <span>
@@ -302,10 +300,6 @@ void addMario(SceneBuilder& builder,
     marioMaterial.roughness = 0.6f;
     marioMaterial.reflectivity = 0.0f;
     const auto marioTexture = assetRoot / "mario.png";
-    rtr::core::Logger::info("CornellBox",
-                            "Mario texture probe: %s exists=%s",
-                            marioTexture.string().c_str(),
-                            std::filesystem::exists(marioTexture) ? "yes" : "no");
     if (std::filesystem::exists(marioTexture)) {
         marioMaterial.albedoTexturePath = marioTexture.string();
     } else {
@@ -417,22 +411,6 @@ void addFeatureGeometry(SceneBuilder& builder,
 Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     Scene scene;
     SceneBuilder builder(scene);
-
-    const char* marioOnly = std::getenv("RTR_CORNELL_MARIO_ONLY");
-    rtr::core::Logger::info("CornellBox",
-                            "RTR_CORNELL_MARIO_ONLY=%s",
-                            marioOnly != nullptr ? marioOnly : "<unset>");
-    if (marioOnly != nullptr) {
-        if (marioOnly[0] != '\0' && std::strcmp(marioOnly, "0") != 0) {
-            addMario(builder,
-                     scene,
-                     assetRoot,
-                     0.0f,
-                     simd_make_float3(0.00f, 0.20f, 0.00f),
-                     0.0f);
-            return scene;
-        }
-    }
 
     const simd_float4x4 enclosureTransform = composeTransform(simd_make_float3(0.0f, 1.0f, 0.0f),
                                                               simd_make_float3(2.0f, 2.0f, 2.0f),

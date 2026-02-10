@@ -1298,12 +1298,6 @@ bool Renderer::Impl::prepareHardwareSceneData(const MPSSceneData& sceneData) {
         }
     }
 
-    core::Logger::info("Renderer", "DEBUG: Preparing hardware scene data with %zu vertices.", sceneData.positions.size());
-    for (int i = 0; i < 3 && i < sceneData.positions.size(); ++i) {
-        const auto& v = sceneData.positions[i];
-        core::Logger::info("Renderer", "DEBUG: Shader-Data Vtx[%d]: (%.3f, %.3f, %.3f)", i, v.x, v.y, v.z);
-    }
-
     auto uploadSceneBuffer = [&](BufferHandle& handle, const void* data, std::size_t byteLength, const char* label) {
         if (byteLength == 0 || data == nullptr) {
             handle = {};
