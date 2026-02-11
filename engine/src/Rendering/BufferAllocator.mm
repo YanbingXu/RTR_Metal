@@ -1,5 +1,6 @@
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 #include "RTRMetalEngine/Core/Logger.hpp"
 #include "RTRMetalEngine/Rendering/BufferAllocator.hpp"
@@ -13,11 +14,20 @@ namespace rtr::rendering {
 class BufferHandle::Impl {
 public:
     Impl(id<MTLBuffer> buffer, std::size_t length)
-        : buffer_(buffer), length_(length) {}
+        : bufferHandle_(buffer ? (__bridge_retained void*)buffer : nullptr), length_(length) {}
 
-    ~Impl() { buffer_ = nil; }
+    ~Impl() {
+        if (bufferHandle_ != nullptr) {
+            CFRelease(bufferHandle_);
+            bufferHandle_ = nullptr;
+        }
+    }
 
-    id<MTLBuffer> buffer_ = nil;
+    [[nodiscard]] id<MTLBuffer> buffer() const noexcept {
+        return bufferHandle_ != nullptr ? (__bridge id<MTLBuffer>)bufferHandle_ : nil;
+    }
+
+    void* bufferHandle_ = nullptr;
     std::size_t length_ = 0;
 };
 
@@ -29,16 +39,16 @@ BufferHandle& BufferHandle::operator=(BufferHandle&&) noexcept = default;
 BufferHandle::BufferHandle(std::unique_ptr<Impl> impl)
     : impl_(std::move(impl)) {}
 
-bool BufferHandle::isValid() const noexcept { return impl_ && impl_->buffer_ != nil; }
+bool BufferHandle::isValid() const noexcept { return impl_ && impl_->buffer() != nil; }
 
 std::size_t BufferHandle::length() const noexcept { return impl_ ? impl_->length_ : 0; }
 
 void* BufferHandle::nativeHandle() const noexcept {
-    return impl_ && impl_->buffer_ ? (__bridge void*)impl_->buffer_ : nullptr;
+    return impl_ ? impl_->bufferHandle_ : nullptr;
 }
 
 void BufferHandle::adopt(void* bufferHandle, std::size_t length) {
-    id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)bufferHandle;
+    id<MTLBuffer> buffer = bufferHandle != nullptr ? (__bridge id<MTLBuffer>)bufferHandle : nil;
     impl_ = std::make_unique<Impl>(buffer, length);
 }
 

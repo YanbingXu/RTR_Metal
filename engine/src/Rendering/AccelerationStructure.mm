@@ -1,4 +1,5 @@
 #import <Metal/Metal.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 #include "RTRMetalEngine/Rendering/AccelerationStructure.hpp"
 
@@ -6,28 +7,40 @@ namespace rtr::rendering {
 
 class AccelerationStructureImpl {
 public:
-    explicit AccelerationStructureImpl(id<MTLAccelerationStructure> structure)
-        : structure_(structure) {}
+    explicit AccelerationStructureImpl(void* retainedStructureHandle)
+        : structureHandle_(retainedStructureHandle) {}
 
-    ~AccelerationStructureImpl() { structure_ = nil; }
+    ~AccelerationStructureImpl() {
+        if (structureHandle_ != nullptr) {
+            CFRelease(structureHandle_);
+            structureHandle_ = nullptr;
+        }
+    }
 
     AccelerationStructureImpl(const AccelerationStructureImpl&) = delete;
     AccelerationStructureImpl& operator=(const AccelerationStructureImpl&) = delete;
 
     AccelerationStructureImpl(AccelerationStructureImpl&& other) noexcept
-        : structure_(other.structure_) {
-        other.structure_ = nil;
+        : structureHandle_(other.structureHandle_) {
+        other.structureHandle_ = nullptr;
     }
 
     AccelerationStructureImpl& operator=(AccelerationStructureImpl&& other) noexcept {
         if (this != &other) {
-            structure_ = other.structure_;
-            other.structure_ = nil;
+            if (structureHandle_ != nullptr) {
+                CFRelease(structureHandle_);
+            }
+            structureHandle_ = other.structureHandle_;
+            other.structureHandle_ = nullptr;
         }
         return *this;
     }
 
-    id<MTLAccelerationStructure> structure_ = nil;
+    [[nodiscard]] id<MTLAccelerationStructure> structure() const noexcept {
+        return structureHandle_ != nullptr ? (__bridge id<MTLAccelerationStructure>)structureHandle_ : nil;
+    }
+
+    void* structureHandle_ = nullptr;
 };
 
 AccelerationStructure::AccelerationStructure() = default;
@@ -42,16 +55,15 @@ AccelerationStructure::AccelerationStructure(AccelerationStructure&& other) noex
 AccelerationStructure& AccelerationStructure::operator=(AccelerationStructure&& other) noexcept = default;
 
 bool AccelerationStructure::isValid() const noexcept {
-    return impl_ && impl_->structure_ != nil;
+    return impl_ && impl_->structure() != nil;
 }
 
 void* AccelerationStructure::rawHandle() const noexcept {
-    return impl_ && impl_->structure_ ? (__bridge void*)impl_->structure_ : nullptr;
+    return impl_ ? impl_->structureHandle_ : nullptr;
 }
 
 AccelerationStructure makeAccelerationStructure(std::string label, std::size_t size, void* handle) {
-    id<MTLAccelerationStructure> structure = (__bridge_transfer id<MTLAccelerationStructure>)handle;
-    auto impl = std::make_unique<AccelerationStructureImpl>(structure);
+    auto impl = std::make_unique<AccelerationStructureImpl>(handle);
     return AccelerationStructure(std::move(label), size, std::move(impl));
 }
 
