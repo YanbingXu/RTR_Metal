@@ -348,6 +348,7 @@ struct Renderer::Impl {
     RayTracingPipeline rayTracingPipeline;
     std::vector<AccelerationStructure> bottomLevelStructures;
     AccelerationStructure topLevelStructure;
+    std::vector<InstanceBuildInput> tlasInstanceInputs;
     RayTracingTarget target;
     RayTracingResources resources;
     std::array<id<MTLBuffer>, kUniformRingSize> uniformBuffers = {nil, nil, nil};
@@ -374,6 +375,20 @@ struct Renderer::Impl {
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
+    }
+
+    [[nodiscard]] bool rebuildTopLevelForFrame() {
+        if (tlasInstanceInputs.empty()) {
+            return false;
+        }
+        void* queueHandle = context.rawCommandQueue();
+        auto rebuilt = asBuilder.buildTopLevel(tlasInstanceInputs, "scene_tlas_runtime", queueHandle);
+        if (!rebuilt.has_value()) {
+            core::Logger::warn("Renderer", "Runtime TLAS rebuild failed; keeping previous TLAS");
+            return false;
+        }
+        topLevelStructure = std::move(*rebuilt);
+        return true;
     }
 
     [[nodiscard]] static CameraRig makeReferenceCameraRig() {
@@ -452,6 +467,10 @@ struct Renderer::Impl {
         if (!ensureRayTracingUniformBuffer(target.width, target.height)) {
             core::Logger::error("Renderer", "Failed to prepare ray tracing uniform buffer");
             return false;
+        }
+
+        if (!rebuildTopLevelForFrame()) {
+            core::Logger::warn("Renderer", "Runtime TLAS rebuild unavailable");
         }
 
         id<MTLBuffer> uniformBuffer = acquireUniformBufferForFrame();
@@ -617,7 +636,8 @@ struct Renderer::Impl {
         if (blitEncoder) {
             MTLOrigin origin = MTLOriginMake(0, 0, 0);
             MTLSize size = MTLSizeMake(target.width, target.height, 1);
-            if (target.colorTexture && target.accumulationTexture) {
+            const bool isDebugVisualization = debugOptions.visualization != DebugVisualization::None;
+            if (!isDebugVisualization && target.colorTexture && target.accumulationTexture) {
                 [blitEncoder copyFromTexture:target.colorTexture
                                   sourceSlice:0
                                   sourceLevel:0
@@ -850,7 +870,8 @@ struct Renderer::Impl {
         uniforms->camera.imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
         uniforms->camera.width = target.width;
         uniforms->camera.height = target.height;
-        uniforms->camera.frameIndex = frameCounter;
+        const bool isDebugVisualization = debugOptions.visualization != DebugVisualization::None;
+        uniforms->camera.frameIndex = isDebugVisualization ? 0u : frameCounter;
         std::uint32_t flags = 0u;
         if (debugAlbedo) {
             flags |= RTR_RAY_FLAG_DEBUG;
@@ -866,7 +887,7 @@ struct Renderer::Impl {
         }
         uniforms->camera.flags = flags;
         uniforms->camera.samplesPerPixel = 1u;
-        uniforms->camera.sampleSeed = 0x9E3779B9u * (frameCounter + 1u);
+        uniforms->camera.sampleSeed = isDebugVisualization ? 1u : (0x9E3779B9u * (frameCounter + 1u));
 
         if (debugCameraTrace) {
             core::Logger::info("Renderer",
@@ -1787,6 +1808,8 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
         core::Logger::error("Renderer", "No valid instances were prepared for scene");
         return false;
     }
+
+    tlasInstanceInputs = instanceInputs;
 
     auto tlas = asBuilder.buildTopLevel(instanceInputs, "scene_tlas", queueHandle);
     if (!tlas.has_value()) {
