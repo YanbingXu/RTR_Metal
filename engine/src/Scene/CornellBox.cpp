@@ -239,13 +239,15 @@ MeshHandle addCubeWithTransform(SceneBuilder& builder,
 }
 
 MeshHandle addSphere(SceneBuilder& builder,
-                     std::uint32_t /*slices*/,
-                     std::uint32_t /*stacks*/,
+                     std::uint32_t slices,
+                     std::uint32_t stacks,
                      const simd_float4x4& transform) {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
-    vertices.reserve(6);
-    indices.reserve(8 * 3);
+    slices = std::max<std::uint32_t>(slices, 8u);
+    stacks = std::max<std::uint32_t>(stacks, 4u);
+    vertices.reserve(static_cast<std::size_t>(slices + 1u) * static_cast<std::size_t>(stacks + 1u));
+    indices.reserve(static_cast<std::size_t>(slices) * static_cast<std::size_t>(stacks) * 6u);
 
     const simd_float4x4 normalMatrix = simd_transpose(simd_inverse(transform));
 
@@ -262,28 +264,42 @@ MeshHandle addSphere(SceneBuilder& builder,
     auto pushVertex = [&](const simd_float3& localPos, float u, float v) {
         Vertex vertex{};
         vertex.position = transformPosition(localPos);
-        vertex.normal = transformNormal(localPos);
+        vertex.normal = transformNormal(simd_normalize(localPos));
         vertex.texcoord = simd_make_float2(u, 1.0f - v);
         vertices.push_back(vertex);
     };
-    pushVertex(simd_make_float3(0.0f, 1.0f, 0.0f), 0.5f, 0.0f);   // top
-    pushVertex(simd_make_float3(1.0f, 0.0f, 0.0f), 1.0f, 0.5f);   // +x
-    pushVertex(simd_make_float3(0.0f, 0.0f, 1.0f), 0.75f, 0.5f);  // +z
-    pushVertex(simd_make_float3(-1.0f, 0.0f, 0.0f), 0.5f, 0.5f);  // -x
-    pushVertex(simd_make_float3(0.0f, 0.0f, -1.0f), 0.25f, 0.5f); // -z
-    pushVertex(simd_make_float3(0.0f, -1.0f, 0.0f), 0.5f, 1.0f);  // bottom
 
-    const std::uint32_t kTris[] = {
-        0, 1, 2,
-        0, 2, 3,
-        0, 3, 4,
-        0, 4, 1,
-        5, 2, 1,
-        5, 3, 2,
-        5, 4, 3,
-        5, 1, 4,
-    };
-    indices.assign(std::begin(kTris), std::end(kTris));
+    for (std::uint32_t stack = 0; stack <= stacks; ++stack) {
+        const float v = static_cast<float>(stack) / static_cast<float>(stacks);
+        const float phi = v * static_cast<float>(M_PI);
+        const float y = std::cos(phi);
+        const float r = std::sin(phi);
+        for (std::uint32_t slice = 0; slice <= slices; ++slice) {
+            const float u = static_cast<float>(slice) / static_cast<float>(slices);
+            const float theta = u * (2.0f * static_cast<float>(M_PI));
+            const float x = r * std::cos(theta);
+            const float z = r * std::sin(theta);
+            pushVertex(simd_make_float3(x, y, z), u, v);
+        }
+    }
+
+    const std::uint32_t rowStride = slices + 1u;
+    for (std::uint32_t stack = 0; stack < stacks; ++stack) {
+        for (std::uint32_t slice = 0; slice < slices; ++slice) {
+            const std::uint32_t i0 = stack * rowStride + slice;
+            const std::uint32_t i1 = i0 + 1u;
+            const std::uint32_t i2 = i0 + rowStride;
+            const std::uint32_t i3 = i2 + 1u;
+
+            indices.push_back(i0);
+            indices.push_back(i2);
+            indices.push_back(i1);
+
+            indices.push_back(i1);
+            indices.push_back(i2);
+            indices.push_back(i3);
+        }
+    }
 
     return builder.addTriangleMesh(std::span<const Vertex>(vertices.data(), vertices.size()),
                                    std::span<const std::uint32_t>(indices.data(), indices.size()));
@@ -297,7 +313,7 @@ void addMario(SceneBuilder& builder,
               float rotationRadians) {
     Material marioMaterial{};
     marioMaterial.albedo = {1.0f, 1.0f, 1.0f};
-    marioMaterial.roughness = 0.6f;
+    marioMaterial.roughness = 0.35f;
     marioMaterial.reflectivity = 0.0f;
     const auto marioTexture = assetRoot / "mario.png";
     if (std::filesystem::exists(marioTexture)) {
@@ -329,9 +345,17 @@ void addMario(SceneBuilder& builder,
             vertex.position = (vertex.position - center) * unitScale;
         }
 
-        const float targetHeight = 1.0f;
+        const float targetHeight = 0.95f;
         for (auto& vertex : vertices) {
             vertex.position *= targetHeight;
+        }
+
+        float minY = vertices.front().position.y;
+        for (const auto& vertex : vertices) {
+            minY = std::min(minY, vertex.position.y);
+        }
+        for (auto& vertex : vertices) {
+            vertex.position.y -= minY;
         }
 
         const simd_float3 marioScale = simd_make_float3(1.0f, 1.0f, 1.0f);
@@ -370,39 +394,39 @@ void addMario(SceneBuilder& builder,
 void addFeatureGeometry(SceneBuilder& builder,
                         Scene& scene,
                         const std::filesystem::path& assetRoot,
-                        float /*crateTopY*/) {
+                        float crateTopY) {
     Material mirror{};
     mirror.albedo = {1.0f, 1.0f, 1.0f};
-    mirror.roughness = 0.02f;
+    mirror.roughness = 0.005f;
     mirror.metallic = 1.0f;
     mirror.reflectivity = 1.0f;
     mirror.indexOfRefraction = 1.0f;
     auto mirrorMat = scene.addMaterial(mirror);
-    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.42f, 0.28f, 0.20f),
-                                                          simd_make_float3(0.28f, 0.28f, 0.28f),
+    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.36f, 0.20f, 0.30f),
+                                                          simd_make_float3(0.20f, 0.20f, 0.20f),
                                                           0.0f,
                                                           simd_make_float3(1.0f, 0.0f, 0.0f));
-    auto mirrorMesh = addSphere(builder, 24, 12, matrix_identity_float4x4);
+    auto mirrorMesh = addSphere(builder, 64, 32, matrix_identity_float4x4);
     scene.addInstance(mirrorMesh, mirrorMat, mirrorTransform);
 
     Material glass{};
     glass.albedo = {1.0f, 1.0f, 1.0f};
-    glass.roughness = 0.0f;
-    glass.reflectivity = 0.0f;
-    glass.indexOfRefraction = 1.5f;
+    glass.roughness = 0.01f;
+    glass.reflectivity = 0.08f;
+    glass.indexOfRefraction = 1.45f;
     auto glassMat = scene.addMaterial(glass);
-    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.36f, 0.22f, 0.32f),
-                                                         simd_make_float3(0.22f, 0.22f, 0.22f),
+    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.26f, crateTopY + 0.19f, 0.11f),
+                                                         simd_make_float3(0.19f, 0.19f, 0.19f),
                                                          0.0f,
                                                          simd_make_float3(1.0f, 0.0f, 0.0f));
-    auto glassMesh = addSphere(builder, 24, 12, matrix_identity_float4x4);
+    auto glassMesh = addSphere(builder, 64, 32, matrix_identity_float4x4);
     scene.addInstance(glassMesh, glassMat, glassTransform);
 
     addMario(builder,
              scene,
              assetRoot,
-             0.0f,
-             simd_make_float3(0.00f, 0.20f, 0.00f),
+             crateTopY,
+             simd_make_float3(0.10f, 0.00f, -0.03f),
              0.0f);
 }
 
@@ -458,7 +482,7 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                           FACE_MASK_POSITIVE_Y);
     Material lightMaterial{};
     lightMaterial.albedo = {1.0f, 1.0f, 1.0f};
-    lightMaterial.emission = {8.0f, 8.0f, 8.0f};
+    lightMaterial.emission = {12.0f, 12.0f, 12.0f};
     lightMaterial.roughness = 0.2f;
     auto lightHandle = scene.addMaterial(lightMaterial);
     scene.addInstance(lightMesh, lightHandle, matrix_identity_float4x4);
@@ -476,9 +500,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                     crateTexture.string().c_str());
         }
     }
-    const simd_float3 shortTranslation = simd_make_float3(0.3275f, 0.3f, 0.0f);
-    const simd_float3 shortScale = simd_make_float3(0.6f, 0.6f, 0.6f);
-    const float shortRotation = -0.3f;
+    const simd_float3 shortTranslation = simd_make_float3(0.26f, 0.28f, 0.14f);
+    const simd_float3 shortScale = simd_make_float3(0.56f, 0.56f, 0.56f);
+    const float shortRotation = 0.0f;
     const simd_float4x4 shortTransform = composeTransform(shortTranslation,
                                                           shortScale,
                                                           shortRotation,
@@ -489,10 +513,10 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     const float crateTopY = shortTranslation.y + shortScale.y * 0.5f;
 
     Material tallBoxMaterial{};
-    tallBoxMaterial.albedo = {0.725f, 0.71f, 0.68f};
-    const simd_float3 tallTranslation = simd_make_float3(-0.335f, 0.6f, -0.29f);
-    const simd_float3 tallScale = simd_make_float3(0.6f, 1.2f, 0.6f);
-    const float tallRotation = 0.3f;
+    tallBoxMaterial.albedo = {0.88f, 0.88f, 0.88f};
+    const simd_float3 tallTranslation = simd_make_float3(-0.22f, 0.56f, -0.02f);
+    const simd_float3 tallScale = simd_make_float3(0.52f, 1.12f, 0.52f);
+    const float tallRotation = 0.0f;
     const simd_float4x4 tallTransform = composeTransform(tallTranslation,
                                                          tallScale,
                                                          tallRotation,
