@@ -158,6 +158,7 @@ scene::Mesh makeMeshFromRange(const MPSSceneData& sceneData, const MPSMeshRange&
 
 struct RayTracingTarget {
     id<MTLTexture> colorTexture = nil;
+    id<MTLTexture> accumulationTexture = nil;
     id<MTLBuffer> readbackBuffer = nil;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -165,6 +166,7 @@ struct RayTracingTarget {
 
     void reset() {
         colorTexture = nil;
+        accumulationTexture = nil;
         readbackBuffer = nil;
         width = 0;
         height = 0;
@@ -172,7 +174,7 @@ struct RayTracingTarget {
     }
 
     [[nodiscard]] bool matches(std::uint32_t w, std::uint32_t h) const noexcept {
-        return colorTexture != nil && width == w && height == h;
+        return colorTexture != nil && accumulationTexture != nil && width == w && height == h;
     }
 
     [[nodiscard]] bool isValid() const noexcept {
@@ -569,7 +571,10 @@ struct Renderer::Impl {
                 if (resources.randomTexture) {
                     [encoder setTexture:resources.randomTexture atIndex:0];
                 }
-                [encoder setTexture:target.colorTexture atIndex:1];
+                if (target.accumulationTexture) {
+                    [encoder setTexture:target.accumulationTexture atIndex:1];
+                }
+                [encoder setTexture:target.colorTexture atIndex:2];
                 [encoder setAccelerationStructure:accelerationStructure atBufferIndex:15];
                 if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
                     [encoder useResource:accelerationStructure usage:MTLResourceUsageRead];
@@ -608,16 +613,28 @@ struct Renderer::Impl {
             return fail();
         }
 
-        if (needsReadback) {
-            if (target.readbackBuffer == nil) {
-                core::Logger::error("Renderer", "Readback requested but readback buffer is unavailable");
-                return fail();
+        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
+        if (blitEncoder) {
+            MTLOrigin origin = MTLOriginMake(0, 0, 0);
+            MTLSize size = MTLSizeMake(target.width, target.height, 1);
+            if (target.colorTexture && target.accumulationTexture) {
+                [blitEncoder copyFromTexture:target.colorTexture
+                                  sourceSlice:0
+                                  sourceLevel:0
+                                 sourceOrigin:origin
+                                   sourceSize:size
+                                    toTexture:target.accumulationTexture
+                             destinationSlice:0
+                             destinationLevel:0
+                            destinationOrigin:origin];
             }
+            if (needsReadback) {
+                if (target.readbackBuffer == nil) {
+                    core::Logger::error("Renderer", "Readback requested but readback buffer is unavailable");
+                    [blitEncoder endEncoding];
+                    return fail();
+                }
 
-            id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
-            if (blitEncoder) {
-                MTLOrigin origin = MTLOriginMake(0, 0, 0);
-                MTLSize size = MTLSizeMake(target.width, target.height, 1);
                 const std::size_t bytesPerRow = static_cast<std::size_t>(target.width) * target.bytesPerPixel;
                 const std::size_t bytesPerImage = static_cast<std::size_t>(target.width) * target.height * target.bytesPerPixel;
                 [blitEncoder copyFromTexture:target.colorTexture
@@ -629,8 +646,15 @@ struct Renderer::Impl {
                             destinationOffset:0
                        destinationBytesPerRow:bytesPerRow
                      destinationBytesPerImage:bytesPerImage];
-                [blitEncoder endEncoding];
             }
+            [blitEncoder endEncoding];
+        } else if (needsReadback) {
+            if (target.readbackBuffer == nil) {
+                core::Logger::error("Renderer", "Readback requested but readback buffer is unavailable");
+                return fail();
+            }
+            core::Logger::error("Renderer", "Failed to create blit encoder for readback");
+            return fail();
         }
 
         [commandBuffer commit];
@@ -826,7 +850,7 @@ struct Renderer::Impl {
         uniforms->camera.imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
         uniforms->camera.width = target.width;
         uniforms->camera.height = target.height;
-        uniforms->camera.frameIndex = 0u;
+        uniforms->camera.frameIndex = frameCounter;
         std::uint32_t flags = 0u;
         if (debugAlbedo) {
             flags |= RTR_RAY_FLAG_DEBUG;
@@ -842,7 +866,7 @@ struct Renderer::Impl {
         }
         uniforms->camera.flags = flags;
         uniforms->camera.samplesPerPixel = 1u;
-        uniforms->camera.sampleSeed = 0u;
+        uniforms->camera.sampleSeed = 0x9E3779B9u * (frameCounter + 1u);
 
         if (debugCameraTrace) {
             core::Logger::info("Renderer",
@@ -957,12 +981,20 @@ struct Renderer::Impl {
             textureDescriptor.storageMode = MTLStorageModePrivate;
             textureDescriptor.usage = MTLTextureUsageShaderWrite | MTLTextureUsageShaderRead;
 
-            id<MTLTexture> texture = [device newTextureWithDescriptor:textureDescriptor];
-            if (!texture) {
+            id<MTLTexture> colorTexture = [device newTextureWithDescriptor:textureDescriptor];
+            if (!colorTexture) {
                 core::Logger::error("Renderer", "Failed to allocate ray tracing output texture (%ux%u)", width, height);
                 return false;
             }
-            target.colorTexture = texture;
+
+            id<MTLTexture> accumulationTexture = [device newTextureWithDescriptor:textureDescriptor];
+            if (!accumulationTexture) {
+                core::Logger::error("Renderer", "Failed to allocate ray tracing accumulation texture (%ux%u)", width, height);
+                return false;
+            }
+
+            target.colorTexture = colorTexture;
+            target.accumulationTexture = accumulationTexture;
         }
 
         const std::size_t bufferLength = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * kRayTracingPixelStride;

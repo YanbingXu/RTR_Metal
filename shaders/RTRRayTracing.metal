@@ -338,7 +338,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                       const device RTRRayTracingInstanceResource* instances [[buffer(12)]],
                       acceleration_structure<instancing> accelerationStructure [[buffer(15)]],
                       texture2d<unsigned int> randomTex [[texture(0)]],
-                      texture2d<float, access::write> dstTex [[texture(1)]],
+                      texture2d<float, access::read> accumulationTex [[texture(1)]],
+                      texture2d<float, access::write> dstTex [[texture(2)]],
                       uint2 gid [[thread_position_in_grid]]) {
     const uint width = uniforms.camera.width;
     const uint height = uniforms.camera.height;
@@ -989,6 +990,14 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     }
 
     writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
+
+    const bool allowAccumulation = !debugAlbedo && !debugInstanceColors && !debugInstanceTrace && !debugPrimitiveTrace;
+    if (allowAccumulation && uniforms.camera.frameIndex > 0u &&
+        accumulationTex.get_width() > gid.x && accumulationTex.get_height() > gid.y) {
+        const float4 previous = accumulationTex.read(gid);
+        const float blend = 1.0f / static_cast<float>(uniforms.camera.frameIndex + 1u);
+        color = mix(previous.xyz, color, blend);
+    }
 
     dstTex.write(float4(color, 1.0f), gid);
 }
