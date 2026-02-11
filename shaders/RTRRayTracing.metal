@@ -17,7 +17,7 @@ using namespace metal;
 namespace {
 
 constant uint kMaxTextureSize = 2048u;
-constant uint kLightSamplesPerPixel = 4u;
+constant uint kLightSamplesPerPixel = 8u;
 
 float srgbChannelToLinear(float value) {
     if (value <= 0.0f) {
@@ -350,16 +350,16 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     if (randomTex.get_width() > 0 && randomTex.get_height() > 0) {
         const uint widthMask = randomTex.get_width();
         const uint heightMask = randomTex.get_height();
-        const uint framePhaseX = (uniforms.camera.frameIndex * 12582917u) % max(widthMask, 1u);
-        const uint framePhaseY = (uniforms.camera.frameIndex * 4256249u) % max(heightMask, 1u);
-        const uint2 coord = uint2((gid.x + framePhaseX) % widthMask, (gid.y + framePhaseY) % heightMask);
+        // Keep primary-ray sampling stable across frameIndex to avoid frame-dependent visibility loss.
+        const uint2 coord = uint2(gid.x % widthMask, gid.y % heightMask);
         const uint4 noise = randomTex.read(coord);
         jitter.x = (static_cast<float>(noise.x & 0xFFFFu) + 0.5f) / 65536.0f - 0.5f;
         jitter.y = (static_cast<float>(noise.y & 0xFFFFu) + 0.5f) / 65536.0f - 0.5f;
     }
 
     const float2 dims = float2(static_cast<float>(max(width, 1u)), static_cast<float>(max(height, 1u)));
-    const float2 ndc = ((float2(gid) + 0.5f + jitter) / dims) * 2.0f - 1.0f;
+    float2 ndc = ((float2(gid) + 0.5f + jitter) / dims) * 2.0f - 1.0f;
+    ndc.y = -ndc.y;
     const float3 eye = uniforms.camera.eye.xyz;
     const float3 forward = uniforms.camera.forward.xyz;
     const float3 right = uniforms.camera.right.xyz;
@@ -518,7 +518,12 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                     color = baseColour;
                 } else {
                     const float3 viewDir = normalize(-rayDirection);
-                    float3 lighting = baseColour * 0.05f + material.emission;
+                    const bool reflectiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFLECTIVE) != 0u;
+                    const bool refractiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
+                    const bool texturedSurface = material.textureIndex != RTR_INVALID_TEXTURE_INDEX;
+                    const float3 ambientBase = refractiveSurface ? (baseColour * 0.008f) : (baseColour * 0.14f);
+                    const float3 textureBoost = (texturedSurface && !refractiveSurface) ? (baseColour * 0.16f) : float3(0.0f);
+                    float3 lighting = ambientBase + textureBoost + material.emission;
 
                     const RTRHardwareAreaLight light = getAreaLight(uniforms);
                     const uint pixelSeed = gid.x * 73856093u ^ gid.y * 19349663u;
@@ -547,15 +552,18 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                 const float3 F = fresnelSchlick(VdotH,
                                                                 mix(float3(0.04f), baseColour, material.metallic));
                                 const float3 specular = (D * G * F) / max(4.0f * NdotV * NdotL, 1.0e-4f);
-                                const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
-                                const float3 diffuse = kd * baseColour / 3.14159265f;
-                                lighting += (diffuse + specular) * lightColor * NdotL * sampleWeight;
+                                if (refractiveSurface) {
+                                    // Keep glass highlights but avoid washing out into solid white.
+                                    lighting += specular * lightColor * NdotL * sampleWeight * 0.55f;
+                                } else {
+                                    const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
+                                    const float3 diffuse = kd * baseColour / 3.14159265f;
+                                    lighting += (diffuse + specular) * lightColor * NdotL * sampleWeight;
+                                }
                             }
                         }
                     }
 
-                    const bool reflectiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFLECTIVE) != 0u;
-                    const bool refractiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
                     const float reflectivity = clamp(material.reflectivity, 0.0f, 1.0f);
                     if (!debugInstanceColors && uniforms.maxBounces > 1u) {
                         if (reflectiveSurface && reflectivity > 0.0f) {
@@ -652,6 +660,11 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                             HardwareHit transmittedHit =
                                 traceScene(accelerationStructure, hitPos, refractedDir, 1.0e-3f, FLT_MAX);
                             float3 transmittedColor = sampleSkyColor(refractedDir);
+                            if (!transmittedHit.hit) {
+                                // Indoor fallback: avoid turning the refractive sphere into pure black
+                                // when refraction misses enclosure backfaces.
+                                transmittedColor = baseColour * 0.22f + float3(0.06f);
+                            }
                             if (transmittedHit.hit) {
                                 RTRRayTracingInstanceResource transmittedInfo;
                                 if (instances != nullptr && limits.instanceCount > 0u) {
@@ -697,6 +710,13 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                         const float3 baryTransmit =
                                             float3(wTransmit, transmittedHit.bary.x, transmittedHit.bary.y);
                                         float2 transmittedUV = float2(0.0f);
+                                        const float3 tx0 = float3(positions[ti0]);
+                                        const float3 tx1 = float3(positions[ti1]);
+                                        const float3 tx2 = float3(positions[ti2]);
+                                        const float3 transmittedLocalPos =
+                                            tx0 * baryTransmit.x + tx1 * baryTransmit.y + tx2 * baryTransmit.z;
+                                        const float3 transmittedPos =
+                                            transformPosition(transmittedInfo.objectToWorld, transmittedLocalPos);
                                         if (texcoords &&
                                             ti0 < limits.texcoordCount &&
                                             ti1 < limits.texcoordCount &&
@@ -719,6 +739,160 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                                                  0.0f,
                                                                  1.0f);
                                         transmittedColor += transmittedMaterial.emission;
+
+                                        const bool transmittedRefractive =
+                                            (transmittedMaterial.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
+                                        if (transmittedRefractive) {
+                                            HardwareHit exitHit = traceScene(accelerationStructure,
+                                                                             transmittedPos + refractedDir * 2.0e-3f,
+                                                                             refractedDir,
+                                                                             1.0e-3f,
+                                                                             FLT_MAX);
+                                            if (exitHit.hit && instances != nullptr && limits.instanceCount > 0u) {
+                                                RTRRayTracingInstanceResource exitInfo;
+                                                const uint exitInstance =
+                                                    min(exitHit.instanceUserId, limits.instanceCount - 1u);
+                                                exitInfo = instances[exitInstance];
+
+                                                RTRRayTracingMeshResource exitMesh;
+                                                if (meshes != nullptr && limits.meshCount > 0u) {
+                                                    const uint safeExitMesh =
+                                                        min(exitInfo.meshIndex, limits.meshCount - 1u);
+                                                    exitMesh = meshes[safeExitMesh];
+                                                } else {
+                                                    exitMesh.positionOffset = 0u;
+                                                    exitMesh.indexOffset = 0u;
+                                                    exitMesh.vertexCount = limits.vertexCount;
+                                                    exitMesh.indexCount = limits.indexCount;
+                                                    exitMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                                                }
+
+                                                const uint exitPrimitiveCount = max(exitMesh.indexCount / 3u, 1u);
+                                                const uint exitLocalPrimitive =
+                                                    min(exitHit.primitiveIndex, exitPrimitiveCount - 1u);
+                                                uint exitGlobalPrimitive = exitInfo.primitiveOffset + exitLocalPrimitive;
+                                                if (exitInfo.primitiveCount > 0u) {
+                                                    const uint exitEnd =
+                                                        exitInfo.primitiveOffset + exitInfo.primitiveCount - 1u;
+                                                    exitGlobalPrimitive = min(exitGlobalPrimitive, exitEnd);
+                                                }
+                                                const uint exitBase = exitGlobalPrimitive * 3u;
+                                                if (exitBase + 2u < limits.indexCount) {
+                                                    const uint ei0 = indices[exitBase + 0u];
+                                                    const uint ei1 = indices[exitBase + 1u];
+                                                    const uint ei2 = indices[exitBase + 2u];
+                                                    if (ei0 < limits.vertexCount &&
+                                                        ei1 < limits.vertexCount &&
+                                                        ei2 < limits.vertexCount) {
+                                                        const float wExit =
+                                                            clamp(1.0f - exitHit.bary.x - exitHit.bary.y, 0.0f, 1.0f);
+                                                        const float3 baryExit =
+                                                            float3(wExit, exitHit.bary.x, exitHit.bary.y);
+                                                        float2 exitUV = float2(0.0f);
+                                                        if (texcoords &&
+                                                            ei0 < limits.texcoordCount &&
+                                                            ei1 < limits.texcoordCount &&
+                                                            ei2 < limits.texcoordCount) {
+                                                            const float2 t0 = float2(texcoords[ei0]);
+                                                            const float2 t1 = float2(texcoords[ei1]);
+                                                            const float2 t2 = float2(texcoords[ei2]);
+                                                            exitUV = t0 * baryExit.x + t1 * baryExit.y + t2 * baryExit.z;
+                                                        }
+
+                                                        const float3 ex0 = float3(positions[ei0]);
+                                                        const float3 ex1 = float3(positions[ei1]);
+                                                        const float3 ex2 = float3(positions[ei2]);
+                                                        const float3 exitLocalPos =
+                                                            ex0 * baryExit.x + ex1 * baryExit.y + ex2 * baryExit.z;
+                                                        const float3 exitPos =
+                                                            transformPosition(exitInfo.objectToWorld, exitLocalPos);
+
+                                                        // Continue tracing after leaving the refractive shell to avoid
+                                                        // sampling the shell material itself as the final transmitted color.
+                                                        HardwareHit beyondHit = traceScene(accelerationStructure,
+                                                                                           exitPos + refractedDir * 2.0e-3f,
+                                                                                           refractedDir,
+                                                                                           1.0e-3f,
+                                                                                           FLT_MAX);
+                                                        float3 throughColor = sampleSkyColor(refractedDir);
+                                                        if (beyondHit.hit && instances != nullptr && limits.instanceCount > 0u) {
+                                                            RTRRayTracingInstanceResource throughInfo;
+                                                            const uint throughInstance =
+                                                                min(beyondHit.instanceUserId, limits.instanceCount - 1u);
+                                                            throughInfo = instances[throughInstance];
+
+                                                            RTRRayTracingMeshResource throughMesh;
+                                                            if (meshes != nullptr && limits.meshCount > 0u) {
+                                                                const uint safeThroughMesh =
+                                                                    min(throughInfo.meshIndex, limits.meshCount - 1u);
+                                                                throughMesh = meshes[safeThroughMesh];
+                                                            } else {
+                                                                throughMesh.positionOffset = 0u;
+                                                                throughMesh.indexOffset = 0u;
+                                                                throughMesh.vertexCount = limits.vertexCount;
+                                                                throughMesh.indexCount = limits.indexCount;
+                                                                throughMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                                                            }
+
+                                                            const uint throughPrimitiveCount = max(throughMesh.indexCount / 3u, 1u);
+                                                            const uint throughLocalPrimitive =
+                                                                min(beyondHit.primitiveIndex, throughPrimitiveCount - 1u);
+                                                            uint throughGlobalPrimitive =
+                                                                throughInfo.primitiveOffset + throughLocalPrimitive;
+                                                            if (throughInfo.primitiveCount > 0u) {
+                                                                const uint throughEnd =
+                                                                    throughInfo.primitiveOffset + throughInfo.primitiveCount - 1u;
+                                                                throughGlobalPrimitive = min(throughGlobalPrimitive, throughEnd);
+                                                            }
+                                                            const uint throughBase = throughGlobalPrimitive * 3u;
+                                                            if (throughBase + 2u < limits.indexCount) {
+                                                                const uint hi0 = indices[throughBase + 0u];
+                                                                const uint hi1 = indices[throughBase + 1u];
+                                                                const uint hi2 = indices[throughBase + 2u];
+                                                                if (hi0 < limits.vertexCount &&
+                                                                    hi1 < limits.vertexCount &&
+                                                                    hi2 < limits.vertexCount) {
+                                                                    const float wThrough =
+                                                                        clamp(1.0f - beyondHit.bary.x - beyondHit.bary.y,
+                                                                              0.0f,
+                                                                              1.0f);
+                                                                    const float3 baryThrough =
+                                                                        float3(wThrough, beyondHit.bary.x, beyondHit.bary.y);
+                                                                    float2 throughUV = float2(0.0f);
+                                                                    if (texcoords &&
+                                                                        hi0 < limits.texcoordCount &&
+                                                                        hi1 < limits.texcoordCount &&
+                                                                        hi2 < limits.texcoordCount) {
+                                                                        const float2 t0 = float2(texcoords[hi0]);
+                                                                        const float2 t1 = float2(texcoords[hi1]);
+                                                                        const float2 t2 = float2(texcoords[hi2]);
+                                                                        throughUV = t0 * baryThrough.x +
+                                                                                    t1 * baryThrough.y +
+                                                                                    t2 * baryThrough.z;
+                                                                    }
+
+                                                                    const RTRRayTracingMaterial throughMaterial = loadMaterial(
+                                                                        throughInfo.materialIndex,
+                                                                        materials,
+                                                                        limits.materialCount,
+                                                                        throughMesh.materialIndex);
+                                                                    throughColor = clamp(sampleMaterialColor(throughMaterial,
+                                                                                                             throughUV,
+                                                                                                             textureInfos,
+                                                                                                             limits.textureCount,
+                                                                                                             texturePixels),
+                                                                                         0.0f,
+                                                                                         1.0f);
+                                                                    throughColor += throughMaterial.emission;
+                                                                }
+                                                            }
+                                                        }
+
+                                                        transmittedColor = throughColor;
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -726,9 +900,86 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                             const float f0Base = (ior - 1.0f) / (ior + 1.0f);
                             const float f0 = f0Base * f0Base;
                             const float fresnel = clamp(f0 + (1.0f - f0) * pow(1.0f - cosIncident, 5.0f), 0.0f, 1.0f);
-                            const float transmissionWeight = 1.0f - fresnel;
+                            const float transmissionWeight = (1.0f - fresnel) * 0.95f;
+                            const float3 transmittanceTint = mix(float3(1.0f), clamp(baseColour, 0.0f, 1.0f), 0.22f);
+                            transmittedColor *= transmittanceTint;
                             lighting += transmittedColor * transmissionWeight;
+
+                            // Add explicit Fresnel reflection for refractive materials so they
+                            // keep visible contour/details instead of collapsing to dark mass.
+                            const float3 refrReflectDir = normalize(reflect(rayDirection, normal));
+                            HardwareHit refrReflectHit =
+                                traceScene(accelerationStructure, hitPos, refrReflectDir, 1.0e-3f, FLT_MAX);
+                            float3 refrReflectColor = sampleSkyColor(refrReflectDir);
+                            if (refrReflectHit.hit) {
+                                RTRRayTracingInstanceResource rrInfo;
+                                if (instances != nullptr && limits.instanceCount > 0u) {
+                                    const uint rrInstance = min(refrReflectHit.instanceUserId, limits.instanceCount - 1u);
+                                    rrInfo = instances[rrInstance];
+                                } else {
+                                    rrInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                                    rrInfo.meshIndex = 0u;
+                                }
+
+                                RTRRayTracingMeshResource rrMesh;
+                                if (meshes != nullptr && limits.meshCount > 0u) {
+                                    const uint safeRrMesh = min(rrInfo.meshIndex, limits.meshCount - 1u);
+                                    rrMesh = meshes[safeRrMesh];
+                                } else {
+                                    rrMesh.positionOffset = 0u;
+                                    rrMesh.indexOffset = 0u;
+                                    rrMesh.vertexCount = limits.vertexCount;
+                                    rrMesh.indexCount = limits.indexCount;
+                                    rrMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                                }
+
+                                const uint rrPrimitiveCount = max(rrMesh.indexCount / 3u, 1u);
+                                const uint rrLocalPrimitive =
+                                    min(refrReflectHit.primitiveIndex, rrPrimitiveCount - 1u);
+                                uint rrGlobalPrimitive = rrInfo.primitiveOffset + rrLocalPrimitive;
+                                if (rrInfo.primitiveCount > 0u) {
+                                    const uint rrEnd = rrInfo.primitiveOffset + rrInfo.primitiveCount - 1u;
+                                    rrGlobalPrimitive = min(rrGlobalPrimitive, rrEnd);
+                                }
+                                const uint rrBase = rrGlobalPrimitive * 3u;
+                                if (rrBase + 2u < limits.indexCount) {
+                                    const uint r0 = indices[rrBase + 0u];
+                                    const uint r1 = indices[rrBase + 1u];
+                                    const uint r2 = indices[rrBase + 2u];
+                                    if (r0 < limits.vertexCount && r1 < limits.vertexCount && r2 < limits.vertexCount) {
+                                        const float wr = clamp(1.0f - refrReflectHit.bary.x - refrReflectHit.bary.y, 0.0f, 1.0f);
+                                        const float3 baryR = float3(wr, refrReflectHit.bary.x, refrReflectHit.bary.y);
+                                        float2 rrUV = float2(0.0f);
+                                        if (texcoords &&
+                                            r0 < limits.texcoordCount &&
+                                            r1 < limits.texcoordCount &&
+                                            r2 < limits.texcoordCount) {
+                                            const float2 t0 = float2(texcoords[r0]);
+                                            const float2 t1 = float2(texcoords[r1]);
+                                            const float2 t2 = float2(texcoords[r2]);
+                                            rrUV = t0 * baryR.x + t1 * baryR.y + t2 * baryR.z;
+                                        }
+                                        const RTRRayTracingMaterial rrMat = loadMaterial(rrInfo.materialIndex,
+                                                                                         materials,
+                                                                                         limits.materialCount,
+                                                                                         rrMesh.materialIndex);
+                                        refrReflectColor = clamp(sampleMaterialColor(rrMat,
+                                                                                     rrUV,
+                                                                                     textureInfos,
+                                                                                     limits.textureCount,
+                                                                                     texturePixels),
+                                                                 0.0f,
+                                                                 1.0f);
+                                        refrReflectColor += rrMat.emission;
+                                    }
+                                }
+                            }
+                            lighting += refrReflectColor * clamp(fresnel * 0.9f, 0.04f, 0.7f);
                         }
+                    }
+
+                    if (texturedSurface && !refractiveSurface) {
+                        lighting += baseColour * 0.06f;
                     }
 
                     color = clamp(lighting, 0.0f, 4.0f);
