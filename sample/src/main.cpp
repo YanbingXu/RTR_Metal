@@ -389,6 +389,14 @@ int main(int argc, const char* argv[]) {
     }
 
     for (std::uint32_t i = 0; i < options.frames; ++i) {
+        // Current hardware path does not perform true accumulation; rebuilding scene each frame
+        // keeps multi-frame CLI runs deterministic and avoids long-run state drift.
+        if (i > 0) {
+            if (!renderer.loadScene(scene)) {
+                rtr::core::Logger::error("Sample", "Failed to reload scene on frame %u", i);
+                return 1;
+            }
+        }
         renderer.renderFrame();
     }
 

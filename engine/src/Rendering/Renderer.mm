@@ -368,6 +368,7 @@ struct Renderer::Impl {
     CameraRig cameraRig;
     core::math::BoundingBox sceneBounds = core::math::BoundingBox::makeEmpty();
     bool hitDebugLogged = false;
+    bool sceneResourceDataDirty = true;
 
     [[nodiscard]] bool isRayTracingReady() const noexcept {
         return context.isValid() && rayTracingPipeline.isValid() && topLevelStructure.isValid();
@@ -651,7 +652,7 @@ struct Renderer::Impl {
             return false;
         }
 
-        if (!hitDebugLogged && resources.hitDebugBuffer.isValid()) {
+        if (resources.hitDebugBuffer.isValid()) {
             const bool debugInstanceTrace = debugOptions.visualization == DebugVisualization::InstanceTrace;
             const bool debugPrimitiveTrace = debugOptions.visualization == DebugVisualization::PrimitiveTrace;
             id<MTLBuffer> hitBuffer = (__bridge id<MTLBuffer>)resources.hitDebugBuffer.nativeHandle();
@@ -825,7 +826,7 @@ struct Renderer::Impl {
         uniforms->camera.imagePlaneHalfExtents = simd_make_float2(halfWidth, halfHeight);
         uniforms->camera.width = target.width;
         uniforms->camera.height = target.height;
-        uniforms->camera.frameIndex = frameCounter;
+        uniforms->camera.frameIndex = 0u;
         std::uint32_t flags = 0u;
         if (debugAlbedo) {
             flags |= RTR_RAY_FLAG_DEBUG;
@@ -841,7 +842,7 @@ struct Renderer::Impl {
         }
         uniforms->camera.flags = flags;
         uniforms->camera.samplesPerPixel = 1u;
-        uniforms->camera.sampleSeed = frameCounter;
+        uniforms->camera.sampleSeed = 0u;
 
         if (debugCameraTrace) {
             core::Logger::info("Renderer",
@@ -865,7 +866,7 @@ struct Renderer::Impl {
         light.right = simd_make_float4(0.25f, 0.0f, 0.0f, 0.0f);
         light.up = simd_make_float4(0.0f, 0.0f, 0.25f, 0.0f);
         light.forward = simd_make_float4(0.0f, -1.0f, 0.0f, 0.0f);
-        light.color = simd_make_float4(18.0f, 17.5f, 17.0f, 0.0f);
+        light.color = simd_make_float4(24.0f, 23.5f, 23.0f, 0.0f);
 
         if (debugAlbedo) {
             core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->camera.flags);
@@ -1073,12 +1074,24 @@ struct Renderer::Impl {
                 return;
             }
 
+            bool reallocated = false;
             if (!handle.isValid() || handle.length() < length) {
                 handle = bufferAllocator.createBuffer(length, data, label);
+                reallocated = true;
             } else {
                 id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
-                if (buffer && data) {
+                if (buffer && data && sceneResourceDataDirty) {
                     std::memcpy([buffer contents], data, length);
+                    if ([buffer storageMode] == MTLStorageModeManaged) {
+                        [buffer didModifyRange:NSMakeRange(0, length)];
+                    }
+                }
+            }
+
+            if (reallocated && handle.isValid() && data == nullptr) {
+                id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle.nativeHandle();
+                if (buffer) {
+                    std::memset([buffer contents], 0, length);
                     if ([buffer storageMode] == MTLStorageModeManaged) {
                         [buffer didModifyRange:NSMakeRange(0, length)];
                     }
@@ -1105,6 +1118,8 @@ struct Renderer::Impl {
                      texturePixels.empty() ? nullptr : texturePixels.data(),
                      texturePixels.size() * sizeof(float),
                      "rtr.textureData");
+
+        sceneResourceDataDirty = false;
 
         if (success) {
             resources.width = width;
@@ -1384,6 +1399,7 @@ bool Renderer::Impl::loadSceneInternal(const scene::Scene& scene) {
     target.reset();
     resources.reset();
     geometryStore.clear();
+    sceneResourceDataDirty = true;
 
     const std::size_t meshCount = scene.meshes().size();
     const std::size_t materialCount = scene.materials().size();
