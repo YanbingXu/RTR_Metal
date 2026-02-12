@@ -108,6 +108,10 @@ EngineConfig ConfigLoader::loadEngineConfig(const std::filesystem::path& path) {
         config.maxHardwareBounces = parseUInt(it->second, config.maxHardwareBounces);
     }
 
+    if (auto it = pairs.find("randomSeed"); it != pairs.end()) {
+        config.randomSeed = parseUInt(it->second, config.randomSeed);
+    }
+
     if (config.maxHardwareBounces == 0) {
         config.maxHardwareBounces = 1;
     }

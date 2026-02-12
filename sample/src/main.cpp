@@ -46,6 +46,7 @@ struct CommandLineOptions {
     std::optional<std::string> expectedHash;
     bool overrideShadingMode = false;
     std::optional<std::uint32_t> maxBounces;
+    std::optional<std::uint32_t> randomSeed;
     std::optional<std::string> debugVisualization;
     bool debugSceneDump = false;
     bool debugGeometryTrace = false;
@@ -65,6 +66,7 @@ void printUsage() {
               << "  --mode=auto|hardware          选择硬件模式（默认 auto，与硬件模式一致）\n"
               << "  --config=<file>        配置文件路径 (默认 config/engine.ini)\n"
               << "  --max-bounces=N        硬件 RT 最大弹射次数 (至少 1)\n"
+              << "  --seed=N               随机纹理种子（用于可复现 hash）\n"
               << "  --hash                 渲染完输出图像的 FNV-1a hash\n"
               << "  --expect-hash=0xHASH  计算图像 hash 并与给定值比对\n"
               << "  --debug-albedo         调试模式：直接输出材质反照率 (等价于 --debug-visualization=albedo)\n"
@@ -220,6 +222,8 @@ CommandLineOptions parseOptions(int argc, const char* const* argv) {
                 throw std::runtime_error("--max-bounces must be >= 1");
             }
             options.maxBounces = value;
+        } else if (arg.rfind("--seed=", 0) == 0) {
+            options.randomSeed = parseUIntArgument(arg.substr(7), "--seed");
         } else if (arg.rfind("--debug-visualization=", 0) == 0) {
             options.debugVisualization = arg.substr(22);
         } else if (arg.rfind("--debug-log=", 0) == 0) {
@@ -332,6 +336,9 @@ int main(int argc, const char* argv[]) {
 
     if (options.maxBounces.has_value()) {
         config.maxHardwareBounces = *options.maxBounces;
+    }
+    if (options.randomSeed.has_value()) {
+        config.randomSeed = *options.randomSeed;
     }
     if (config.maxHardwareBounces == 0) {
         config.maxHardwareBounces = 1;

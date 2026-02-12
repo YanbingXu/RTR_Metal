@@ -10,6 +10,7 @@ struct EngineConfig {
     std::string shaderLibraryPath;
     std::string shadingMode = "auto";  // "auto" or "hardware"
     std::uint32_t maxHardwareBounces = 2;
+    std::uint32_t randomSeed = 1337;
 };
 
 }  // namespace rtr::core

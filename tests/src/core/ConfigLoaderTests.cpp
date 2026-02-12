@@ -82,6 +82,19 @@ maxBounces = 0
     std::filesystem::remove(path);
 }
 
+TEST(ConfigLoader, ParsesOptionalRandomSeed) {
+    const auto path = makeTempFile("rtr_engine_config_seed.ini",
+                                   R"(applicationName = Sample
+shaderLibraryPath = assets/RTR.metallib
+randomSeed = 20260212
+)");
+
+    const rtr::core::EngineConfig config = rtr::core::ConfigLoader::loadEngineConfig(path);
+    EXPECT_EQ(config.randomSeed, 20260212u);
+
+    std::filesystem::remove(path);
+}
+
 TEST(ConfigLoader, ThrowsOnMissingApplicationName) {
     const auto path = makeTempFile("rtr_engine_config_invalid.ini",
                                    R"(shaderLibraryPath = foo

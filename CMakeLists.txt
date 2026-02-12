@@ -11,6 +11,7 @@ include(FetchContent)
 option(RTR_BUILD_SAMPLE "Build RTR sample application" ON)
 option(RTR_BUILD_ONSCREEN_SAMPLE "Build RTR on-screen sample (MetalKit UI)" ON)
 option(RTR_BUILD_TESTS "Build RTR unit tests" ON)
+option(RTR_ENABLE_IMAGE_REGRESSION_TESTS "Enable GPU-based image/hash regression tests" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -172,6 +173,19 @@ if(RTR_BUILD_TESTS)
     add_dependencies(RTRMetalTests RTRMetalShaders)
     include(GoogleTest)
     gtest_discover_tests(RTRMetalTests)
+
+    if(RTR_BUILD_SAMPLE AND RTR_ENABLE_IMAGE_REGRESSION_TESTS)
+        add_test(NAME CornellHashF1
+            COMMAND RTRMetalSample
+                --scene=cornell
+                --resolution=1024x768
+                --frames=1
+                --mode=hardware
+                --asset-root=${CMAKE_SOURCE_DIR}/assets
+                --config=${CMAKE_SOURCE_DIR}/config/engine.ini
+                --output=${CMAKE_BINARY_DIR}/cornell_hash_f1.ppm
+                --expect-hash=0x2D8F4BB99F27AE99)
+    endif()
 endif()
 
 # Packaging / configuration ------------------------------------------------

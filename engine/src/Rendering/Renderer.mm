@@ -1075,7 +1075,7 @@ struct Renderer::Impl {
                 success = false;
             } else {
                 std::vector<std::uint32_t> randomData(kRandomTextureWidth * kRandomTextureHeight * 4);
-                std::mt19937 rng(static_cast<std::uint32_t>(std::random_device{}()));
+                std::mt19937 rng(config.randomSeed);
                 std::uniform_int_distribution<std::uint32_t> dist(0, std::numeric_limits<std::uint32_t>::max());
                 for (auto& value : randomData) {
                     value = dist(rng);
@@ -1087,6 +1087,7 @@ struct Renderer::Impl {
                                    withBytes:randomData.data()
                                  bytesPerRow:bytesPerRow];
                 resources.randomTexture = randomTexture;
+                core::Logger::info("Renderer", "Initialized random texture with seed=%u", config.randomSeed);
             }
         }
 
