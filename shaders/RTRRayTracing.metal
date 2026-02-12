@@ -18,6 +18,8 @@ namespace {
 
 constant uint kMaxTextureSize = 2048u;
 constant uint kLightSamplesPerPixel = 8u;
+// Must stay in sync with kMaxTrianglesPerGeometry in AccelerationStructureBuilder.mm.
+constant uint kTrianglesPerGeometryChunk = 4096u;
 
 inline uint mixBits(uint value) {
     value ^= value >> 16u;
@@ -281,6 +283,7 @@ using namespace metal::raytracing;
 
 struct HardwareHit {
     bool hit;
+    uint geometryIndex;
     uint primitiveIndex;
     float2 bary;
     float distance;
@@ -306,6 +309,7 @@ inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStr
     HardwareHit hit{};
     if (result.type == intersection_type::triangle) {
         hit.hit = true;
+        hit.geometryIndex = result.geometry_id;
         hit.primitiveIndex = result.primitive_id;
         hit.distance = result.distance;
         hit.bary = result.triangle_barycentric_coord;
@@ -313,6 +317,20 @@ inline HardwareHit traceScene(acceleration_structure<instancing> accelerationStr
         hit.instanceUserId = result.instance_id;
     }
     return hit;
+}
+
+inline uint resolveGlobalPrimitive(HardwareHit hit,
+                                   RTRRayTracingInstanceResource instanceInfo,
+                                   RTRRayTracingMeshResource meshResource) {
+    const uint meshPrimitiveCount = max(meshResource.indexCount / 3u, 1u);
+    const uint chunkOffset = hit.geometryIndex * kTrianglesPerGeometryChunk;
+    const uint localPrimitive = min(chunkOffset + hit.primitiveIndex, meshPrimitiveCount - 1u);
+    uint globalPrimitive = instanceInfo.primitiveOffset + localPrimitive;
+    if (instanceInfo.primitiveCount > 0u) {
+        const uint primitiveEnd = instanceInfo.primitiveOffset + instanceInfo.primitiveCount - 1u;
+        globalPrimitive = min(globalPrimitive, primitiveEnd);
+    }
+    return globalPrimitive;
 }
 
 inline bool isOccluded(acceleration_structure<instancing> accelerationStructure,
@@ -493,13 +511,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
         float4x4 objectToWorld = instanceInfo.objectToWorld;
         float4x4 worldToObject = instanceInfo.worldToObject;
 
-        const uint meshPrimitiveCount = max(meshResource.indexCount / 3u, 1u);
-        const uint localPrimitive = min(hit.primitiveIndex, meshPrimitiveCount - 1u);
-        uint globalPrimitive = instanceInfo.primitiveOffset + localPrimitive;
-        if (instanceInfo.primitiveCount > 0u) {
-            const uint primitiveEnd = instanceInfo.primitiveOffset + instanceInfo.primitiveCount - 1u;
-            globalPrimitive = min(globalPrimitive, primitiveEnd);
-        }
+        const uint globalPrimitive = resolveGlobalPrimitive(hit, instanceInfo, meshResource);
 
         if (debugPrimitiveTrace) {
             hitDebugValue = globalPrimitive + 1u;
@@ -629,13 +641,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                     bounceMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
                                 }
 
-                                const uint bounceMeshPrimitiveCount = max(bounceMesh.indexCount / 3u, 1u);
-                                const uint bounceLocalPrimitive = min(bounce.primitiveIndex, bounceMeshPrimitiveCount - 1u);
-                                uint bounceGlobalPrimitive = bounceInfo.primitiveOffset + bounceLocalPrimitive;
-                                if (bounceInfo.primitiveCount > 0u) {
-                                    const uint bounceEnd = bounceInfo.primitiveOffset + bounceInfo.primitiveCount - 1u;
-                                    bounceGlobalPrimitive = min(bounceGlobalPrimitive, bounceEnd);
-                                }
+                                const uint bounceGlobalPrimitive = resolveGlobalPrimitive(bounce, bounceInfo, bounceMesh);
                                 const uint bounceBase = bounceGlobalPrimitive * 3u;
                                 if (bounceBase + 2u < limits.indexCount) {
                                     const uint bi0 = indices[bounceBase + 0];
@@ -757,16 +763,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                     transmittedMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
                                 }
 
-                                const uint transmittedPrimitiveCount = max(transmittedMesh.indexCount / 3u, 1u);
-                                const uint transmittedLocalPrimitive =
-                                    min(transmittedHit.primitiveIndex, transmittedPrimitiveCount - 1u);
-                                uint transmittedGlobalPrimitive =
-                                    transmittedInfo.primitiveOffset + transmittedLocalPrimitive;
-                                if (transmittedInfo.primitiveCount > 0u) {
-                                    const uint transmittedEnd =
-                                        transmittedInfo.primitiveOffset + transmittedInfo.primitiveCount - 1u;
-                                    transmittedGlobalPrimitive = min(transmittedGlobalPrimitive, transmittedEnd);
-                                }
+                                const uint transmittedGlobalPrimitive =
+                                    resolveGlobalPrimitive(transmittedHit, transmittedInfo, transmittedMesh);
                                 const uint transmittedBase = transmittedGlobalPrimitive * 3u;
                                 if (transmittedBase + 2u < limits.indexCount) {
                                     const uint ti0 = indices[transmittedBase + 0];
@@ -870,16 +868,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                                     throughMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
                                                 }
 
-                                                const uint throughPrimitiveCount = max(throughMesh.indexCount / 3u, 1u);
-                                                const uint throughLocalPrimitive =
-                                                    min(beyondHit.primitiveIndex, throughPrimitiveCount - 1u);
-                                                uint throughGlobalPrimitive =
-                                                    throughInfo.primitiveOffset + throughLocalPrimitive;
-                                                if (throughInfo.primitiveCount > 0u) {
-                                                    const uint throughEnd =
-                                                        throughInfo.primitiveOffset + throughInfo.primitiveCount - 1u;
-                                                    throughGlobalPrimitive = min(throughGlobalPrimitive, throughEnd);
-                                                }
+                                                const uint throughGlobalPrimitive =
+                                                    resolveGlobalPrimitive(beyondHit, throughInfo, throughMesh);
                                                 const uint throughBase = throughGlobalPrimitive * 3u;
                                                 if (throughBase + 2u < limits.indexCount) {
                                                     const uint hi0 = indices[throughBase + 0u];
@@ -1007,14 +997,8 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                                     rrMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
                                 }
 
-                                const uint rrPrimitiveCount = max(rrMesh.indexCount / 3u, 1u);
-                                const uint rrLocalPrimitive =
-                                    min(refrReflectHit.primitiveIndex, rrPrimitiveCount - 1u);
-                                uint rrGlobalPrimitive = rrInfo.primitiveOffset + rrLocalPrimitive;
-                                if (rrInfo.primitiveCount > 0u) {
-                                    const uint rrEnd = rrInfo.primitiveOffset + rrInfo.primitiveCount - 1u;
-                                    rrGlobalPrimitive = min(rrGlobalPrimitive, rrEnd);
-                                }
+                                const uint rrGlobalPrimitive =
+                                    resolveGlobalPrimitive(refrReflectHit, rrInfo, rrMesh);
                                 const uint rrBase = rrGlobalPrimitive * 3u;
                                 if (rrBase + 2u < limits.indexCount) {
                                     const uint r0 = indices[rrBase + 0u];
