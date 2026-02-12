@@ -846,153 +846,123 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
 
                                         const bool transmittedRefractive =
                                             (transmittedMaterial.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
-                                        if (transmittedRefractive && uniforms.maxBounces > 2u) {
-                                            HardwareHit exitHit = traceScene(accelerationStructure,
-                                                                             transmittedPos + refractedDir * 2.0e-3f,
-                                                                             refractedDir,
-                                                                             1.0e-3f,
-                                                                             FLT_MAX);
-                                            if (exitHit.hit && instances != nullptr && limits.instanceCount > 0u) {
-                                                RTRRayTracingInstanceResource exitInfo;
-                                                const uint exitInstance =
-                                                    min(exitHit.instanceUserId, limits.instanceCount - 1u);
-                                                exitInfo = instances[exitInstance];
+                                        if (transmittedRefractive && instances != nullptr && limits.instanceCount > 0u) {
+                                            HardwareHit beyondHit = traceScene(accelerationStructure,
+                                                                               transmittedPos + refractedDir * 2.0e-3f,
+                                                                               refractedDir,
+                                                                               1.0e-3f,
+                                                                               FLT_MAX);
+                                            if (beyondHit.hit) {
+                                                const uint throughInstance =
+                                                    min(beyondHit.instanceUserId, limits.instanceCount - 1u);
+                                                const RTRRayTracingInstanceResource throughInfo = instances[throughInstance];
 
-                                                RTRRayTracingMeshResource exitMesh;
+                                                RTRRayTracingMeshResource throughMesh;
                                                 if (meshes != nullptr && limits.meshCount > 0u) {
-                                                    const uint safeExitMesh =
-                                                        min(exitInfo.meshIndex, limits.meshCount - 1u);
-                                                    exitMesh = meshes[safeExitMesh];
+                                                    const uint safeThroughMesh =
+                                                        min(throughInfo.meshIndex, limits.meshCount - 1u);
+                                                    throughMesh = meshes[safeThroughMesh];
                                                 } else {
-                                                    exitMesh.positionOffset = 0u;
-                                                    exitMesh.indexOffset = 0u;
-                                                    exitMesh.vertexCount = limits.vertexCount;
-                                                    exitMesh.indexCount = limits.indexCount;
-                                                    exitMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+                                                    throughMesh.positionOffset = 0u;
+                                                    throughMesh.indexOffset = 0u;
+                                                    throughMesh.vertexCount = limits.vertexCount;
+                                                    throughMesh.indexCount = limits.indexCount;
+                                                    throughMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
                                                 }
 
-                                                const uint exitPrimitiveCount = max(exitMesh.indexCount / 3u, 1u);
-                                                const uint exitLocalPrimitive =
-                                                    min(exitHit.primitiveIndex, exitPrimitiveCount - 1u);
-                                                uint exitGlobalPrimitive = exitInfo.primitiveOffset + exitLocalPrimitive;
-                                                if (exitInfo.primitiveCount > 0u) {
-                                                    const uint exitEnd =
-                                                        exitInfo.primitiveOffset + exitInfo.primitiveCount - 1u;
-                                                    exitGlobalPrimitive = min(exitGlobalPrimitive, exitEnd);
+                                                const uint throughPrimitiveCount = max(throughMesh.indexCount / 3u, 1u);
+                                                const uint throughLocalPrimitive =
+                                                    min(beyondHit.primitiveIndex, throughPrimitiveCount - 1u);
+                                                uint throughGlobalPrimitive =
+                                                    throughInfo.primitiveOffset + throughLocalPrimitive;
+                                                if (throughInfo.primitiveCount > 0u) {
+                                                    const uint throughEnd =
+                                                        throughInfo.primitiveOffset + throughInfo.primitiveCount - 1u;
+                                                    throughGlobalPrimitive = min(throughGlobalPrimitive, throughEnd);
                                                 }
-                                                const uint exitBase = exitGlobalPrimitive * 3u;
-                                                if (exitBase + 2u < limits.indexCount) {
-                                                    const uint ei0 = indices[exitBase + 0u];
-                                                    const uint ei1 = indices[exitBase + 1u];
-                                                    const uint ei2 = indices[exitBase + 2u];
-                                                    if (ei0 < limits.vertexCount &&
-                                                        ei1 < limits.vertexCount &&
-                                                        ei2 < limits.vertexCount) {
-                                                        const float wExit =
-                                                            clamp(1.0f - exitHit.bary.x - exitHit.bary.y, 0.0f, 1.0f);
-                                                        const float3 baryExit =
-                                                            float3(wExit, exitHit.bary.x, exitHit.bary.y);
-                                                        float2 exitUV = float2(0.0f);
+                                                const uint throughBase = throughGlobalPrimitive * 3u;
+                                                if (throughBase + 2u < limits.indexCount) {
+                                                    const uint hi0 = indices[throughBase + 0u];
+                                                    const uint hi1 = indices[throughBase + 1u];
+                                                    const uint hi2 = indices[throughBase + 2u];
+                                                    if (hi0 < limits.vertexCount &&
+                                                        hi1 < limits.vertexCount &&
+                                                        hi2 < limits.vertexCount) {
+                                                        const float wThrough =
+                                                            clamp(1.0f - beyondHit.bary.x - beyondHit.bary.y, 0.0f, 1.0f);
+                                                        const float3 baryThrough =
+                                                            float3(wThrough, beyondHit.bary.x, beyondHit.bary.y);
+                                                        float2 throughUV = float2(0.0f);
                                                         if (texcoords &&
-                                                            ei0 < limits.texcoordCount &&
-                                                            ei1 < limits.texcoordCount &&
-                                                            ei2 < limits.texcoordCount) {
-                                                            const float2 t0 = float2(texcoords[ei0]);
-                                                            const float2 t1 = float2(texcoords[ei1]);
-                                                            const float2 t2 = float2(texcoords[ei2]);
-                                                            exitUV = t0 * baryExit.x + t1 * baryExit.y + t2 * baryExit.z;
+                                                            hi0 < limits.texcoordCount &&
+                                                            hi1 < limits.texcoordCount &&
+                                                            hi2 < limits.texcoordCount) {
+                                                            const float2 t0 = float2(texcoords[hi0]);
+                                                            const float2 t1 = float2(texcoords[hi1]);
+                                                            const float2 t2 = float2(texcoords[hi2]);
+                                                            throughUV = t0 * baryThrough.x +
+                                                                        t1 * baryThrough.y +
+                                                                        t2 * baryThrough.z;
                                                         }
 
-                                                        const float3 ex0 = float3(positions[ei0]);
-                                                        const float3 ex1 = float3(positions[ei1]);
-                                                        const float3 ex2 = float3(positions[ei2]);
-                                                        const float3 exitLocalPos =
-                                                            ex0 * baryExit.x + ex1 * baryExit.y + ex2 * baryExit.z;
-                                                        const float3 exitPos =
-                                                            transformPosition(exitInfo.objectToWorld, exitLocalPos);
-
-                                                        // Continue tracing after leaving the refractive shell to avoid
-                                                        // sampling the shell material itself as the final transmitted color.
-                                                        HardwareHit beyondHit = traceScene(accelerationStructure,
-                                                                                           exitPos + refractedDir * 2.0e-3f,
-                                                                                           refractedDir,
-                                                                                           1.0e-3f,
-                                                                                           FLT_MAX);
-                                                        float3 throughColor = sampleSkyColor(refractedDir);
-                                                        if (beyondHit.hit && instances != nullptr && limits.instanceCount > 0u) {
-                                                            RTRRayTracingInstanceResource throughInfo;
-                                                            const uint throughInstance =
-                                                                min(beyondHit.instanceUserId, limits.instanceCount - 1u);
-                                                            throughInfo = instances[throughInstance];
-
-                                                            RTRRayTracingMeshResource throughMesh;
-                                                            if (meshes != nullptr && limits.meshCount > 0u) {
-                                                                const uint safeThroughMesh =
-                                                                    min(throughInfo.meshIndex, limits.meshCount - 1u);
-                                                                throughMesh = meshes[safeThroughMesh];
-                                                            } else {
-                                                                throughMesh.positionOffset = 0u;
-                                                                throughMesh.indexOffset = 0u;
-                                                                throughMesh.vertexCount = limits.vertexCount;
-                                                                throughMesh.indexCount = limits.indexCount;
-                                                                throughMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                                            }
-
-                                                            const uint throughPrimitiveCount = max(throughMesh.indexCount / 3u, 1u);
-                                                            const uint throughLocalPrimitive =
-                                                                min(beyondHit.primitiveIndex, throughPrimitiveCount - 1u);
-                                                            uint throughGlobalPrimitive =
-                                                                throughInfo.primitiveOffset + throughLocalPrimitive;
-                                                            if (throughInfo.primitiveCount > 0u) {
-                                                                const uint throughEnd =
-                                                                    throughInfo.primitiveOffset + throughInfo.primitiveCount - 1u;
-                                                                throughGlobalPrimitive = min(throughGlobalPrimitive, throughEnd);
-                                                            }
-                                                            const uint throughBase = throughGlobalPrimitive * 3u;
-                                                            if (throughBase + 2u < limits.indexCount) {
-                                                                const uint hi0 = indices[throughBase + 0u];
-                                                                const uint hi1 = indices[throughBase + 1u];
-                                                                const uint hi2 = indices[throughBase + 2u];
-                                                                if (hi0 < limits.vertexCount &&
-                                                                    hi1 < limits.vertexCount &&
-                                                                    hi2 < limits.vertexCount) {
-                                                                    const float wThrough =
-                                                                        clamp(1.0f - beyondHit.bary.x - beyondHit.bary.y,
-                                                                              0.0f,
-                                                                              1.0f);
-                                                                    const float3 baryThrough =
-                                                                        float3(wThrough, beyondHit.bary.x, beyondHit.bary.y);
-                                                                    float2 throughUV = float2(0.0f);
-                                                                    if (texcoords &&
-                                                                        hi0 < limits.texcoordCount &&
-                                                                        hi1 < limits.texcoordCount &&
-                                                                        hi2 < limits.texcoordCount) {
-                                                                        const float2 t0 = float2(texcoords[hi0]);
-                                                                        const float2 t1 = float2(texcoords[hi1]);
-                                                                        const float2 t2 = float2(texcoords[hi2]);
-                                                                        throughUV = t0 * baryThrough.x +
-                                                                                    t1 * baryThrough.y +
-                                                                                    t2 * baryThrough.z;
-                                                                    }
-
-                                                                    const RTRRayTracingMaterial throughMaterial = loadMaterial(
-                                                                        throughInfo.materialIndex,
-                                                                        materials,
-                                                                        limits.materialCount,
-                                                                        throughMesh.materialIndex);
-                                                                    throughColor = clamp(sampleMaterialColor(throughMaterial,
-                                                                                                             throughUV,
-                                                                                                             textureInfos,
-                                                                                                             limits.textureCount,
-                                                                                                             texturePixels),
-                                                                                         0.0f,
-                                                                                         1.0f);
-                                                                    throughColor += throughMaterial.emission;
-                                                                }
-                                                            }
+                                                        float3 throughVertexColour = float3(1.0f);
+                                                        if (colors &&
+                                                            hi0 < limits.colorCount &&
+                                                            hi1 < limits.colorCount &&
+                                                            hi2 < limits.colorCount) {
+                                                            const float3 c0 = float3(colors[hi0]);
+                                                            const float3 c1 = float3(colors[hi1]);
+                                                            const float3 c2 = float3(colors[hi2]);
+                                                            throughVertexColour = clamp(c0 * baryThrough.x +
+                                                                                        c1 * baryThrough.y +
+                                                                                        c2 * baryThrough.z,
+                                                                                        0.0f,
+                                                                                        1.0f);
                                                         }
 
-                                                        transmittedColor = throughColor;
+                                                        const float3 hv0 = float3(positions[hi0]);
+                                                        const float3 hv1 = float3(positions[hi1]);
+                                                        const float3 hv2 = float3(positions[hi2]);
+                                                        const float3 throughLocalPos =
+                                                            hv0 * baryThrough.x + hv1 * baryThrough.y + hv2 * baryThrough.z;
+                                                        const float3 throughPos =
+                                                            transformPosition(throughInfo.objectToWorld, throughLocalPos);
+
+                                                        const RTRRayTracingMaterial throughMaterial = loadMaterial(
+                                                            throughInfo.materialIndex,
+                                                            materials,
+                                                            limits.materialCount,
+                                                            throughMesh.materialIndex);
+                                                        const float3 throughSampled = clamp(sampleMaterialColor(throughMaterial,
+                                                                                                                throughUV,
+                                                                                                                textureInfos,
+                                                                                                                limits.textureCount,
+                                                                                                                texturePixels),
+                                                                                            0.0f,
+                                                                                            1.0f);
+                                                        const float3 throughBaseColour = throughSampled * throughVertexColour;
+                                                        const float3 throughLocalNormal = computeNormal(hi0,
+                                                                                                        hi1,
+                                                                                                        hi2,
+                                                                                                        hv0,
+                                                                                                        hv1,
+                                                                                                        hv2,
+                                                                                                        normals,
+                                                                                                        limits.normalCount,
+                                                                                                        baryThrough);
+                                                        float3 throughNormal =
+                                                            transformNormal(throughInfo.worldToObject, throughLocalNormal);
+                                                        if (dot(throughNormal, refractedDir) > 0.0f) {
+                                                            throughNormal = -throughNormal;
+                                                        }
+                                                        transmittedColor = evaluateSurfaceLighting(uniforms,
+                                                                                                   accelerationStructure,
+                                                                                                   throughPos,
+                                                                                                   throughNormal,
+                                                                                                   normalize(-refractedDir),
+                                                                                                   throughBaseColour,
+                                                                                                   throughMaterial,
+                                                                                                   pixelSeed ^ 0x91E10DA5u);
                                                     }
                                                 }
                                             }
