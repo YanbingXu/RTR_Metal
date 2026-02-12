@@ -44,11 +44,8 @@ float srgbChannelToLinear(float value) {
 }
 
 simd_float3 sampleSkyColor(float3 /*direction*/) {
-    // Hardware Cornell scenes are enclosed; leaking in a bright blue sky causes
-    // long-running accumulation to drift toward a tint. Keep a neutral, dim
-    // ambient term so demos without a ceiling still have a fallback without
-    // overpowering the interior lighting.
-    return float3(0.05f, 0.05f, 0.05f);
+    // Path-traced baseline: no artificial environment term.
+    return float3(0.0f);
 }
 
 inline float wrapCoordinate(float value) {
@@ -349,62 +346,414 @@ inline bool isOccluded(acceleration_structure<instancing> accelerationStructure,
     return result.type != intersection_type::none && result.distance < maxDistance - epsilon;
 }
 
-inline float3 evaluateSurfaceLighting(constant RTRHardwareRayUniforms& uniforms,
-                                      acceleration_structure<instancing> accelerationStructure,
-                                      float3 position,
-                                      float3 normal,
-                                      float3 viewDir,
-                                      float3 baseColour,
-                                      RTRRayTracingMaterial material,
-                                      uint pixelSeed) {
-    const bool refractiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
-    const bool texturedSurface = material.textureIndex != RTR_INVALID_TEXTURE_INDEX;
-    const float3 ambientBase = refractiveSurface ? (baseColour * 0.008f) : (baseColour * 0.14f);
-    const float3 textureBoost = (texturedSurface && !refractiveSurface) ? (baseColour * 0.16f) : float3(0.0f);
-    float3 lighting = ambientBase + textureBoost + material.emission;
+struct SurfaceSample {
+    uint valid;
+    uint instanceOutOfRange;
+    uint rawInstanceId;
+    uint globalPrimitive;
+    uint meshIndex;
+    float3 position;
+    float3 normal;
+    float3 baseColor;
+    RTRRayTracingMaterial material;
+};
 
-    const RTRHardwareAreaLight light = getAreaLight(uniforms);
-    const uint frameBase = uniforms.camera.frameIndex * kLightSamplesPerPixel;
-    const float sampleWeight = 1.0f / static_cast<float>(kLightSamplesPerPixel);
-    for (uint sampleIdx = 0u; sampleIdx < kLightSamplesPerPixel; ++sampleIdx) {
-        const uint sequenceIndex = pixelSeed + frameBase + sampleIdx + 1u;
-        const float2 lightSamples = float2(halton(sequenceIndex, 2u),
-                                           halton(sequenceIndex, 3u));
-        float3 lightDir;
-        float3 lightColor;
-        float lightDistance;
-        sampleAreaLight(light, lightSamples, position, lightDir, lightColor, lightDistance);
-
-        const float NdotL = max(dot(normal, lightDir), 0.0f);
-        const float NdotV = max(dot(normal, viewDir), 0.0f);
-        if (NdotL > 1.0e-4f && NdotV > 1.0e-4f && all(isfinite(lightDir))) {
-            const bool occluded = isOccluded(accelerationStructure, position, lightDir, lightDistance);
-            if (!occluded) {
-                const float3 halfVec = normalize(lightDir + viewDir);
-                const float NdotH = max(dot(normal, halfVec), 0.0f);
-                const float VdotH = max(dot(viewDir, halfVec), 0.0f);
-                const float alpha = max(material.roughness * material.roughness, 1.0e-3f);
-                const float D = distributionGGX(NdotH, alpha);
-                const float G = geometrySmith(NdotV, NdotL, material.roughness);
-                const float3 F = fresnelSchlick(VdotH, mix(float3(0.04f), baseColour, material.metallic));
-                const float3 specular = (D * G * F) / max(4.0f * NdotV * NdotL, 1.0e-4f);
-                if (refractiveSurface) {
-                    lighting += specular * lightColor * NdotL * sampleWeight * 0.55f;
-                } else {
-                    const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
-                    const float3 diffuse = kd * baseColour / 3.14159265f;
-                    lighting += (diffuse + specular) * lightColor * NdotL * sampleWeight;
-                }
-            }
-        }
-    }
-
-    if (texturedSurface && !refractiveSurface) {
-        lighting += baseColour * 0.06f;
-    }
-    return clamp(lighting, 0.0f, 4.0f);
+inline float randomUnit(thread uint& state) {
+    state = mixBits(state * 1664525u + 1013904223u);
+    return (static_cast<float>(state & 0x00FFFFFFu) + 0.5f) * (1.0f / 16777216.0f);
 }
 
+inline float maxComponent(float3 value) {
+    return max(value.x, max(value.y, value.z));
+}
+
+inline void buildOrthonormalBasis(float3 normal, thread float3& tangent, thread float3& bitangent) {
+    const float3 helper = (abs(normal.z) < 0.999f) ? float3(0.0f, 0.0f, 1.0f) : float3(1.0f, 0.0f, 0.0f);
+    tangent = normalize(cross(helper, normal));
+    bitangent = cross(normal, tangent);
+}
+
+inline float3 sampleCosineHemisphere(float3 normal, thread uint& rngState) {
+    const float u1 = randomUnit(rngState);
+    const float u2 = randomUnit(rngState);
+    const float radius = sqrt(u1);
+    const float phi = 6.28318530718f * u2;
+    const float x = radius * cos(phi);
+    const float y = radius * sin(phi);
+    const float z = sqrt(max(0.0f, 1.0f - u1));
+    float3 tangent;
+    float3 bitangent;
+    buildOrthonormalBasis(normal, tangent, bitangent);
+    return normalize(tangent * x + bitangent * y + normal * z);
+}
+
+inline float3 sampleRoughSpecular(float3 reflectedDir, float roughness, thread uint& rngState) {
+    const float3 roughSample = sampleCosineHemisphere(reflectedDir, rngState);
+    const float alpha = clamp(roughness * roughness, 0.0f, 1.0f);
+    return normalize(mix(reflectedDir, roughSample, alpha));
+}
+
+inline float3 evaluateOpaqueBRDF(float3 normal,
+                                 float3 viewDir,
+                                 float3 lightDir,
+                                 float3 baseColor,
+                                 RTRRayTracingMaterial material) {
+    const float NdotL = max(dot(normal, lightDir), 0.0f);
+    const float NdotV = max(dot(normal, viewDir), 0.0f);
+    if (NdotL <= 1.0e-5f || NdotV <= 1.0e-5f) {
+        return float3(0.0f);
+    }
+
+    float3 halfVec = normalize(lightDir + viewDir);
+    if (!all(isfinite(halfVec))) {
+        halfVec = normal;
+    }
+    const float NdotH = max(dot(normal, halfVec), 0.0f);
+    const float VdotH = max(dot(viewDir, halfVec), 0.0f);
+    const float alpha = max(material.roughness * material.roughness, 1.0e-3f);
+    const float D = distributionGGX(NdotH, alpha);
+    const float G = geometrySmith(NdotV, NdotL, material.roughness);
+    const float3 F0 = mix(float3(0.04f), baseColor, material.metallic);
+    const float3 F = fresnelSchlick(VdotH, F0);
+    const float3 specular = (D * G * F) / max(4.0f * NdotV * NdotL, 1.0e-4f);
+    const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
+    const float3 diffuse = kd * baseColor * (1.0f / 3.14159265f);
+    return diffuse + specular;
+}
+
+inline float3 sampleDirectLighting(constant RTRHardwareRayUniforms& uniforms,
+                                   acceleration_structure<instancing> accelerationStructure,
+                                   float3 position,
+                                   float3 normal,
+                                   float3 viewDir,
+                                   float3 baseColor,
+                                   RTRRayTracingMaterial material,
+                                   thread uint& rngState) {
+    if (uniforms.lightCount == 0u) {
+        return float3(0.0f);
+    }
+
+    const uint lightIndex = min(static_cast<uint>(randomUnit(rngState) * static_cast<float>(uniforms.lightCount)),
+                                uniforms.lightCount - 1u);
+    const RTRHardwareAreaLight light = getAreaLight(uniforms, lightIndex);
+    float3 lightDir;
+    float3 lightRadiance;
+    float lightDistance;
+    sampleAreaLight(light,
+                    float2(randomUnit(rngState), randomUnit(rngState)),
+                    position,
+                    lightDir,
+                    lightRadiance,
+                    lightDistance);
+    if (!all(isfinite(lightDir)) || lightDistance <= 1.0e-4f) {
+        return float3(0.0f);
+    }
+
+    const float NdotL = max(dot(normal, lightDir), 0.0f);
+    if (NdotL <= 1.0e-5f) {
+        return float3(0.0f);
+    }
+
+    if (isOccluded(accelerationStructure, position, lightDir, lightDistance)) {
+        return float3(0.0f);
+    }
+
+    const float3 brdf = evaluateOpaqueBRDF(normal, viewDir, lightDir, baseColor, material);
+    return brdf * lightRadiance * NdotL * static_cast<float>(uniforms.lightCount);
+}
+
+inline void sampleOpaqueScatter(float3 incidentDir,
+                                float3 normal,
+                                float3 baseColor,
+                                RTRRayTracingMaterial material,
+                                thread uint& rngState,
+                                thread float3& outDirection,
+                                thread float3& outWeight) {
+    const float specProbRaw = clamp(max(material.reflectivity, material.metallic), 0.0f, 0.98f);
+    const float specProb = specProbRaw;
+    const float choice = randomUnit(rngState);
+    if (specProb > 1.0e-4f && choice < specProb) {
+        const float3 reflected = normalize(reflect(incidentDir, normal));
+        outDirection = sampleRoughSpecular(reflected, material.roughness, rngState);
+        const float3 specColor = clamp(mix(float3(0.04f), baseColor, material.metallic), 0.0f, 1.0f);
+        outWeight = specColor / max(specProb, 1.0e-4f);
+    } else {
+        outDirection = sampleCosineHemisphere(normal, rngState);
+        const float diffuseProb = max(1.0f - specProb, 1.0e-4f);
+        const float3 diffuseColor = clamp(baseColor * (1.0f - material.metallic), 0.0f, 1.0f);
+        outWeight = diffuseColor / diffuseProb;
+    }
+}
+
+inline void sampleRefractiveScatter(float3 incidentDir,
+                                    float3 normal,
+                                    float3 baseColor,
+                                    RTRRayTracingMaterial material,
+                                    thread uint& rngState,
+                                    thread float3& outDirection,
+                                    thread float3& outWeight) {
+    const float ior = clamp(material.indexOfRefraction, 1.01f, 3.0f);
+    const bool frontFace = dot(incidentDir, normal) < 0.0f;
+    const float3 orientedNormal = frontFace ? normal : -normal;
+    const float etaI = frontFace ? 1.0f : ior;
+    const float etaT = frontFace ? ior : 1.0f;
+    const float eta = etaI / etaT;
+    const float cosIncident = clamp(dot(-incidentDir, orientedNormal), 0.0f, 1.0f);
+    const float f0Base = (etaT - etaI) / (etaT + etaI);
+    const float f0 = f0Base * f0Base;
+    const float fresnel = clamp(f0 + (1.0f - f0) * pow(1.0f - cosIncident, 5.0f), 0.0f, 1.0f);
+
+    const bool sampleReflection = randomUnit(rngState) < fresnel;
+    if (sampleReflection) {
+        outDirection = normalize(reflect(incidentDir, orientedNormal));
+        outWeight = float3(1.0f);
+        return;
+    }
+
+    float3 refracted = refract(incidentDir, orientedNormal, eta);
+    if (length_squared(refracted) < 1.0e-6f || !all(isfinite(refracted))) {
+        outDirection = normalize(reflect(incidentDir, orientedNormal));
+        outWeight = float3(1.0f);
+    } else {
+        outDirection = normalize(refracted);
+        outWeight = clamp(baseColor, 0.0f, 1.0f);
+    }
+}
+
+inline SurfaceSample sampleSurfaceHit(HardwareHit hit,
+                                      const device packed_float3* positions,
+                                      const device packed_float3* normals,
+                                      const device uint* indices,
+                                      const device packed_float3* colors,
+                                      const device packed_float2* texcoords,
+                                      const device RTRRayTracingMeshResource* meshes,
+                                      const device RTRRayTracingMaterial* materials,
+                                      constant RTRRayTracingTextureResource* textureInfos,
+                                      const device float* texturePixels,
+                                      const device RTRRayTracingInstanceResource* instances,
+                                      constant MPSSceneLimits& limits) {
+    SurfaceSample out{};
+    out.valid = 0u;
+    out.instanceOutOfRange = 0u;
+    out.rawInstanceId = 0u;
+    out.globalPrimitive = 0u;
+    out.meshIndex = 0u;
+    out.position = float3(0.0f);
+    out.normal = float3(0.0f, 1.0f, 0.0f);
+    out.baseColor = float3(0.0f);
+    out.material = makeFallbackMaterial();
+
+    if (!hit.hit) {
+        return out;
+    }
+
+    const bool hasInstanceData = (instances != nullptr && limits.instanceCount > 0u);
+    out.rawInstanceId = hit.instanceUserId;
+    const uint safeInstance = hasInstanceData ? min(out.rawInstanceId, limits.instanceCount - 1u) : 0u;
+    out.instanceOutOfRange = (!hasInstanceData || out.rawInstanceId >= limits.instanceCount) ? 1u : 0u;
+
+    RTRRayTracingInstanceResource instanceInfo;
+    if (hasInstanceData) {
+        instanceInfo = instances[safeInstance];
+    } else {
+        instanceInfo.objectToWorld = float4x4(1.0f);
+        instanceInfo.worldToObject = float4x4(1.0f);
+        instanceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+        instanceInfo.meshIndex = 0u;
+        instanceInfo.primitiveOffset = 0u;
+        instanceInfo.primitiveCount = 0u;
+    }
+
+    RTRRayTracingMeshResource meshResource;
+    if (meshes != nullptr && limits.meshCount > 0u) {
+        const uint safeMesh = min(instanceInfo.meshIndex, limits.meshCount - 1u);
+        meshResource = meshes[safeMesh];
+    } else {
+        meshResource.positionOffset = 0u;
+        meshResource.normalOffset = 0u;
+        meshResource.texcoordOffset = 0u;
+        meshResource.colorOffset = 0u;
+        meshResource.indexOffset = 0u;
+        meshResource.vertexCount = limits.vertexCount;
+        meshResource.indexCount = limits.indexCount;
+        meshResource.materialIndex = RTR_INVALID_MATERIAL_INDEX;
+    }
+
+    out.meshIndex = instanceInfo.meshIndex;
+    out.globalPrimitive = resolveGlobalPrimitive(hit, instanceInfo, meshResource);
+    const uint base = out.globalPrimitive * 3u;
+    if (indices == nullptr || base + 2u >= limits.indexCount) {
+        return out;
+    }
+
+    const uint i0 = indices[base + 0u];
+    const uint i1 = indices[base + 1u];
+    const uint i2 = indices[base + 2u];
+    if (i0 >= limits.vertexCount || i1 >= limits.vertexCount || i2 >= limits.vertexCount) {
+        return out;
+    }
+
+    const float w = clamp(1.0f - hit.bary.x - hit.bary.y, 0.0f, 1.0f);
+    const float3 baryFull = float3(w, hit.bary.x, hit.bary.y);
+    const float3 localV0 = float3(positions[i0]);
+    const float3 localV1 = float3(positions[i1]);
+    const float3 localV2 = float3(positions[i2]);
+    const float3 localHit = localV0 * baryFull.x + localV1 * baryFull.y + localV2 * baryFull.z;
+    out.position = transformPosition(instanceInfo.objectToWorld, localHit);
+
+    float2 uv = float2(0.0f);
+    if (texcoords != nullptr &&
+        i0 < limits.texcoordCount &&
+        i1 < limits.texcoordCount &&
+        i2 < limits.texcoordCount) {
+        const float2 t0 = float2(texcoords[i0]);
+        const float2 t1 = float2(texcoords[i1]);
+        const float2 t2 = float2(texcoords[i2]);
+        uv = t0 * baryFull.x + t1 * baryFull.y + t2 * baryFull.z;
+    }
+
+    float3 vertexColor = float3(1.0f);
+    if (colors != nullptr &&
+        i0 < limits.colorCount &&
+        i1 < limits.colorCount &&
+        i2 < limits.colorCount) {
+        const float3 c0 = float3(colors[i0]);
+        const float3 c1 = float3(colors[i1]);
+        const float3 c2 = float3(colors[i2]);
+        vertexColor = clamp(c0 * baryFull.x + c1 * baryFull.y + c2 * baryFull.z, 0.0f, 1.0f);
+    }
+
+    const float3 localNormal = computeNormal(i0,
+                                             i1,
+                                             i2,
+                                             localV0,
+                                             localV1,
+                                             localV2,
+                                             normals,
+                                             limits.normalCount,
+                                             baryFull);
+    out.normal = transformNormal(instanceInfo.worldToObject, localNormal);
+    out.material = loadMaterial(instanceInfo.materialIndex,
+                                materials,
+                                limits.materialCount,
+                                meshResource.materialIndex);
+    const float3 sampledColor = sampleMaterialColor(out.material,
+                                                    uv,
+                                                    textureInfos,
+                                                    limits.textureCount,
+                                                    texturePixels);
+    out.baseColor = clamp(sampledColor * vertexColor, 0.0f, 1.0f);
+    out.valid = 1u;
+    return out;
+}
+
+inline float3 integratePath(constant RTRHardwareRayUniforms& uniforms,
+                            acceleration_structure<instancing> accelerationStructure,
+                            const device packed_float3* positions,
+                            const device packed_float3* normals,
+                            const device uint* indices,
+                            const device packed_float3* colors,
+                            const device packed_float2* texcoords,
+                            const device RTRRayTracingMeshResource* meshes,
+                            const device RTRRayTracingMaterial* materials,
+                            constant RTRRayTracingTextureResource* textureInfos,
+                            const device float* texturePixels,
+                            const device RTRRayTracingInstanceResource* instances,
+                            constant MPSSceneLimits& limits,
+                            float3 rayOrigin,
+                            float3 rayDirection,
+                            thread uint& rngState,
+                            thread uint& outHitDebugValue) {
+    float3 radiance = float3(0.0f);
+    float3 throughput = float3(1.0f);
+    outHitDebugValue = 0u;
+    const uint maxBounces = max(1u, uniforms.maxBounces);
+
+    for (uint bounce = 0u; bounce < maxBounces; ++bounce) {
+        const uint rayMask = (bounce == 0u) ? RTR_RAY_MASK_PRIMARY : RTR_RAY_MASK_SECONDARY;
+        const HardwareHit hit = traceScene(accelerationStructure, rayOrigin, rayDirection, 1.0e-3f, FLT_MAX, rayMask);
+        if (!hit.hit) {
+            radiance += throughput * sampleSkyColor(rayDirection);
+            break;
+        }
+
+        const SurfaceSample surface = sampleSurfaceHit(hit,
+                                                       positions,
+                                                       normals,
+                                                       indices,
+                                                       colors,
+                                                       texcoords,
+                                                       meshes,
+                                                       materials,
+                                                       textureInfos,
+                                                       texturePixels,
+                                                       instances,
+                                                       limits);
+        if (surface.valid == 0u) {
+            break;
+        }
+
+        if (bounce == 0u) {
+            outHitDebugValue = 1u;
+        }
+
+        radiance += throughput * surface.material.emission;
+
+        float3 shadingNormal = surface.normal;
+        if (dot(rayDirection, shadingNormal) > 0.0f) {
+            shadingNormal = -shadingNormal;
+        }
+        const float3 viewDir = normalize(-rayDirection);
+        const bool refractiveSurface = (surface.material.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
+
+        float3 nextDirection = rayDirection;
+        float3 scatterWeight = float3(1.0f);
+
+        if (refractiveSurface) {
+            sampleRefractiveScatter(rayDirection,
+                                    shadingNormal,
+                                    surface.baseColor,
+                                    surface.material,
+                                    rngState,
+                                    nextDirection,
+                                    scatterWeight);
+        } else {
+            radiance += throughput * sampleDirectLighting(uniforms,
+                                                          accelerationStructure,
+                                                          surface.position,
+                                                          shadingNormal,
+                                                          viewDir,
+                                                          surface.baseColor,
+                                                          surface.material,
+                                                          rngState);
+            sampleOpaqueScatter(rayDirection,
+                                shadingNormal,
+                                surface.baseColor,
+                                surface.material,
+                                rngState,
+                                nextDirection,
+                                scatterWeight);
+        }
+
+        throughput *= scatterWeight;
+        if (!all(isfinite(throughput)) || maxComponent(throughput) < 1.0e-4f) {
+            break;
+        }
+
+        if (bounce >= 2u) {
+            const float survival = clamp(maxComponent(throughput), 0.05f, 0.95f);
+            if (randomUnit(rngState) > survival) {
+                break;
+            }
+            throughput /= survival;
+        }
+
+        rayDirection = normalize(nextDirection);
+        rayOrigin = surface.position + rayDirection * 1.0e-3f;
+    }
+
+    return max(radiance, float3(0.0f));
+}
 
 kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
                       const device packed_float3* positions [[buffer(1)]],
@@ -442,6 +791,7 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
         hashX = mixBits(hashX ^ (uniforms.camera.frameIndex * 2246822519u));
         hashY = mixBits(hashY ^ (uniforms.camera.frameIndex * 3266489917u));
     }
+
     float2 jitter;
     jitter.x = (static_cast<float>(hashX & 0x00FFFFFFu) + 0.5f) * (1.0f / 16777216.0f) - 0.5f;
     jitter.y = (static_cast<float>(hashY & 0x00FFFFFFu) + 0.5f) * (1.0f / 16777216.0f) - 0.5f;
@@ -449,648 +799,108 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
     const float2 dims = float2(static_cast<float>(max(width, 1u)), static_cast<float>(max(height, 1u)));
     float2 ndc = ((float2(gid) + 0.5f + jitter) / dims) * 2.0f - 1.0f;
     ndc.y = -ndc.y;
+
     const float3 eye = uniforms.camera.eye.xyz;
     const float3 forward = uniforms.camera.forward.xyz;
     const float3 right = uniforms.camera.right.xyz;
     const float3 up = uniforms.camera.up.xyz;
     const float3 target = eye + forward + right * (ndc.x * uniforms.camera.imagePlaneHalfExtents.x) +
                           up * (ndc.y * uniforms.camera.imagePlaneHalfExtents.y);
-    float3 rayDirection = normalize(target - eye);
-    float3 rayOrigin = eye;
+    const float3 rayDirection = normalize(target - eye);
+    const float3 rayOrigin = eye;
 
     const bool debugAlbedo = (uniforms.camera.flags & RTR_RAY_FLAG_DEBUG) != 0u;
     const bool debugInstanceColors = (uniforms.camera.flags & RTR_RAY_FLAG_INSTANCE_COLOR) != 0u;
     const bool debugInstanceTrace = (uniforms.camera.flags & RTR_RAY_FLAG_INSTANCE_TRACE) != 0u;
     const bool debugPrimitiveTrace = (uniforms.camera.flags & RTR_RAY_FLAG_PRIMITIVE_TRACE) != 0u;
 
-    bool accelerationStructureNull = is_null_instance_acceleration_structure(accelerationStructure);
-
-    if (accelerationStructureNull) {
+    if (is_null_instance_acceleration_structure(accelerationStructure)) {
         dstTex.write(float4(1.0f, 0.0f, 1.0f, 1.0f), gid);
-        writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, 3u);
+        writeHitDebug(gid, width, height, hitDebug, 3u);
         return;
     }
 
-    HardwareHit hit = traceScene(accelerationStructure, rayOrigin, rayDirection, 1.0e-3f, FLT_MAX);
+    const HardwareHit firstHit = traceScene(accelerationStructure, rayOrigin, rayDirection, 1.0e-3f, FLT_MAX);
+    const SurfaceSample firstSurface = sampleSurfaceHit(firstHit,
+                                                        positions,
+                                                        normals,
+                                                        indices,
+                                                        colors,
+                                                        texcoords,
+                                                        meshes,
+                                                        materials,
+                                                        textureInfos,
+                                                        texturePixels,
+                                                        instances,
+                                                        limits);
+
     float3 color = sampleSkyColor(rayDirection);
     uint hitDebugValue = 0u;
 
-    if (hit.hit) {
-        const bool hasInstanceData = (instances != nullptr && limits.instanceCount > 0u);
-        const uint rawInstanceId = hit.instanceUserId;
-        const uint safeInstance = hasInstanceData ? min(rawInstanceId, limits.instanceCount - 1u) : 0u;
-        const bool instanceOutOfRange = (!hasInstanceData) || (rawInstanceId >= limits.instanceCount);
-
-        RTRRayTracingInstanceResource instanceInfo;
-        if (hasInstanceData) {
-            instanceInfo = instances[safeInstance];
-        } else {
-            instanceInfo.objectToWorld = float4x4(1.0f);
-            instanceInfo.worldToObject = float4x4(1.0f);
-            instanceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-            instanceInfo.meshIndex = 0u;
-            instanceInfo.primitiveOffset = 0u;
-            instanceInfo.primitiveCount = 0u;
+    if (debugPrimitiveTrace) {
+        if (firstSurface.valid != 0u) {
+            hitDebugValue = firstSurface.globalPrimitive + 1u;
+            const uint p = hitDebugValue;
+            color = float3(static_cast<float>((p * 13u) & 0xFFu) / 255.0f,
+                           static_cast<float>((p * 29u) & 0xFFu) / 255.0f,
+                           static_cast<float>((p * 53u) & 0xFFu) / 255.0f);
         }
-
-        RTRRayTracingMeshResource meshResource;
-        if (meshes != nullptr && limits.meshCount > 0u) {
-            const uint safeMesh = min(instanceInfo.meshIndex, limits.meshCount - 1u);
-            meshResource = meshes[safeMesh];
-        } else {
-            meshResource.positionOffset = 0u;
-            meshResource.normalOffset = 0u;
-            meshResource.texcoordOffset = 0u;
-            meshResource.colorOffset = 0u;
-            meshResource.indexOffset = 0u;
-            meshResource.vertexCount = limits.vertexCount;
-            meshResource.indexCount = limits.indexCount;
-            meshResource.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-        }
-
-        float4x4 objectToWorld = instanceInfo.objectToWorld;
-        float4x4 worldToObject = instanceInfo.worldToObject;
-
-        const uint globalPrimitive = resolveGlobalPrimitive(hit, instanceInfo, meshResource);
-
-        if (debugPrimitiveTrace) {
-            hitDebugValue = globalPrimitive + 1u;
-            const uint p = globalPrimitive + 1u;
-            color = float3(
-                static_cast<float>((p * 13u) & 0xFFu) / 255.0f,
-                static_cast<float>((p * 29u) & 0xFFu) / 255.0f,
-                static_cast<float>((p * 53u) & 0xFFu) / 255.0f);
-            writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
-            dstTex.write(float4(color, 1.0f), gid);
-            return;
-        } else if (debugInstanceTrace) {
-            const uint meshBits = min(instanceInfo.meshIndex, 0xFFFFu);
-            const uint instanceBits = min(rawInstanceId, 0xFFFFu);
-            // Encode as 1-based so 0 remains "miss" in CPU-side debug decoding.
+    } else if (debugInstanceTrace) {
+        if (firstSurface.valid != 0u) {
+            const uint meshBits = min(firstSurface.meshIndex, 0xFFFFu);
+            const uint instanceBits = min(firstSurface.rawInstanceId, 0xFFFFu);
             hitDebugValue = ((instanceBits + 1u) << 16) | (meshBits + 1u);
-            if (instanceOutOfRange) {
+            if (firstSurface.instanceOutOfRange != 0u) {
                 hitDebugValue |= 0x80000000u;
             }
-        } else {
+            color = (firstSurface.instanceOutOfRange != 0u) ? float3(1.0f, 0.0f, 0.0f)
+                                                            : debugInstanceColor(firstSurface.meshIndex);
+        }
+    } else if (debugInstanceColors) {
+        if (firstSurface.valid != 0u) {
             hitDebugValue = 1u;
+            color = debugInstanceColor(firstSurface.meshIndex);
         }
-
-        if (debugInstanceTrace) {
-            color = instanceOutOfRange ? float3(1.0f, 0.0f, 0.0f) : debugInstanceColor(instanceInfo.meshIndex);
-            writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
-            dstTex.write(float4(color, 1.0f), gid);
-            return;
+    } else if (debugAlbedo) {
+        if (firstSurface.valid != 0u) {
+            hitDebugValue = 1u;
+            color = firstSurface.baseColor;
         }
-
-        const uint base = globalPrimitive * 3u;
-        if (indices && base + 2u < limits.indexCount) {
-            const uint i0 = indices[base + 0];
-            const uint i1 = indices[base + 1];
-            const uint i2 = indices[base + 2];
-            if (i0 < limits.vertexCount && i1 < limits.vertexCount && i2 < limits.vertexCount) {
-                const float w = clamp(1.0f - hit.bary.x - hit.bary.y, 0.0f, 1.0f);
-                const float3 baryFull = float3(w, hit.bary.x, hit.bary.y);
-                const float3 localV0 = float3(positions[i0]);
-                const float3 localV1 = float3(positions[i1]);
-                const float3 localV2 = float3(positions[i2]);
-                const float3 localHit = localV0 * baryFull.x + localV1 * baryFull.y + localV2 * baryFull.z;
-                const float3 hitPos = transformPosition(objectToWorld, localHit);
-
-                float2 uv = float2(0.0f);
-                if (texcoords && i0 < limits.texcoordCount && i1 < limits.texcoordCount && i2 < limits.texcoordCount) {
-                    const float2 t0 = float2(texcoords[i0]);
-                    const float2 t1 = float2(texcoords[i1]);
-                    const float2 t2 = float2(texcoords[i2]);
-                    uv = t0 * baryFull.x + t1 * baryFull.y + t2 * baryFull.z;
-                }
-
-                float3 vertexColour = float3(1.0f);
-                if (colors && i0 < limits.colorCount && i1 < limits.colorCount && i2 < limits.colorCount) {
-                    const float3 c0 = float3(colors[i0]);
-                    const float3 c1 = float3(colors[i1]);
-                    const float3 c2 = float3(colors[i2]);
-                    vertexColour = clamp(c0 * baryFull.x + c1 * baryFull.y + c2 * baryFull.z, 0.0f, 1.0f);
-                }
-
-                const float3 localNormal = computeNormal(i0,
-                                                        i1,
-                                                        i2,
-                                                        localV0,
-                                                        localV1,
-                                                        localV2,
-                                                        normals,
-                                                        limits.normalCount,
-                                                        baryFull);
-                float3 normal = transformNormal(worldToObject, localNormal);
-                const RTRRayTracingMaterial material = loadMaterial(instanceInfo.materialIndex,
-                                                                    materials,
-                                                                    limits.materialCount,
-                                                                    meshResource.materialIndex);
-                const float3 sampledColour = clamp(sampleMaterialColor(material,
-                                                                       uv,
-                                                                       textureInfos,
-                                                                       limits.textureCount,
-                                                                       texturePixels),
-                                                    0.0f,
-                                                    1.0f);
-                const float3 baseColour = sampledColour * vertexColour;
-
-                if (debugInstanceColors) {
-                    color = debugInstanceColor(instanceInfo.meshIndex);
-                } else if (debugAlbedo) {
-                    color = baseColour;
-                } else {
-                    const float3 viewDir = normalize(-rayDirection);
-                    const bool reflectiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFLECTIVE) != 0u;
-                    const bool refractiveSurface = (material.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
-                    const uint pixelSeed = gid.x * 73856093u ^ gid.y * 19349663u;
-                    float3 lighting = evaluateSurfaceLighting(uniforms,
-                                                              accelerationStructure,
-                                                              hitPos,
-                                                              normal,
-                                                              viewDir,
-                                                              baseColour,
-                                                              material,
-                                                              pixelSeed);
-
-                    const float reflectivity = clamp(material.reflectivity, 0.0f, 1.0f);
-                    if (!debugInstanceColors && uniforms.maxBounces > 1u) {
-                        if (reflectiveSurface && reflectivity > 0.0f) {
-                            const float3 reflectedDir = normalize(reflect(rayDirection, normal));
-                            HardwareHit bounce = traceScene(accelerationStructure, hitPos, reflectedDir, 1.0e-3f, FLT_MAX);
-                            float3 reflection = sampleSkyColor(reflectedDir);
-                            if (bounce.hit) {
-                                RTRRayTracingInstanceResource bounceInfo;
-                                if (instances != nullptr && limits.instanceCount > 0u) {
-                                    const uint bounceInstance = min(bounce.instanceUserId, limits.instanceCount - 1u);
-                                    bounceInfo = instances[bounceInstance];
-                                } else {
-                                    bounceInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                    bounceInfo.meshIndex = 0u;
-                                }
-
-                                RTRRayTracingMeshResource bounceMesh;
-                                if (meshes != nullptr && limits.meshCount > 0u) {
-                                    const uint safeBounceMesh = min(bounceInfo.meshIndex, limits.meshCount - 1u);
-                                    bounceMesh = meshes[safeBounceMesh];
-                                } else {
-                                    bounceMesh.positionOffset = 0u;
-                                    bounceMesh.indexOffset = 0u;
-                                    bounceMesh.vertexCount = limits.vertexCount;
-                                    bounceMesh.indexCount = limits.indexCount;
-                                    bounceMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                }
-
-                                const uint bounceGlobalPrimitive = resolveGlobalPrimitive(bounce, bounceInfo, bounceMesh);
-                                const uint bounceBase = bounceGlobalPrimitive * 3u;
-                                if (bounceBase + 2u < limits.indexCount) {
-                                    const uint bi0 = indices[bounceBase + 0];
-                                    const uint bi1 = indices[bounceBase + 1];
-                                    const uint bi2 = indices[bounceBase + 2];
-                                    if (bi0 < limits.vertexCount && bi1 < limits.vertexCount && bi2 < limits.vertexCount) {
-                                        const float wBounce = clamp(1.0f - bounce.bary.x - bounce.bary.y, 0.0f, 1.0f);
-                                        const float3 baryBounce = float3(wBounce, bounce.bary.x, bounce.bary.y);
-                                        const float3 rb0 = float3(positions[bi0]);
-                                        const float3 rb1 = float3(positions[bi1]);
-                                        const float3 rb2 = float3(positions[bi2]);
-                                        const float3 bounceLocalPos = rb0 * baryBounce.x + rb1 * baryBounce.y + rb2 * baryBounce.z;
-                                        const float3 bouncePos = transformPosition(bounceInfo.objectToWorld, bounceLocalPos);
-                                        float2 bounceUV = float2(0.0f);
-                                        if (texcoords && bi0 < limits.texcoordCount && bi1 < limits.texcoordCount && bi2 < limits.texcoordCount) {
-                                            const float2 t0 = float2(texcoords[bi0]);
-                                            const float2 t1 = float2(texcoords[bi1]);
-                                            const float2 t2 = float2(texcoords[bi2]);
-                                            bounceUV = t0 * baryBounce.x + t1 * baryBounce.y + t2 * baryBounce.z;
-                                        }
-                                        const RTRRayTracingMaterial bounceMaterial = loadMaterial(bounceInfo.materialIndex,
-                                                                                                   materials,
-                                                                                                   limits.materialCount,
-                                                                                                   bounceMesh.materialIndex);
-                                        float3 bounceVertexColour = float3(1.0f);
-                                        if (colors &&
-                                            bi0 < limits.colorCount &&
-                                            bi1 < limits.colorCount &&
-                                            bi2 < limits.colorCount) {
-                                            const float3 c0 = float3(colors[bi0]);
-                                            const float3 c1 = float3(colors[bi1]);
-                                            const float3 c2 = float3(colors[bi2]);
-                                            bounceVertexColour = clamp(c0 * baryBounce.x + c1 * baryBounce.y + c2 * baryBounce.z,
-                                                                       0.0f,
-                                                                       1.0f);
-                                        }
-                                        const float3 bounceSampled = clamp(sampleMaterialColor(bounceMaterial,
-                                                                                               bounceUV,
-                                                                                               textureInfos,
-                                                                                               limits.textureCount,
-                                                                                               texturePixels),
-                                                                           0.0f,
-                                                                           1.0f);
-                                        const float3 bounceBaseColour = bounceSampled * bounceVertexColour;
-                                        const float3 bounceLocalNormal = computeNormal(bi0,
-                                                                                       bi1,
-                                                                                       bi2,
-                                                                                       rb0,
-                                                                                       rb1,
-                                                                                       rb2,
-                                                                                       normals,
-                                                                                       limits.normalCount,
-                                                                                       baryBounce);
-                                        float3 bounceNormal = transformNormal(bounceInfo.worldToObject, bounceLocalNormal);
-                                        if (dot(bounceNormal, reflectedDir) > 0.0f) {
-                                            bounceNormal = -bounceNormal;
-                                        }
-                                        reflection = evaluateSurfaceLighting(uniforms,
-                                                                             accelerationStructure,
-                                                                             bouncePos,
-                                                                             bounceNormal,
-                                                                             normalize(-reflectedDir),
-                                                                             bounceBaseColour,
-                                                                             bounceMaterial,
-                                                                             pixelSeed ^ 0xA511E9B3u);
-                                    }
-                                }
-                            }
-                            lighting += reflection * reflectivity;
-                        }
-
-                        if (refractiveSurface) {
-                            const float ior = clamp(material.indexOfRefraction, 1.01f, 3.0f);
-                            float3 refractionNormal = normal;
-                            float cosIncident = dot(-rayDirection, refractionNormal);
-                            float eta = 1.0f / ior;
-                            if (cosIncident < 0.0f) {
-                                cosIncident = -cosIncident;
-                                refractionNormal = -refractionNormal;
-                                eta = ior;
-                            }
-
-                            float3 refractedDir = refract(rayDirection, refractionNormal, eta);
-                            if (length_squared(refractedDir) < 1.0e-6f || !all(isfinite(refractedDir))) {
-                                refractedDir = normalize(reflect(rayDirection, refractionNormal));
-                            } else {
-                                refractedDir = normalize(refractedDir);
-                            }
-
-                            HardwareHit transmittedHit =
-                                traceScene(accelerationStructure, hitPos, refractedDir, 1.0e-3f, FLT_MAX);
-                            float3 transmittedColor = sampleSkyColor(refractedDir);
-                            if (!transmittedHit.hit) {
-                                // Indoor fallback: avoid turning the refractive sphere into pure black
-                                // when refraction misses enclosure backfaces.
-                                transmittedColor = baseColour * 0.22f + float3(0.06f);
-                            }
-                            if (transmittedHit.hit) {
-                                RTRRayTracingInstanceResource transmittedInfo;
-                                if (instances != nullptr && limits.instanceCount > 0u) {
-                                    const uint transmittedInstance =
-                                        min(transmittedHit.instanceUserId, limits.instanceCount - 1u);
-                                    transmittedInfo = instances[transmittedInstance];
-                                } else {
-                                    transmittedInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                    transmittedInfo.meshIndex = 0u;
-                                }
-
-                                RTRRayTracingMeshResource transmittedMesh;
-                                if (meshes != nullptr && limits.meshCount > 0u) {
-                                    const uint safeTransmittedMesh =
-                                        min(transmittedInfo.meshIndex, limits.meshCount - 1u);
-                                    transmittedMesh = meshes[safeTransmittedMesh];
-                                } else {
-                                    transmittedMesh.positionOffset = 0u;
-                                    transmittedMesh.indexOffset = 0u;
-                                    transmittedMesh.vertexCount = limits.vertexCount;
-                                    transmittedMesh.indexCount = limits.indexCount;
-                                    transmittedMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                }
-
-                                const uint transmittedGlobalPrimitive =
-                                    resolveGlobalPrimitive(transmittedHit, transmittedInfo, transmittedMesh);
-                                const uint transmittedBase = transmittedGlobalPrimitive * 3u;
-                                if (transmittedBase + 2u < limits.indexCount) {
-                                    const uint ti0 = indices[transmittedBase + 0];
-                                    const uint ti1 = indices[transmittedBase + 1];
-                                    const uint ti2 = indices[transmittedBase + 2];
-                                    if (ti0 < limits.vertexCount && ti1 < limits.vertexCount && ti2 < limits.vertexCount) {
-                                        const float wTransmit =
-                                            clamp(1.0f - transmittedHit.bary.x - transmittedHit.bary.y, 0.0f, 1.0f);
-                                        const float3 baryTransmit =
-                                            float3(wTransmit, transmittedHit.bary.x, transmittedHit.bary.y);
-                                        float2 transmittedUV = float2(0.0f);
-                                        const float3 tx0 = float3(positions[ti0]);
-                                        const float3 tx1 = float3(positions[ti1]);
-                                        const float3 tx2 = float3(positions[ti2]);
-                                        const float3 transmittedLocalPos =
-                                            tx0 * baryTransmit.x + tx1 * baryTransmit.y + tx2 * baryTransmit.z;
-                                        const float3 transmittedPos =
-                                            transformPosition(transmittedInfo.objectToWorld, transmittedLocalPos);
-                                        if (texcoords &&
-                                            ti0 < limits.texcoordCount &&
-                                            ti1 < limits.texcoordCount &&
-                                            ti2 < limits.texcoordCount) {
-                                            const float2 t0 = float2(texcoords[ti0]);
-                                            const float2 t1 = float2(texcoords[ti1]);
-                                            const float2 t2 = float2(texcoords[ti2]);
-                                            transmittedUV = t0 * baryTransmit.x + t1 * baryTransmit.y + t2 * baryTransmit.z;
-                                        }
-                                        const RTRRayTracingMaterial transmittedMaterial = loadMaterial(
-                                            transmittedInfo.materialIndex,
-                                            materials,
-                                            limits.materialCount,
-                                            transmittedMesh.materialIndex);
-                                        float3 transmittedVertexColour = float3(1.0f);
-                                        if (colors &&
-                                            ti0 < limits.colorCount &&
-                                            ti1 < limits.colorCount &&
-                                            ti2 < limits.colorCount) {
-                                            const float3 c0 = float3(colors[ti0]);
-                                            const float3 c1 = float3(colors[ti1]);
-                                            const float3 c2 = float3(colors[ti2]);
-                                            transmittedVertexColour = clamp(c0 * baryTransmit.x +
-                                                                            c1 * baryTransmit.y +
-                                                                            c2 * baryTransmit.z,
-                                                                            0.0f,
-                                                                            1.0f);
-                                        }
-                                        const float3 transmittedSampled = clamp(sampleMaterialColor(transmittedMaterial,
-                                                                                                    transmittedUV,
-                                                                                                    textureInfos,
-                                                                                                    limits.textureCount,
-                                                                                                    texturePixels),
-                                                                                0.0f,
-                                                                                1.0f);
-                                        const float3 transmittedBaseColour = transmittedSampled * transmittedVertexColour;
-                                        const float3 transmittedLocalNormal = computeNormal(ti0,
-                                                                                            ti1,
-                                                                                            ti2,
-                                                                                            tx0,
-                                                                                            tx1,
-                                                                                            tx2,
-                                                                                            normals,
-                                                                                            limits.normalCount,
-                                                                                            baryTransmit);
-                                        float3 transmittedNormal = transformNormal(transmittedInfo.worldToObject,
-                                                                                  transmittedLocalNormal);
-                                        if (dot(transmittedNormal, refractedDir) > 0.0f) {
-                                            transmittedNormal = -transmittedNormal;
-                                        }
-                                        transmittedColor = evaluateSurfaceLighting(uniforms,
-                                                                                   accelerationStructure,
-                                                                                   transmittedPos,
-                                                                                   transmittedNormal,
-                                                                                   normalize(-refractedDir),
-                                                                                   transmittedBaseColour,
-                                                                                   transmittedMaterial,
-                                                                                   pixelSeed ^ 0x63D83595u);
-
-                                        const bool transmittedRefractive =
-                                            (transmittedMaterial.materialFlags & RTR_MATERIAL_FLAG_REFRACTIVE) != 0u;
-                                        if (transmittedRefractive && instances != nullptr && limits.instanceCount > 0u) {
-                                            HardwareHit beyondHit = traceScene(accelerationStructure,
-                                                                               transmittedPos + refractedDir * 2.0e-3f,
-                                                                               refractedDir,
-                                                                               1.0e-3f,
-                                                                               FLT_MAX);
-                                            if (beyondHit.hit) {
-                                                const uint throughInstance =
-                                                    min(beyondHit.instanceUserId, limits.instanceCount - 1u);
-                                                const RTRRayTracingInstanceResource throughInfo = instances[throughInstance];
-
-                                                RTRRayTracingMeshResource throughMesh;
-                                                if (meshes != nullptr && limits.meshCount > 0u) {
-                                                    const uint safeThroughMesh =
-                                                        min(throughInfo.meshIndex, limits.meshCount - 1u);
-                                                    throughMesh = meshes[safeThroughMesh];
-                                                } else {
-                                                    throughMesh.positionOffset = 0u;
-                                                    throughMesh.indexOffset = 0u;
-                                                    throughMesh.vertexCount = limits.vertexCount;
-                                                    throughMesh.indexCount = limits.indexCount;
-                                                    throughMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                                }
-
-                                                const uint throughGlobalPrimitive =
-                                                    resolveGlobalPrimitive(beyondHit, throughInfo, throughMesh);
-                                                const uint throughBase = throughGlobalPrimitive * 3u;
-                                                if (throughBase + 2u < limits.indexCount) {
-                                                    const uint hi0 = indices[throughBase + 0u];
-                                                    const uint hi1 = indices[throughBase + 1u];
-                                                    const uint hi2 = indices[throughBase + 2u];
-                                                    if (hi0 < limits.vertexCount &&
-                                                        hi1 < limits.vertexCount &&
-                                                        hi2 < limits.vertexCount) {
-                                                        const float wThrough =
-                                                            clamp(1.0f - beyondHit.bary.x - beyondHit.bary.y, 0.0f, 1.0f);
-                                                        const float3 baryThrough =
-                                                            float3(wThrough, beyondHit.bary.x, beyondHit.bary.y);
-                                                        float2 throughUV = float2(0.0f);
-                                                        if (texcoords &&
-                                                            hi0 < limits.texcoordCount &&
-                                                            hi1 < limits.texcoordCount &&
-                                                            hi2 < limits.texcoordCount) {
-                                                            const float2 t0 = float2(texcoords[hi0]);
-                                                            const float2 t1 = float2(texcoords[hi1]);
-                                                            const float2 t2 = float2(texcoords[hi2]);
-                                                            throughUV = t0 * baryThrough.x +
-                                                                        t1 * baryThrough.y +
-                                                                        t2 * baryThrough.z;
-                                                        }
-
-                                                        float3 throughVertexColour = float3(1.0f);
-                                                        if (colors &&
-                                                            hi0 < limits.colorCount &&
-                                                            hi1 < limits.colorCount &&
-                                                            hi2 < limits.colorCount) {
-                                                            const float3 c0 = float3(colors[hi0]);
-                                                            const float3 c1 = float3(colors[hi1]);
-                                                            const float3 c2 = float3(colors[hi2]);
-                                                            throughVertexColour = clamp(c0 * baryThrough.x +
-                                                                                        c1 * baryThrough.y +
-                                                                                        c2 * baryThrough.z,
-                                                                                        0.0f,
-                                                                                        1.0f);
-                                                        }
-
-                                                        const float3 hv0 = float3(positions[hi0]);
-                                                        const float3 hv1 = float3(positions[hi1]);
-                                                        const float3 hv2 = float3(positions[hi2]);
-                                                        const float3 throughLocalPos =
-                                                            hv0 * baryThrough.x + hv1 * baryThrough.y + hv2 * baryThrough.z;
-                                                        const float3 throughPos =
-                                                            transformPosition(throughInfo.objectToWorld, throughLocalPos);
-
-                                                        const RTRRayTracingMaterial throughMaterial = loadMaterial(
-                                                            throughInfo.materialIndex,
-                                                            materials,
-                                                            limits.materialCount,
-                                                            throughMesh.materialIndex);
-                                                        const float3 throughSampled = clamp(sampleMaterialColor(throughMaterial,
-                                                                                                                throughUV,
-                                                                                                                textureInfos,
-                                                                                                                limits.textureCount,
-                                                                                                                texturePixels),
-                                                                                            0.0f,
-                                                                                            1.0f);
-                                                        const float3 throughBaseColour = throughSampled * throughVertexColour;
-                                                        const float3 throughLocalNormal = computeNormal(hi0,
-                                                                                                        hi1,
-                                                                                                        hi2,
-                                                                                                        hv0,
-                                                                                                        hv1,
-                                                                                                        hv2,
-                                                                                                        normals,
-                                                                                                        limits.normalCount,
-                                                                                                        baryThrough);
-                                                        float3 throughNormal =
-                                                            transformNormal(throughInfo.worldToObject, throughLocalNormal);
-                                                        if (dot(throughNormal, refractedDir) > 0.0f) {
-                                                            throughNormal = -throughNormal;
-                                                        }
-                                                        transmittedColor = evaluateSurfaceLighting(uniforms,
-                                                                                                   accelerationStructure,
-                                                                                                   throughPos,
-                                                                                                   throughNormal,
-                                                                                                   normalize(-refractedDir),
-                                                                                                   throughBaseColour,
-                                                                                                   throughMaterial,
-                                                                                                   pixelSeed ^ 0x91E10DA5u);
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            const float f0Base = (ior - 1.0f) / (ior + 1.0f);
-                            const float f0 = f0Base * f0Base;
-                            const float fresnel = clamp(f0 + (1.0f - f0) * pow(1.0f - cosIncident, 5.0f), 0.0f, 1.0f);
-                            const float transmissionWeight = (1.0f - fresnel) * 0.95f;
-                            const float3 transmittanceTint = mix(float3(1.0f), clamp(baseColour, 0.0f, 1.0f), 0.22f);
-                            transmittedColor *= transmittanceTint;
-                            lighting += transmittedColor * transmissionWeight;
-
-                            // Add explicit Fresnel reflection for refractive materials so they
-                            // keep visible contour/details instead of collapsing to dark mass.
-                            const float3 refrReflectDir = normalize(reflect(rayDirection, normal));
-                            HardwareHit refrReflectHit =
-                                traceScene(accelerationStructure, hitPos, refrReflectDir, 1.0e-3f, FLT_MAX);
-                            float3 refrReflectColor = sampleSkyColor(refrReflectDir);
-                            if (refrReflectHit.hit) {
-                                RTRRayTracingInstanceResource rrInfo;
-                                if (instances != nullptr && limits.instanceCount > 0u) {
-                                    const uint rrInstance = min(refrReflectHit.instanceUserId, limits.instanceCount - 1u);
-                                    rrInfo = instances[rrInstance];
-                                } else {
-                                    rrInfo.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                    rrInfo.meshIndex = 0u;
-                                }
-
-                                RTRRayTracingMeshResource rrMesh;
-                                if (meshes != nullptr && limits.meshCount > 0u) {
-                                    const uint safeRrMesh = min(rrInfo.meshIndex, limits.meshCount - 1u);
-                                    rrMesh = meshes[safeRrMesh];
-                                } else {
-                                    rrMesh.positionOffset = 0u;
-                                    rrMesh.indexOffset = 0u;
-                                    rrMesh.vertexCount = limits.vertexCount;
-                                    rrMesh.indexCount = limits.indexCount;
-                                    rrMesh.materialIndex = RTR_INVALID_MATERIAL_INDEX;
-                                }
-
-                                const uint rrGlobalPrimitive =
-                                    resolveGlobalPrimitive(refrReflectHit, rrInfo, rrMesh);
-                                const uint rrBase = rrGlobalPrimitive * 3u;
-                                if (rrBase + 2u < limits.indexCount) {
-                                    const uint r0 = indices[rrBase + 0u];
-                                    const uint r1 = indices[rrBase + 1u];
-                                    const uint r2 = indices[rrBase + 2u];
-                                    if (r0 < limits.vertexCount && r1 < limits.vertexCount && r2 < limits.vertexCount) {
-                                        const float wr = clamp(1.0f - refrReflectHit.bary.x - refrReflectHit.bary.y, 0.0f, 1.0f);
-                                        const float3 baryR = float3(wr, refrReflectHit.bary.x, refrReflectHit.bary.y);
-                                        float2 rrUV = float2(0.0f);
-                                        if (texcoords &&
-                                            r0 < limits.texcoordCount &&
-                                            r1 < limits.texcoordCount &&
-                                            r2 < limits.texcoordCount) {
-                                            const float2 t0 = float2(texcoords[r0]);
-                                            const float2 t1 = float2(texcoords[r1]);
-                                            const float2 t2 = float2(texcoords[r2]);
-                                            rrUV = t0 * baryR.x + t1 * baryR.y + t2 * baryR.z;
-                                        }
-                                        const RTRRayTracingMaterial rrMat = loadMaterial(rrInfo.materialIndex,
-                                                                                         materials,
-                                                                                         limits.materialCount,
-                                                                                         rrMesh.materialIndex);
-                                        float3 rrVertexColour = float3(1.0f);
-                                        if (colors &&
-                                            r0 < limits.colorCount &&
-                                            r1 < limits.colorCount &&
-                                            r2 < limits.colorCount) {
-                                            const float3 c0 = float3(colors[r0]);
-                                            const float3 c1 = float3(colors[r1]);
-                                            const float3 c2 = float3(colors[r2]);
-                                            rrVertexColour = clamp(c0 * baryR.x + c1 * baryR.y + c2 * baryR.z,
-                                                                   0.0f,
-                                                                   1.0f);
-                                        }
-                                        const float3 rv0 = float3(positions[r0]);
-                                        const float3 rv1 = float3(positions[r1]);
-                                        const float3 rv2 = float3(positions[r2]);
-                                        const float3 rrSampled = clamp(sampleMaterialColor(rrMat,
-                                                                                           rrUV,
-                                                                                           textureInfos,
-                                                                                           limits.textureCount,
-                                                                                           texturePixels),
-                                                                       0.0f,
-                                                                       1.0f);
-                                        const float3 rrBaseColour = rrSampled * rrVertexColour;
-                                        const float3 rrLocalPos = rv0 * baryR.x + rv1 * baryR.y + rv2 * baryR.z;
-                                        const float3 rrPos = transformPosition(rrInfo.objectToWorld, rrLocalPos);
-                                        const float3 rrLocalNormal = computeNormal(r0,
-                                                                                   r1,
-                                                                                   r2,
-                                                                                   rv0,
-                                                                                   rv1,
-                                                                                   rv2,
-                                                                                   normals,
-                                                                                   limits.normalCount,
-                                                                                   baryR);
-                                        float3 rrNormal = transformNormal(rrInfo.worldToObject, rrLocalNormal);
-                                        if (dot(rrNormal, refrReflectDir) > 0.0f) {
-                                            rrNormal = -rrNormal;
-                                        }
-                                        refrReflectColor = evaluateSurfaceLighting(uniforms,
-                                                                                   accelerationStructure,
-                                                                                   rrPos,
-                                                                                   rrNormal,
-                                                                                   normalize(-refrReflectDir),
-                                                                                   rrBaseColour,
-                                                                                   rrMat,
-                                                                                   pixelSeed ^ 0xD2B74407u);
-                                    }
-                                }
-                            }
-                            lighting += refrReflectColor * clamp(fresnel * 0.9f, 0.04f, 0.7f);
-                        }
-                    }
-
-                    color = clamp(lighting, 0.0f, 4.0f);
-                }
-            }
-        }
+    } else {
+        uint rngState = mixBits(hashX ^ (hashY * 747796405u) ^ (uniforms.camera.frameIndex * 2891336453u));
+        color = integratePath(uniforms,
+                              accelerationStructure,
+                              positions,
+                              normals,
+                              indices,
+                              colors,
+                              texcoords,
+                              meshes,
+                              materials,
+                              textureInfos,
+                              texturePixels,
+                              instances,
+                              limits,
+                              rayOrigin,
+                              rayDirection,
+                              rngState,
+                              hitDebugValue);
     }
 
-    writeHitDebug(gid, uniforms.camera.width, uniforms.camera.height, hitDebug, hitDebugValue);
+    writeHitDebug(gid, width, height, hitDebug, hitDebugValue);
 
     const bool allowAccumulation = !debugAlbedo && !debugInstanceColors && !debugInstanceTrace && !debugPrimitiveTrace;
-    if (allowAccumulation && uniforms.camera.frameIndex > 0u &&
-        accumulationHistoryTex.get_width() > gid.x && accumulationHistoryTex.get_height() > gid.y) {
+    if (allowAccumulation &&
+        uniforms.camera.frameIndex > 0u &&
+        accumulationHistoryTex.get_width() > gid.x &&
+        accumulationHistoryTex.get_height() > gid.y) {
         const float4 previous = accumulationHistoryTex.read(gid);
         const float blend = 1.0f / static_cast<float>(uniforms.camera.frameIndex + 1u);
         color = mix(previous.xyz, color, blend);
     }
     if (allowAccumulation &&
-        accumulationOutTex.get_width() > gid.x && accumulationOutTex.get_height() > gid.y) {
+        accumulationOutTex.get_width() > gid.x &&
+        accumulationOutTex.get_height() > gid.y) {
         accumulationOutTex.write(float4(color, 1.0f), gid);
     }
 

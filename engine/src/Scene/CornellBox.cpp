@@ -312,8 +312,8 @@ void addMario(SceneBuilder& builder,
               const simd_float3& translation,
               float rotationRadians) {
     Material marioMaterial{};
-    marioMaterial.albedo = {1.0f, 1.0f, 1.0f};
-    marioMaterial.roughness = 0.35f;
+    marioMaterial.albedo = {1.08f, 1.08f, 1.08f};
+    marioMaterial.roughness = 0.25f;
     marioMaterial.reflectivity = 0.0f;
     const auto marioTexture = assetRoot / "mario.png";
     if (std::filesystem::exists(marioTexture)) {
@@ -397,7 +397,7 @@ void addFeatureGeometry(SceneBuilder& builder,
                         float crateTopY) {
     Material mirror{};
     mirror.albedo = {1.0f, 1.0f, 1.0f};
-    mirror.roughness = 0.005f;
+    mirror.roughness = 0.002f;
     mirror.metallic = 1.0f;
     mirror.reflectivity = 1.0f;
     mirror.indexOfRefraction = 1.0f;
@@ -411,9 +411,9 @@ void addFeatureGeometry(SceneBuilder& builder,
 
     Material glass{};
     glass.albedo = {1.0f, 1.0f, 1.0f};
-    glass.roughness = 0.01f;
-    glass.reflectivity = 0.08f;
-    glass.indexOfRefraction = 1.45f;
+    glass.roughness = 0.003f;
+    glass.reflectivity = 0.14f;
+    glass.indexOfRefraction = 1.52f;
     auto glassMat = scene.addMaterial(glass);
     const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.26f, crateTopY + 0.19f, 0.11f),
                                                          simd_make_float3(0.19f, 0.19f, 0.19f),
@@ -442,7 +442,7 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                                               simd_make_float3(0.0f, 1.0f, 0.0f));
 
     Material enclosureMaterial{};
-    enclosureMaterial.albedo = {0.725f, 0.71f, 0.68f};
+    enclosureMaterial.albedo = {0.80f, 0.80f, 0.80f};
     auto enclosureHandle = scene.addMaterial(enclosureMaterial);
     auto enclosureMesh = addCubeWithTransform(builder,
                                               enclosureTransform,
@@ -513,7 +513,7 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
     const float crateTopY = shortTranslation.y + shortScale.y * 0.5f;
 
     Material tallBoxMaterial{};
-    tallBoxMaterial.albedo = {0.88f, 0.88f, 0.88f};
+    tallBoxMaterial.albedo = {0.96f, 0.96f, 0.96f};
     const simd_float3 tallTranslation = simd_make_float3(-0.22f, 0.56f, -0.02f);
     const simd_float3 tallScale = simd_make_float3(0.52f, 1.12f, 0.52f);
     const float tallRotation = 0.0f;

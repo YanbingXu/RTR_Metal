@@ -928,11 +928,11 @@ struct Renderer::Impl {
         uniforms->maxBounces = std::max<std::uint32_t>(1u, config.maxHardwareBounces);
 
         HardwareAreaLight& light = uniforms->lights[0];
-        light.position = simd_make_float4(0.0f, 1.98f, -0.05f, 1.0f);
-        light.right = simd_make_float4(0.30f, 0.0f, 0.0f, 0.0f);
-        light.up = simd_make_float4(0.0f, 0.0f, 0.18f, 0.0f);
+        light.position = simd_make_float4(0.0f, 1.98f, -0.02f, 1.0f);
+        light.right = simd_make_float4(0.34f, 0.0f, 0.0f, 0.0f);
+        light.up = simd_make_float4(0.0f, 0.0f, 0.20f, 0.0f);
         light.forward = simd_make_float4(0.0f, -1.0f, 0.0f, 0.0f);
-        light.color = simd_make_float4(20.0f, 20.0f, 20.0f, 0.0f);
+        light.color = simd_make_float4(25.0f, 25.0f, 25.0f, 0.0f);
 
         if (debugAlbedo) {
             core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->camera.flags);
