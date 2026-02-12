@@ -158,7 +158,8 @@ scene::Mesh makeMeshFromRange(const MPSSceneData& sceneData, const MPSMeshRange&
 
 struct RayTracingTarget {
     id<MTLTexture> colorTexture = nil;
-    id<MTLTexture> accumulationTexture = nil;
+    id<MTLTexture> accumulationTextureA = nil;
+    id<MTLTexture> accumulationTextureB = nil;
     id<MTLBuffer> readbackBuffer = nil;
     std::uint32_t width = 0;
     std::uint32_t height = 0;
@@ -166,7 +167,8 @@ struct RayTracingTarget {
 
     void reset() {
         colorTexture = nil;
-        accumulationTexture = nil;
+        accumulationTextureA = nil;
+        accumulationTextureB = nil;
         readbackBuffer = nil;
         width = 0;
         height = 0;
@@ -174,7 +176,8 @@ struct RayTracingTarget {
     }
 
     [[nodiscard]] bool matches(std::uint32_t w, std::uint32_t h) const noexcept {
-        return colorTexture != nil && accumulationTexture != nil && width == w && height == h;
+        return colorTexture != nil && accumulationTextureA != nil && accumulationTextureB != nil && width == w &&
+               height == h;
     }
 
     [[nodiscard]] bool isValid() const noexcept {
@@ -564,6 +567,11 @@ struct Renderer::Impl {
                            static_cast<unsigned long>(tlasSize));
 
         if (!dispatch2D(rayPipeline, [&](id<MTLComputeCommandEncoder> encoder) {
+                const bool writeAccumulationA = (frameCounter % 2u) == 0u;
+                id<MTLTexture> accumulationWrite =
+                    writeAccumulationA ? target.accumulationTextureA : target.accumulationTextureB;
+                id<MTLTexture> accumulationHistory =
+                    writeAccumulationA ? target.accumulationTextureB : target.accumulationTextureA;
                 [encoder setBuffer:uniformBuffer offset:0 atIndex:0];
                 [encoder setBuffer:positions offset:0 atIndex:1];
                 [encoder setBuffer:normals offset:0 atIndex:2];
@@ -590,10 +598,13 @@ struct Renderer::Impl {
                 if (resources.randomTexture) {
                     [encoder setTexture:resources.randomTexture atIndex:0];
                 }
-                if (target.accumulationTexture) {
-                    [encoder setTexture:target.accumulationTexture atIndex:1];
+                if (accumulationHistory) {
+                    [encoder setTexture:accumulationHistory atIndex:1];
                 }
-                [encoder setTexture:target.colorTexture atIndex:2];
+                if (accumulationWrite) {
+                    [encoder setTexture:accumulationWrite atIndex:2];
+                }
+                [encoder setTexture:target.colorTexture atIndex:3];
                 [encoder setAccelerationStructure:accelerationStructure atBufferIndex:15];
                 if ([encoder respondsToSelector:@selector(useResource:usage:)]) {
                     [encoder useResource:accelerationStructure usage:MTLResourceUsageRead];
@@ -636,18 +647,6 @@ struct Renderer::Impl {
         if (blitEncoder) {
             MTLOrigin origin = MTLOriginMake(0, 0, 0);
             MTLSize size = MTLSizeMake(target.width, target.height, 1);
-            const bool isDebugVisualization = debugOptions.visualization != DebugVisualization::None;
-            if (!isDebugVisualization && target.colorTexture && target.accumulationTexture) {
-                [blitEncoder copyFromTexture:target.colorTexture
-                                  sourceSlice:0
-                                  sourceLevel:0
-                                 sourceOrigin:origin
-                                   sourceSize:size
-                                    toTexture:target.accumulationTexture
-                             destinationSlice:0
-                             destinationLevel:0
-                            destinationOrigin:origin];
-            }
             if (needsReadback) {
                 if (target.readbackBuffer == nil) {
                     core::Logger::error("Renderer", "Readback requested but readback buffer is unavailable");
@@ -1008,14 +1007,21 @@ struct Renderer::Impl {
                 return false;
             }
 
-            id<MTLTexture> accumulationTexture = [device newTextureWithDescriptor:textureDescriptor];
-            if (!accumulationTexture) {
+            id<MTLTexture> accumulationTextureA = [device newTextureWithDescriptor:textureDescriptor];
+            if (!accumulationTextureA) {
+                core::Logger::error("Renderer", "Failed to allocate ray tracing accumulation texture (%ux%u)", width, height);
+                return false;
+            }
+
+            id<MTLTexture> accumulationTextureB = [device newTextureWithDescriptor:textureDescriptor];
+            if (!accumulationTextureB) {
                 core::Logger::error("Renderer", "Failed to allocate ray tracing accumulation texture (%ux%u)", width, height);
                 return false;
             }
 
             target.colorTexture = colorTexture;
-            target.accumulationTexture = accumulationTexture;
+            target.accumulationTextureA = accumulationTextureA;
+            target.accumulationTextureB = accumulationTextureB;
         }
 
         const std::size_t bufferLength = static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * kRayTracingPixelStride;
