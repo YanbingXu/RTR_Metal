@@ -1,4 +1,4 @@
-> 状态检查点（2026-02-06）：Stage 1~3C 完成；Stage 3D 进行中；Stage 4 未开始。  
+> 状态检查点（2026-02-12）：Stage 1~3C 完成；Stage 3D 进行中；Stage 4 未开始。  
 > 本文件是项目阶段状态的唯一口径。
 
 ## Stage 1：工程骨架与工具链
@@ -41,10 +41,11 @@
 - 已有：`indexOfRefraction` + `materialFlags` 已接入 shader，支持基础折射与全反射回退。
 - 已有：交互路径默认不再强制 GPU->CPU 读回与阻塞等待。
 - 已有：Cornell 扩展几何中的两球（镜面/折射）稳定可见；用于验证反射/折射主线。
-- 已有：Mario 暂采用占位几何（保留材质与纹理链路），避免阻塞 Stage 3D 主线验收。
-- 未完成：真正的多帧累积收敛机制仍不完整（当前仍缺历史帧融合目标与策略）。
-- 未完成：缺少最新回归 hash 与自动验收闭环。
-- 未完成：Mario OBJ 网格的 BLAS 可交性专项修复（见 `docs/mario_obj_blas_issue.md`）。
+- 已有：Cornell 中 Mario 默认恢复 OBJ 实网格，`mesh8 isolate + instance-trace` 可稳定命中。
+- 已有：多帧累积链路已接入（ping-pong + history blend）；当前主线采用固定随机种子与稳定主光线 jitter 以支撑回归。
+- 已有：图像回归门禁已接入 CTest（当前采用 Cornell `frames=1` 严格 hash）。
+- 未完成：`frames=4/16` 仍以质量回归为主（非严格 hash 门禁）。
+- 未完成：Mario OBJ 专项仍需补“视觉质量/性能”验收，而非“可交性”阻断。
 
 **验收标准**：
 - 折射路径可用，`indexOfRefraction` 与材质标记生效。

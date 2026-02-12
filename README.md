@@ -2,7 +2,7 @@
 
 ## 文档状态
 - 当前有效（中文主文档）
-- 最后更新：2026-02-06
+- 最后更新：2026-02-12
 
 ## 项目简介
 `RTR Metal` 正在重构为面向 Apple Silicon 的 C++20 + Metal 硬件光线追踪引擎。
@@ -56,7 +56,7 @@ open build/RTRMetalOnScreenSample.app
 ```
 
 ## 测试
-默认 `build` 目录可能关闭测试（`RTR_BUILD_TESTS=OFF`）。建议使用独立目录显式开启：
+建议使用独立目录显式开启并运行测试：
 
 ```bash
 cmake -S . -B build-tests -DRTR_BUILD_TESTS=ON
@@ -64,13 +64,21 @@ cmake --build build-tests
 cd build-tests && ctest --output-on-failure
 ```
 
-## Cornell 图像回归基线（2026-02-09）
+若需启用 GPU 图像 hash 回归（当前仅 Cornell F1 严格门禁）：
+
+```bash
+cmake -S . -B build-tests -DRTR_BUILD_TESTS=ON -DRTR_ENABLE_IMAGE_REGRESSION_TESTS=ON
+cmake --build build-tests
+cd build-tests && ctest --output-on-failure -R CornellHashF1
+```
+
+## Cornell 图像回归基线（2026-02-12）
 以下 hash 基于当前主线：`--scene=cornell` + `--resolution=1024x768` + `--mode=hardware` +
-Mario 临时占位几何策略。
+固定随机纹理种子（`seed=1337`）+ 主光线 jitter 不随 `frameIndex` 变化策略。
 
 命令模板：
 ```bash
-./cmake-build-debug/RTRMetalSample \
+./build/RTRMetalSample \
   --scene=cornell \
   --resolution=1024x768 \
   --frames=<N> \
@@ -82,14 +90,15 @@ Mario 临时占位几何策略。
 ```
 
 当前基线：
-- `frames=1`：`0x9A6AD96130FF3506`
-- `frames=4`：`0x0E0D4150478BDFEE`
-- `frames=16`：`0xEA655D1AB536C88C`
+- `frames=1`：`0x13D8F23DF353AED0`（严格 hash 门禁）
+- `frames=4`：`0xE3E6977F0D1F9796`（质量观察值，非严格门禁）
+- `frames=16`：`0x4F4D8EBEE7ECDABC`（质量观察值，非严格门禁）
 
 ## 当前已知事实
 - 当前仅启用硬件 RT 路径；`auto` 与 `hardware` 行为一致。
 - 旧软件/MPS 路径已归档，计划在 `Stage 4` 恢复。
-- Cornell 场景中的 Mario 当前使用临时占位几何（保留材质/纹理链路），OBJ 网格专项见 [`docs/mario_obj_blas_issue.md`](docs/mario_obj_blas_issue.md)。
+- Cornell 场景中的 Mario 当前默认使用 OBJ 实网格；`mesh8 isolate + instance-trace` 已可稳定命中。
+- CLI 支持 `--seed=<N>` 覆盖随机纹理种子；默认种子为 `1337`，用于稳定 hash 回归。
 - 部分历史文档仍保留用于追溯，但均已标注“历史归档”。
 
 ## 关键文档
