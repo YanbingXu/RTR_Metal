@@ -416,6 +416,26 @@ struct Renderer::Impl {
 
         const simd_float3 center = (sceneBounds.min + sceneBounds.max) * 0.5f;
         const simd_float3 extent = sceneBounds.extent();
+        const bool cornellLikeBounds = std::abs(center.x) < 1.0e-3f &&
+                                       std::abs(center.y - 1.0f) < 1.0e-2f &&
+                                       std::abs(center.z) < 1.0e-3f &&
+                                       std::abs(extent.x - 2.0f) < 1.0e-2f &&
+                                       std::abs(extent.y - 2.0f) < 1.0e-2f &&
+                                       std::abs(extent.z - 2.0f) < 1.0e-2f;
+        if (cornellLikeBounds) {
+            cameraRig.target = simd_make_float3(0.0f, 0.92f, 0.0f);
+            cameraRig.eye = simd_make_float3(0.0f, 1.02f, 3.20f);
+            core::Logger::info("Renderer",
+                               "Applied Cornell reference camera eye=(%.3f, %.3f, %.3f) target=(%.3f, %.3f, %.3f)",
+                               cameraRig.eye.x,
+                               cameraRig.eye.y,
+                               cameraRig.eye.z,
+                               cameraRig.target.x,
+                               cameraRig.target.y,
+                               cameraRig.target.z);
+            return;
+        }
+
         const float sceneWidth = std::max(extent.x, 1.0f);
         const float sceneHeight = std::max(extent.y, 1.0f);
         const float sceneDepth = std::max(extent.z, 1.0f);
@@ -908,11 +928,11 @@ struct Renderer::Impl {
         uniforms->maxBounces = std::max<std::uint32_t>(1u, config.maxHardwareBounces);
 
         HardwareAreaLight& light = uniforms->lights[0];
-        light.position = simd_make_float4(0.0f, 1.99f, 0.0f, 1.0f);
-        light.right = simd_make_float4(0.25f, 0.0f, 0.0f, 0.0f);
-        light.up = simd_make_float4(0.0f, 0.0f, 0.25f, 0.0f);
+        light.position = simd_make_float4(0.0f, 1.98f, -0.05f, 1.0f);
+        light.right = simd_make_float4(0.30f, 0.0f, 0.0f, 0.0f);
+        light.up = simd_make_float4(0.0f, 0.0f, 0.18f, 0.0f);
         light.forward = simd_make_float4(0.0f, -1.0f, 0.0f, 0.0f);
-        light.color = simd_make_float4(24.0f, 23.5f, 23.0f, 0.0f);
+        light.color = simd_make_float4(20.0f, 20.0f, 20.0f, 0.0f);
 
         if (debugAlbedo) {
             core::Logger::info("Renderer", "Debug uniforms: flags=0x%x", uniforms->camera.flags);
