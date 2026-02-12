@@ -53,6 +53,7 @@ sample/.DS_Store
 sample/src/.DS_Store
 build-xcode/
 build-tests
+.vscode
 
 *.ppm
 *.png
