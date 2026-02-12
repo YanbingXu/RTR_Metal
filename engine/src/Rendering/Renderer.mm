@@ -75,7 +75,9 @@ simd_float3 srgbToLinear(simd_float3 colour) {
 
 uint8_t floatToSRGBByte(float value) {
     const float clamped = std::clamp(value, 0.0f, 1.0f);
-    const long rounded = std::lroundf(clamped * 255.0f);
+    const float srgb = (clamped <= 0.0031308f) ? (12.92f * clamped)
+                                                : (1.055f * powf(clamped, 1.0f / 2.4f) - 0.055f);
+    const long rounded = std::lroundf(std::clamp(srgb, 0.0f, 1.0f) * 255.0f);
     return static_cast<uint8_t>(std::clamp<long>(rounded, 0, 255));
 }
 
