@@ -49,6 +49,8 @@ CLI 示例：
 ./build/RTRMetalSample --scene=cornell --frames=1 --mode=hardware --hash
 ```
 
+默认配置 `config/engine.ini` 使用 `maxBounces=6`；可通过 `--max-bounces=N` 覆盖。
+
 On-Screen 示例：
 ```bash
 cmake --build build --target RTRMetalOnScreenSample
@@ -96,6 +98,7 @@ cd build-tests && ctest --output-on-failure -R CornellHashF1
 
 ## 当前已知事实
 - 当前仅启用硬件 RT 路径；`auto` 与 `hardware` 行为一致。
+- 默认硬件 RT 最大弹射次数为 `6`（配置键 `maxBounces`，可用 `--max-bounces` 覆盖）。
 - 旧软件/MPS 路径已归档，计划在 `Stage 4` 恢复。
 - Cornell 场景中的 Mario 当前默认使用 OBJ 实网格；`mesh8 isolate + instance-trace` 已可稳定命中。
 - CLI 支持 `--seed=<N>` 覆盖随机纹理种子；默认种子为 `1337`，用于稳定 hash 回归。
