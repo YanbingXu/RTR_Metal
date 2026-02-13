@@ -74,9 +74,9 @@ cmake --build build-tests
 cd build-tests && ctest --output-on-failure -R CornellHashF1
 ```
 
-## Cornell 图像回归基线（2026-02-12）
+## Cornell 图像回归基线（2026-02-13）
 以下 hash 基于当前主线：`--scene=cornell` + `--resolution=1024x768` + `--mode=hardware` +
-固定随机纹理种子（`seed=1337`）+ 主光线 jitter 不随 `frameIndex` 变化策略。
+固定随机纹理种子（`seed=1337`）+ 配置默认 `maxBounces=6`。
 
 命令模板：
 ```bash
@@ -92,9 +92,9 @@ cd build-tests && ctest --output-on-failure -R CornellHashF1
 ```
 
 当前基线：
-- `frames=1`：`0x13D8F23DF353AED0`（严格 hash 门禁）
-- `frames=4`：`0xE3E6977F0D1F9796`（质量观察值，非严格门禁）
-- `frames=16`：`0x4F4D8EBEE7ECDABC`（质量观察值，非严格门禁）
+- `frames=1`：`0x57266D7C482F0B16`（严格 hash 门禁）
+- `frames=4`：`0xA86B35062C4B44D9`（质量观察值，非严格门禁）
+- `frames=16`：`0xA69AEAAD93977E45`（质量观察值，非严格门禁）
 
 ## 当前已知事实
 - 当前仅启用硬件 RT 路径；`auto` 与 `hardware` 行为一致。

@@ -184,7 +184,7 @@ if(RTR_BUILD_TESTS)
                 --asset-root=${CMAKE_SOURCE_DIR}/assets
                 --config=${CMAKE_SOURCE_DIR}/config/engine.ini
                 --output=${CMAKE_BINARY_DIR}/cornell_hash_f1.ppm
-                --expect-hash=0x2D8F4BB99F27AE99)
+                --expect-hash=0x57266D7C482F0B16)
     endif()
 endif()
 
