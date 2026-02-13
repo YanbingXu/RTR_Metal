@@ -17,9 +17,10 @@ using namespace metal;
 namespace {
 
 constant uint kMaxTextureSize = 2048u;
-constant uint kLightSamplesPerPixel = 8u;
 // Must stay in sync with kMaxTrianglesPerGeometry in AccelerationStructureBuilder.mm.
 constant uint kTrianglesPerGeometryChunk = 4096u;
+constant uint kDirectSamplesPerBounce = 4u;
+constant float kPi = 3.14159265f;
 
 inline uint mixBits(uint value) {
     value ^= value >> 16u;
@@ -28,19 +29,6 @@ inline uint mixBits(uint value) {
     value *= 0x846CA68Bu;
     value ^= value >> 16u;
     return value;
-}
-
-float srgbChannelToLinear(float value) {
-    if (value <= 0.0f) {
-        return 0.0f;
-    }
-    if (value >= 1.0f) {
-        return value;
-    }
-    if (value <= 0.04045f) {
-        return value / 12.92f;
-    }
-    return pow((value + 0.055f) / 1.055f, 2.4f);
 }
 
 simd_float3 sampleSkyColor(float3 /*direction*/) {
@@ -234,45 +222,6 @@ inline void writeHitDebug(uint2 gid,
     }
 }
 
-inline void sampleAreaLight(RTRHardwareAreaLight light,
-                            float2 u,
-                            float3 position,
-                            thread float3& lightDir,
-                            thread float3& lightColor,
-                            thread float& lightDistance) {
-    const float2 mapped = u * 2.0f - 1.0f;
-    const float3 samplePoint = light.position.xyz + light.right.xyz * mapped.x + light.up.xyz * mapped.y;
-    const float3 toSample = samplePoint - position;
-    lightDistance = length(toSample);
-    const float invDistance = 1.0f / max(lightDistance, 1.0f);
-    lightDir = toSample * invDistance;
-    const float3 normal = normalize(light.forward.xyz);
-    lightColor = light.color.xyz * (invDistance * invDistance);
-    lightColor *= clamp(dot(-lightDir, normal), 0.0f, 1.0f);
-}
-
-constant uint kHaltonPrimes[] = {
-    2,   3,   5,   7,   11,  13,  17,  19,
-    23,  29,  31,  37,  41,  43,  47,  53,
-    59,  61,  67,  71,  73,  79,  83,  89,
-};
-
-inline float halton(uint index, uint dimension) {
-    const uint primeCount = static_cast<uint>(sizeof(kHaltonPrimes) / sizeof(uint));
-    const uint primeIndex = (primeCount > 0u) ? (dimension % primeCount) : 0u;
-    const uint base = kHaltonPrimes[primeIndex];
-    float invBase = (base > 0u) ? (1.0f / static_cast<float>(base)) : 1.0f;
-    float fraction = 1.0f;
-    float result = 0.0f;
-    uint i = index;
-    while (i > 0u) {
-        fraction *= invBase;
-        result += fraction * static_cast<float>(i % base);
-        i /= base;
-    }
-    return result;
-}
-
 }  // namespace
 
 #if RTR_HAS_RAYTRACING
@@ -417,12 +366,34 @@ inline float3 evaluateOpaqueBRDF(float3 normal,
     const float3 F = fresnelSchlick(VdotH, F0);
     const float3 specular = (D * G * F) / max(4.0f * NdotV * NdotL, 1.0e-4f);
     const float3 kd = (float3(1.0f) - F) * (1.0f - material.metallic);
-    const float3 diffuse = kd * baseColor * (1.0f / 3.14159265f);
+    const float3 diffuse = kd * baseColor * (1.0f / kPi);
     return diffuse + specular;
+}
+
+inline float powerHeuristic(float pdfA, float pdfB) {
+    const float a2 = pdfA * pdfA;
+    const float b2 = pdfB * pdfB;
+    return a2 / max(a2 + b2, 1.0e-6f);
+}
+
+inline float opaqueSpecProbability(RTRRayTracingMaterial material) {
+    return clamp(max(material.reflectivity, material.metallic), 0.0f, 0.98f);
+}
+
+inline float opaqueScatterPdf(float3 incidentDir,
+                              float3 normal,
+                              float3 outDir,
+                              RTRRayTracingMaterial material) {
+    const float diffusePdf = max(dot(normal, outDir), 0.0f) * (1.0f / kPi);
+    const float3 reflected = normalize(reflect(incidentDir, normal));
+    const float specPdf = max(dot(reflected, outDir), 0.0f) * (1.0f / kPi);
+    const float specProb = opaqueSpecProbability(material);
+    return mix(diffusePdf, specPdf, specProb);
 }
 
 inline float3 sampleDirectLighting(constant RTRHardwareRayUniforms& uniforms,
                                    acceleration_structure<instancing> accelerationStructure,
+                                   float3 incidentDir,
                                    float3 position,
                                    float3 normal,
                                    float3 viewDir,
@@ -436,16 +407,15 @@ inline float3 sampleDirectLighting(constant RTRHardwareRayUniforms& uniforms,
     const uint lightIndex = min(static_cast<uint>(randomUnit(rngState) * static_cast<float>(uniforms.lightCount)),
                                 uniforms.lightCount - 1u);
     const RTRHardwareAreaLight light = getAreaLight(uniforms, lightIndex);
-    float3 lightDir;
-    float3 lightRadiance;
-    float lightDistance;
-    sampleAreaLight(light,
-                    float2(randomUnit(rngState), randomUnit(rngState)),
-                    position,
-                    lightDir,
-                    lightRadiance,
-                    lightDistance);
-    if (!all(isfinite(lightDir)) || lightDistance <= 1.0e-4f) {
+    const float2 mapped = float2(randomUnit(rngState), randomUnit(rngState)) * 2.0f - 1.0f;
+    const float3 samplePoint = light.position.xyz + light.right.xyz * mapped.x + light.up.xyz * mapped.y;
+    const float3 toLight = samplePoint - position;
+    const float lightDistance = length(toLight);
+    if (lightDistance <= 1.0e-4f) {
+        return float3(0.0f);
+    }
+    const float3 lightDir = toLight / lightDistance;
+    if (!all(isfinite(lightDir))) {
         return float3(0.0f);
     }
 
@@ -454,12 +424,27 @@ inline float3 sampleDirectLighting(constant RTRHardwareRayUniforms& uniforms,
         return float3(0.0f);
     }
 
+    const float3 lightNormal = normalize(light.forward.xyz);
+    const float cosAtLight = max(dot(-lightDir, lightNormal), 0.0f);
+    if (cosAtLight <= 1.0e-5f) {
+        return float3(0.0f);
+    }
+
+    const float lightArea = max(4.0f * length(cross(light.right.xyz, light.up.xyz)), 1.0e-6f);
+    const float pdfLight = (lightDistance * lightDistance) /
+                           max(cosAtLight * lightArea * static_cast<float>(uniforms.lightCount), 1.0e-6f);
+    const float pdfBsdf = opaqueScatterPdf(incidentDir, normal, lightDir, material);
+    const float misWeight = powerHeuristic(pdfLight, pdfBsdf);
+
     if (isOccluded(accelerationStructure, position, lightDir, lightDistance)) {
         return float3(0.0f);
     }
 
+    // `light.color` is authored as area-light intensity in this scene setup.
+    // Convert to emitted radiance to match the solid-angle PDF estimator.
+    const float3 emittedRadiance = light.color.xyz / lightArea;
     const float3 brdf = evaluateOpaqueBRDF(normal, viewDir, lightDir, baseColor, material);
-    return brdf * lightRadiance * NdotL * static_cast<float>(uniforms.lightCount);
+    return brdf * emittedRadiance * NdotL * (misWeight / max(pdfLight, 1.0e-6f));
 }
 
 inline void sampleOpaqueScatter(float3 incidentDir,
@@ -469,8 +454,7 @@ inline void sampleOpaqueScatter(float3 incidentDir,
                                 thread uint& rngState,
                                 thread float3& outDirection,
                                 thread float3& outWeight) {
-    const float specProbRaw = clamp(max(material.reflectivity, material.metallic), 0.0f, 0.98f);
-    const float specProb = specProbRaw;
+    const float specProb = opaqueSpecProbability(material);
     const float choice = randomUnit(rngState);
     if (specProb > 1.0e-4f && choice < specProb) {
         const float3 reflected = normalize(reflect(incidentDir, normal));
@@ -489,14 +473,14 @@ inline void sampleRefractiveScatter(float3 incidentDir,
                                     float3 normal,
                                     float3 baseColor,
                                     RTRRayTracingMaterial material,
+                                    thread bool& inRefractiveMedium,
                                     thread uint& rngState,
                                     thread float3& outDirection,
                                     thread float3& outWeight) {
     const float ior = clamp(material.indexOfRefraction, 1.01f, 3.0f);
-    const bool frontFace = dot(incidentDir, normal) < 0.0f;
-    const float3 orientedNormal = frontFace ? normal : -normal;
-    const float etaI = frontFace ? 1.0f : ior;
-    const float etaT = frontFace ? ior : 1.0f;
+    const float3 orientedNormal = (dot(incidentDir, normal) < 0.0f) ? normal : -normal;
+    const float etaI = inRefractiveMedium ? ior : 1.0f;
+    const float etaT = inRefractiveMedium ? 1.0f : ior;
     const float eta = etaI / etaT;
     const float cosIncident = clamp(dot(-incidentDir, orientedNormal), 0.0f, 1.0f);
     const float f0Base = (etaT - etaI) / (etaT + etaI);
@@ -517,6 +501,7 @@ inline void sampleRefractiveScatter(float3 incidentDir,
     } else {
         outDirection = normalize(refracted);
         outWeight = clamp(baseColor, 0.0f, 1.0f);
+        inRefractiveMedium = !inRefractiveMedium;
     }
 }
 
@@ -666,6 +651,7 @@ inline float3 integratePath(constant RTRHardwareRayUniforms& uniforms,
                             thread uint& outHitDebugValue) {
     float3 radiance = float3(0.0f);
     float3 throughput = float3(1.0f);
+    bool inRefractiveMedium = false;
     outHitDebugValue = 0u;
     const uint maxBounces = max(1u, uniforms.maxBounces);
 
@@ -699,7 +685,9 @@ inline float3 integratePath(constant RTRHardwareRayUniforms& uniforms,
 
         radiance += throughput * surface.material.emission;
 
-        float3 shadingNormal = surface.normal;
+        // Keep geometric normal orientation for refractive media boundary tests.
+        const float3 geometricNormal = surface.normal;
+        float3 shadingNormal = geometricNormal;
         if (dot(rayDirection, shadingNormal) > 0.0f) {
             shadingNormal = -shadingNormal;
         }
@@ -711,21 +699,27 @@ inline float3 integratePath(constant RTRHardwareRayUniforms& uniforms,
 
         if (refractiveSurface) {
             sampleRefractiveScatter(rayDirection,
-                                    shadingNormal,
+                                    geometricNormal,
                                     surface.baseColor,
                                     surface.material,
+                                    inRefractiveMedium,
                                     rngState,
                                     nextDirection,
                                     scatterWeight);
         } else {
-            radiance += throughput * sampleDirectLighting(uniforms,
-                                                          accelerationStructure,
-                                                          surface.position,
-                                                          shadingNormal,
-                                                          viewDir,
-                                                          surface.baseColor,
-                                                          surface.material,
-                                                          rngState);
+            float3 directLighting = float3(0.0f);
+            for (uint lightSample = 0u; lightSample < kDirectSamplesPerBounce; ++lightSample) {
+                directLighting += sampleDirectLighting(uniforms,
+                                                       accelerationStructure,
+                                                       rayDirection,
+                                                       surface.position,
+                                                       shadingNormal,
+                                                       viewDir,
+                                                       surface.baseColor,
+                                                       surface.material,
+                                                       rngState);
+            }
+            radiance += throughput * (directLighting / static_cast<float>(kDirectSamplesPerBounce));
             sampleOpaqueScatter(rayDirection,
                                 shadingNormal,
                                 surface.baseColor,
