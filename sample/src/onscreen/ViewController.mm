@@ -1,6 +1,7 @@
 #import "ViewController.h"
 
 #import <MetalKit/MetalKit.h>
+#import <QuartzCore/QuartzCore.h>
 
 #include <algorithm>
 #include <cmath>
@@ -185,6 +186,7 @@ bool isDynamicResolution(NSDictionary* info) {
 - (void)modeChanged:(id)sender;
 - (void)resolutionChanged:(id)sender;
 - (void)captureScreenshot:(id)sender;
+- (void)updateFpsOverlay;
 - (void)selectCurrentMode;
 - (void)selectResolutionForWidth:(std::uint32_t)width height:(std::uint32_t)height;
 - (void)performPendingScreenshot;
@@ -203,6 +205,7 @@ bool isDynamicResolution(NSDictionary* info) {
     NSPopUpButton* _modePopup;
     NSPopUpButton* _resolutionPopup;
     NSPopUpButton* _debugModePopup;
+    NSTextField* _fpsLabel;
     NSMenuItem* _dynamicResolutionItem;
     NSButton* _screenshotButton;
     std::uint32_t _currentWidth;
@@ -213,6 +216,8 @@ bool isDynamicResolution(NSDictionary* info) {
     bool _pendingScreenshot;
     std::string _pendingScreenshotPath;
     fs::path _assetRootPath;
+    CFTimeInterval _fpsWindowStart;
+    std::uint32_t _fpsFrameCount;
 }
 
 - (void)loadView {
@@ -235,6 +240,8 @@ bool isDynamicResolution(NSDictionary* info) {
     _mtkView.preferredFramesPerSecond = 60;
     _mtkView.framebufferOnly = NO;
     _mtkView.delegate = self;
+    _fpsWindowStart = CACurrentMediaTime();
+    _fpsFrameCount = 0u;
 
     [self initializeRenderer];
     [self setupOverlayUI];
@@ -348,11 +355,17 @@ bool isDynamicResolution(NSDictionary* info) {
     _debugModePopup.target = self;
     _debugModePopup.action = @selector(debugVisualizationChanged:);
 
+    _fpsLabel = [NSTextField labelWithString:@"FPS: --"];
+    _fpsLabel.translatesAutoresizingMaskIntoConstraints = NO;
+    _fpsLabel.textColor = [NSColor colorWithWhite:0.95 alpha:1.0];
+    _fpsLabel.font = [NSFont monospacedDigitSystemFontOfSize:12.0 weight:NSFontWeightMedium];
+
     NSStackView* stack = [NSStackView stackViewWithViews:@[
         _modePopup,
         _resolutionPopup,
         _screenshotButton,
         _debugModePopup,
+        _fpsLabel,
     ]];
     stack.orientation = NSUserInterfaceLayoutOrientationHorizontal;
     stack.spacing = 8.0;
@@ -494,6 +507,7 @@ bool isDynamicResolution(NSDictionary* info) {
 
     [commandBuffer presentDrawable:drawable];
     [commandBuffer commit];
+    [self updateFpsOverlay];
 
     if (_pendingScreenshot) {
         [self performPendingScreenshot];
@@ -571,6 +585,22 @@ bool isDynamicResolution(NSDictionary* info) {
     }
     _renderer->setDebugVisualization(visualization);
     _renderer->resetAccumulation();
+}
+
+- (void)updateFpsOverlay {
+    const CFTimeInterval now = CACurrentMediaTime();
+    _fpsFrameCount += 1u;
+    const CFTimeInterval elapsed = now - _fpsWindowStart;
+    if (elapsed < 0.25) {
+        return;
+    }
+
+    const double fps = static_cast<double>(_fpsFrameCount) / elapsed;
+    if (_fpsLabel) {
+        _fpsLabel.stringValue = [NSString stringWithFormat:@"FPS: %.1f", fps];
+    }
+    _fpsFrameCount = 0u;
+    _fpsWindowStart = now;
 }
 
 - (void)selectCurrentMode {

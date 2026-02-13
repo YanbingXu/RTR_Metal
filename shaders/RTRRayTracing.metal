@@ -1009,6 +1009,7 @@ fragment float4 RTRDisplayFragment(RTRDisplayVertexOutput in [[stage_in]],
                                    constant float2& invRenderSize [[buffer(0)]]) {
     constexpr sampler displaySampler(address::clamp_to_edge, filter::linear);
     float2 uv = clamp(in.uv, 0.0f, 1.0f);
+    uv.y = 1.0f - uv.y;
     if (invRenderSize.x > 0.0f && invRenderSize.y > 0.0f) {
         // Nudge sample into texel centers to avoid sampling issues when renderSize != drawableSize.
         uv = uv * (float2(1.0f) - invRenderSize) + invRenderSize * 0.5f;
