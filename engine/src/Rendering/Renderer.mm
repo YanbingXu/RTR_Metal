@@ -907,7 +907,8 @@ struct Renderer::Impl {
             flags |= RTR_RAY_FLAG_PRIMITIVE_TRACE;
         }
         uniforms->camera.flags = flags;
-        uniforms->camera.samplesPerPixel = 1u;
+        // Use 4 spp per frame to reduce refractive/caustic variance at the same frame count.
+        uniforms->camera.samplesPerPixel = 4u;
         uniforms->camera.sampleSeed = isDebugVisualization ? 1u : (0x9E3779B9u * (frameCounter + 1u));
 
         if (debugCameraTrace) {

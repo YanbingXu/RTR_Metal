@@ -911,24 +911,50 @@ kernel void rayKernel(constant RTRHardwareRayUniforms& uniforms [[buffer(0)]],
             color = firstSurface.baseColor;
         }
     } else {
-        uint rngState = mixBits(hashX ^ (hashY * 747796405u) ^ (uniforms.camera.frameIndex * 2891336453u));
-        color = integratePath(uniforms,
-                              accelerationStructure,
-                              positions,
-                              normals,
-                              indices,
-                              colors,
-                              texcoords,
-                              meshes,
-                              materials,
-                              textureInfos,
-                              texturePixels,
-                              instances,
-                              limits,
-                              rayOrigin,
-                              rayDirection,
-                              rngState,
-                              hitDebugValue);
+        const uint sampleCount = max(uniforms.camera.samplesPerPixel, 1u);
+        float3 sampleAccum = float3(0.0f);
+        uint sampleHitDebug = 0u;
+        for (uint sampleIndex = 0u; sampleIndex < sampleCount; ++sampleIndex) {
+            const uint sampleHashX = mixBits(hashX ^ (sampleIndex * 0x9E3779B9u + 0x68BC21EBu));
+            const uint sampleHashY = mixBits(hashY ^ (sampleIndex * 0x85EBCA6Bu + 0x02E5BE93u));
+            float2 sampleJitter;
+            sampleJitter.x =
+                (static_cast<float>(sampleHashX & 0x00FFFFFFu) + 0.5f) * (1.0f / 16777216.0f) - 0.5f;
+            sampleJitter.y =
+                (static_cast<float>(sampleHashY & 0x00FFFFFFu) + 0.5f) * (1.0f / 16777216.0f) - 0.5f;
+
+            float2 sampleNdc = ((float2(gid) + 0.5f + sampleJitter) / dims) * 2.0f - 1.0f;
+            sampleNdc.y = -sampleNdc.y;
+            const float3 sampleTarget =
+                eye + forward + right * (sampleNdc.x * uniforms.camera.imagePlaneHalfExtents.x) +
+                up * (sampleNdc.y * uniforms.camera.imagePlaneHalfExtents.y);
+            const float3 sampleDirection = normalize(sampleTarget - eye);
+
+            uint rngState = mixBits(sampleHashX ^ (sampleHashY * 747796405u) ^
+                                    (uniforms.camera.frameIndex * 2891336453u) ^
+                                    (sampleIndex * 277803737u));
+            uint sampleDebugValue = 0u;
+            sampleAccum += integratePath(uniforms,
+                                         accelerationStructure,
+                                         positions,
+                                         normals,
+                                         indices,
+                                         colors,
+                                         texcoords,
+                                         meshes,
+                                         materials,
+                                         textureInfos,
+                                         texturePixels,
+                                         instances,
+                                         limits,
+                                         eye,
+                                         sampleDirection,
+                                         rngState,
+                                         sampleDebugValue);
+            sampleHitDebug = max(sampleHitDebug, sampleDebugValue);
+        }
+        color = sampleAccum / static_cast<float>(sampleCount);
+        hitDebugValue = sampleHitDebug;
     }
 
     writeHitDebug(gid, width, height, hitDebug, hitDebugValue);
