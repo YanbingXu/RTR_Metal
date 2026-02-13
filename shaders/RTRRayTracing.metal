@@ -336,10 +336,54 @@ inline float3 sampleCosineHemisphere(float3 normal, thread uint& rngState) {
     return normalize(tangent * x + bitangent * y + normal * z);
 }
 
-inline float3 sampleRoughSpecular(float3 reflectedDir, float roughness, thread uint& rngState) {
-    const float3 roughSample = sampleCosineHemisphere(reflectedDir, rngState);
-    const float alpha = clamp(roughness * roughness, 0.0f, 1.0f);
-    return normalize(mix(reflectedDir, roughSample, alpha));
+inline float roughnessToAlpha(float roughness) {
+    return max(roughness * roughness, 1.0e-3f);
+}
+
+inline float3 sampleGGXHalfVector(float3 normal, float roughness, thread uint& rngState) {
+    const float u1 = randomUnit(rngState);
+    const float u2 = randomUnit(rngState);
+    const float alpha = roughnessToAlpha(roughness);
+    const float alpha2 = alpha * alpha;
+
+    const float phi = 2.0f * kPi * u1;
+    const float tanTheta2 = (alpha2 * u2) / max(1.0f - u2, 1.0e-6f);
+    const float cosTheta = rsqrt(1.0f + tanTheta2);
+    const float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+
+    float3 tangent;
+    float3 bitangent;
+    buildOrthonormalBasis(normal, tangent, bitangent);
+    const float3 halfVector = tangent * (cos(phi) * sinTheta) +
+                              bitangent * (sin(phi) * sinTheta) +
+                              normal * cosTheta;
+    return normalize(halfVector);
+}
+
+inline float ggxSpecularPdf(float3 incidentDir,
+                            float3 normal,
+                            float3 outDir,
+                            RTRRayTracingMaterial material) {
+    const float3 viewDir = normalize(-incidentDir);
+    const float NdotV = max(dot(normal, viewDir), 0.0f);
+    const float NdotL = max(dot(normal, outDir), 0.0f);
+    if (NdotV <= 1.0e-5f || NdotL <= 1.0e-5f) {
+        return 0.0f;
+    }
+
+    float3 halfVector = normalize(viewDir + outDir);
+    if (!all(isfinite(halfVector))) {
+        return 0.0f;
+    }
+
+    const float NdotH = max(dot(normal, halfVector), 0.0f);
+    const float VdotH = max(dot(viewDir, halfVector), 0.0f);
+    if (NdotH <= 1.0e-5f || VdotH <= 1.0e-5f) {
+        return 0.0f;
+    }
+
+    const float D = distributionGGX(NdotH, roughnessToAlpha(material.roughness));
+    return (D * NdotH) / max(4.0f * VdotH, 1.0e-6f);
 }
 
 inline float3 evaluateOpaqueBRDF(float3 normal,
@@ -359,7 +403,7 @@ inline float3 evaluateOpaqueBRDF(float3 normal,
     }
     const float NdotH = max(dot(normal, halfVec), 0.0f);
     const float VdotH = max(dot(viewDir, halfVec), 0.0f);
-    const float alpha = max(material.roughness * material.roughness, 1.0e-3f);
+    const float alpha = roughnessToAlpha(material.roughness);
     const float D = distributionGGX(NdotH, alpha);
     const float G = geometrySmith(NdotV, NdotL, material.roughness);
     const float3 F0 = mix(float3(0.04f), baseColor, material.metallic);
@@ -385,10 +429,9 @@ inline float opaqueScatterPdf(float3 incidentDir,
                               float3 outDir,
                               RTRRayTracingMaterial material) {
     const float diffusePdf = max(dot(normal, outDir), 0.0f) * (1.0f / kPi);
-    const float3 reflected = normalize(reflect(incidentDir, normal));
-    const float specPdf = max(dot(reflected, outDir), 0.0f) * (1.0f / kPi);
+    const float specPdf = ggxSpecularPdf(incidentDir, normal, outDir, material);
     const float specProb = opaqueSpecProbability(material);
-    return mix(diffusePdf, specPdf, specProb);
+    return diffusePdf * (1.0f - specProb) + specPdf * specProb;
 }
 
 inline float3 sampleDirectLighting(constant RTRHardwareRayUniforms& uniforms,
@@ -457,8 +500,15 @@ inline void sampleOpaqueScatter(float3 incidentDir,
     const float specProb = opaqueSpecProbability(material);
     const float choice = randomUnit(rngState);
     if (specProb > 1.0e-4f && choice < specProb) {
-        const float3 reflected = normalize(reflect(incidentDir, normal));
-        outDirection = sampleRoughSpecular(reflected, material.roughness, rngState);
+        const float3 viewDir = normalize(-incidentDir);
+        float3 halfVector = sampleGGXHalfVector(normal, material.roughness, rngState);
+        if (dot(halfVector, viewDir) < 0.0f) {
+            halfVector = -halfVector;
+        }
+        outDirection = normalize(reflect(-viewDir, halfVector));
+        if (dot(normal, outDirection) <= 1.0e-5f || !all(isfinite(outDirection))) {
+            outDirection = normalize(reflect(incidentDir, normal));
+        }
         const float3 specColor = clamp(mix(float3(0.04f), baseColor, material.metallic), 0.0f, 1.0f);
         outWeight = specColor / max(specProb, 1.0e-4f);
     } else {
