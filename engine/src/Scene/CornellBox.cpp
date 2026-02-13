@@ -402,7 +402,7 @@ void addFeatureGeometry(SceneBuilder& builder,
     mirror.reflectivity = 1.0f;
     mirror.indexOfRefraction = 1.0f;
     auto mirrorMat = scene.addMaterial(mirror);
-    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.36f, 0.20f, 0.30f),
+    const simd_float4x4 mirrorTransform = composeTransform(simd_make_float3(-0.30f, 0.32f, 0.28f),
                                                           simd_make_float3(0.20f, 0.20f, 0.20f),
                                                           0.0f,
                                                           simd_make_float3(1.0f, 0.0f, 0.0f));
@@ -412,10 +412,10 @@ void addFeatureGeometry(SceneBuilder& builder,
     Material glass{};
     glass.albedo = {1.0f, 1.0f, 1.0f};
     glass.roughness = 0.003f;
-    glass.reflectivity = 0.14f;
+    glass.reflectivity = 0.07f;
     glass.indexOfRefraction = 1.52f;
     auto glassMat = scene.addMaterial(glass);
-    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.26f, crateTopY + 0.19f, 0.11f),
+    const simd_float4x4 glassTransform = composeTransform(simd_make_float3(0.20f, crateTopY + 0.10f, 0.42f),
                                                          simd_make_float3(0.19f, 0.19f, 0.19f),
                                                          0.0f,
                                                          simd_make_float3(1.0f, 0.0f, 0.0f));
@@ -426,7 +426,7 @@ void addFeatureGeometry(SceneBuilder& builder,
              scene,
              assetRoot,
              crateTopY,
-             simd_make_float3(0.10f, 0.00f, -0.03f),
+             simd_make_float3(0.28f, 0.00f, -0.02f),
              0.0f);
 }
 
@@ -482,7 +482,7 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                           FACE_MASK_POSITIVE_Y);
     Material lightMaterial{};
     lightMaterial.albedo = {1.0f, 1.0f, 1.0f};
-    lightMaterial.emission = {12.0f, 12.0f, 12.0f};
+    lightMaterial.emission = {7.5f, 7.5f, 7.5f};
     lightMaterial.roughness = 0.2f;
     auto lightHandle = scene.addMaterial(lightMaterial);
     scene.addInstance(lightMesh, lightHandle, matrix_identity_float4x4);
@@ -500,9 +500,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
                                     crateTexture.string().c_str());
         }
     }
-    const simd_float3 shortTranslation = simd_make_float3(0.26f, 0.28f, 0.14f);
+    const simd_float3 shortTranslation = simd_make_float3(0.34f, 0.28f, 0.14f);
     const simd_float3 shortScale = simd_make_float3(0.56f, 0.56f, 0.56f);
-    const float shortRotation = 0.0f;
+    const float shortRotation = -0.24f;
     const simd_float4x4 shortTransform = composeTransform(shortTranslation,
                                                           shortScale,
                                                           shortRotation,
@@ -514,9 +514,9 @@ Scene createCornellBoxSceneInternal(const std::filesystem::path& assetRoot) {
 
     Material tallBoxMaterial{};
     tallBoxMaterial.albedo = {0.96f, 0.96f, 0.96f};
-    const simd_float3 tallTranslation = simd_make_float3(-0.22f, 0.56f, -0.02f);
+    const simd_float3 tallTranslation = simd_make_float3(-0.46f, 0.56f, -0.08f);
     const simd_float3 tallScale = simd_make_float3(0.52f, 1.12f, 0.52f);
-    const float tallRotation = 0.0f;
+    const float tallRotation = 0.22f;
     const simd_float4x4 tallTransform = composeTransform(tallTranslation,
                                                          tallScale,
                                                          tallRotation,
