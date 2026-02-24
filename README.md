@@ -2,7 +2,7 @@
 
 ## 文档状态
 - 当前有效（中文主文档）
-- 最后更新：2026-02-12
+- 最后更新：2026-02-24
 
 ## 项目简介
 `RTR Metal` 正在重构为面向 Apple Silicon 的 C++20 + Metal 硬件光线追踪引擎。
@@ -50,6 +50,7 @@ CLI 示例：
 ```
 
 默认配置 `config/engine.ini` 使用 `maxBounces=6`；可通过 `--max-bounces=N` 覆盖。
+当前主线默认每帧采样数为 `samplesPerPixel=4`（硬件路径）。
 
 On-Screen 示例：
 ```bash
@@ -74,9 +75,16 @@ cmake --build build-tests
 cd build-tests && ctest --output-on-failure -R CornellHashF1
 ```
 
-## Cornell 图像回归基线（2026-02-13）
-以下 hash 基于当前主线：`--scene=cornell` + `--resolution=1024x768` + `--mode=hardware` +
-固定随机纹理种子（`seed=1337`）+ 配置默认 `maxBounces=6`。
+## Cornell 图像回归基线（2026-02-13 历史值，待重采）
+以下 hash 为历史基线（对应当时主线），用于追溯：
+- `frames=1`：`0x57266D7C482F0B16`（当时严格 hash 门禁）
+- `frames=4`：`0xA86B35062C4B44D9`（质量观察值）
+- `frames=16`：`0xA69AEAAD93977E45`（质量观察值）
+
+说明：
+- 当前主线已发生影响图像结果的更新（路径追踪采样策略、默认 SPP、Cornell 构图与灯光参数）。
+- 因此上述 hash 不再代表当前主线质量基线；需在可用 Metal RT 设备上重采 `1024x768` 的 `frames=1/4/16`，并同步更新 CTest 门禁值。
+- 重采命令模板如下：
 
 命令模板：
 ```bash
@@ -91,16 +99,14 @@ cd build-tests && ctest --output-on-failure -R CornellHashF1
   --hash
 ```
 
-当前基线：
-- `frames=1`：`0x57266D7C482F0B16`（严格 hash 门禁）
-- `frames=4`：`0xA86B35062C4B44D9`（质量观察值，非严格门禁）
-- `frames=16`：`0xA69AEAAD93977E45`（质量观察值，非严格门禁）
-
 ## 当前已知事实
 - 当前仅启用硬件 RT 路径；`auto` 与 `hardware` 行为一致。
 - 默认硬件 RT 最大弹射次数为 `6`（配置键 `maxBounces`，可用 `--max-bounces` 覆盖）。
+- 硬件路径当前默认每帧采样数为 `4`（`samplesPerPixel=4`）。
 - 旧软件/MPS 路径已归档，计划在 `Stage 4` 恢复。
 - Cornell 场景中的 Mario 当前默认使用 OBJ 实网格；`mesh8 isolate + instance-trace` 已可稳定命中。
+- On-Screen 显示方向已修正，且支持实时 FPS 覆盖层。
+- Cornell 构图目前处于持续对齐参考图阶段（箱体/双球/Mario/灯光均已参数化迭代）。
 - CLI 支持 `--seed=<N>` 覆盖随机纹理种子；默认种子为 `1337`，用于稳定 hash 回归。
 - 部分历史文档仍保留用于追溯，但均已标注“历史归档”。
 
